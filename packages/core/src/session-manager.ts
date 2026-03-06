@@ -1084,7 +1084,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
         return restored;
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
-        throw new Error(`Cannot send to session ${sessionId}: ${reason} (${detail})`);
+        throw new Error(`Cannot send to session ${sessionId}: ${reason} (${detail})`, { cause: err });
       }
     };
 
@@ -1175,7 +1175,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
         if (err instanceof Error) {
           throw err;
         }
-        throw new Error(String(err));
+        throw new Error(String(err), { cause: err });
       }
 
       prepared = await prepareSession(true);
@@ -1185,7 +1185,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
         if (retryErr instanceof Error) {
           throw retryErr;
         }
-        throw new Error(String(retryErr));
+        throw new Error(String(retryErr), { cause: retryErr });
       }
     }
   }

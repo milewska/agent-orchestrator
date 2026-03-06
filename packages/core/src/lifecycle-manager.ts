@@ -446,14 +446,17 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const sessionsDir = getSessionsDir(config.configPath, project.path);
     updateMetadata(sessionsDir, session.id, updates);
 
+    const cleaned = Object.fromEntries(
+      Object.entries(session.metadata).filter(([key]) => {
+        const update = updates[key];
+        return update === undefined || update !== "";
+      }),
+    );
     for (const [key, value] of Object.entries(updates)) {
-      if (value === undefined) continue;
-      if (value === "") {
-        delete session.metadata[key];
-      } else {
-        session.metadata[key] = value;
-      }
+      if (value === undefined || value === "") continue;
+      cleaned[key] = value;
     }
+    session.metadata = cleaned;
   }
 
   function makeFingerprint(ids: string[]): string {
