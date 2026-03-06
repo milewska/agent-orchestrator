@@ -448,7 +448,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     selectedAgentName: string | undefined,
   ): Promise<void> {
     if (selectedAgentName !== "opencode") return;
-    if (session.metadata["opencodeSessionId"]) return;
+    if (asValidOpenCodeSessionId(session.metadata["opencodeSessionId"])) return;
 
     const discovered = await discoverOpenCodeSessionIdByTitle(sessionName);
     if (!discovered) return;
@@ -1370,7 +1370,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     if (!raw || !sessionsDir) throw new Error(`Session ${sessionId} not found`);
 
     const selectedAgent = raw["agent"] ?? config.defaults.agent;
-    if (selectedAgent === "opencode" && !raw["opencodeSessionId"]) {
+    if (selectedAgent === "opencode" && !asValidOpenCodeSessionId(raw["opencodeSessionId"])) {
       const discovered = await discoverOpenCodeSessionIdByTitle(
         sessionId,
         OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS,
@@ -1488,7 +1488,7 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     }
 
     const selectedAgent = raw["agent"] ?? project.agent ?? config.defaults.agent;
-    if (selectedAgent === "opencode" && !raw["opencodeSessionId"]) {
+    if (selectedAgent === "opencode" && !asValidOpenCodeSessionId(raw["opencodeSessionId"])) {
       const discovered = await discoverOpenCodeSessionIdByTitle(
         sessionId,
         OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS,
@@ -1605,7 +1605,10 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
       },
       issueId: session.issueId ?? undefined,
       permissions: project.agentConfig?.permissions,
-      model: project.agentConfig?.model,
+      model:
+        raw["role"] === "orchestrator"
+          ? (project.agentConfig?.orchestratorModel ?? project.agentConfig?.model)
+          : project.agentConfig?.model,
     };
 
     if (plugins.agent.getRestoreCommand) {

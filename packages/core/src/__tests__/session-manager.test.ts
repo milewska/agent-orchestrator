@@ -1885,6 +1885,37 @@ describe("send", () => {
     expect(meta?.["opencodeSessionId"]).toBe("ses_send_discovered");
     expect(mockRuntime.sendMessage).toHaveBeenCalledWith(makeHandle("rt-1"), "hello");
   });
+
+  it("re-discovers OpenCode mapping before sending when stored mapping is invalid", async () => {
+    const deleteLogPath = join(tmpDir, "opencode-send-remap-invalid.log");
+    const mockBin = installMockOpencode(
+      JSON.stringify([
+        {
+          id: "ses_send_discovered_valid",
+          title: "AO:app-1",
+        },
+      ]),
+      deleteLogPath,
+    );
+    process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      agent: "opencode",
+      opencodeSessionId: "ses bad id",
+      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    await sm.send("app-1", "hello");
+
+    const meta = readMetadataRaw(sessionsDir, "app-1");
+    expect(meta?.["opencodeSessionId"]).toBe("ses_send_discovered_valid");
+    expect(mockRuntime.sendMessage).toHaveBeenCalledWith(makeHandle("rt-1"), "hello");
+  });
 });
 
 describe("remap", () => {
@@ -2871,6 +2902,77 @@ describe("restore", () => {
     await expect(sm.restore("app-1")).rejects.toThrow(SessionNotRestorableError);
 
     expect(readMetadataRaw(sessionsDir, "app-1")).toBeNull();
+  });
+
+  it("re-discovers OpenCode mapping when stored mapping is invalid", async () => {
+    const wsPath = join(tmpDir, "ws-app-restore-invalid-map");
+    mkdirSync(wsPath, { recursive: true });
+    const deleteLogPath = join(tmpDir, "opencode-restore-invalid-remap.log");
+    const mockBin = installMockOpencode(
+      JSON.stringify([
+        {
+          id: "ses_restore_discovered",
+          title: "AO:app-1",
+        },
+      ]),
+      deleteLogPath,
+    );
+    process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: wsPath,
+      branch: "feat/TEST-1",
+      status: "killed",
+      project: "my-app",
+      agent: "opencode",
+      opencodeSessionId: "ses bad id",
+      runtimeHandle: JSON.stringify(makeHandle("rt-old")),
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    const restored = await sm.restore("app-1");
+
+    expect(restored.status).toBe("spawning");
+    const meta = readMetadataRaw(sessionsDir, "app-1");
+    expect(meta?.["opencodeSessionId"]).toBe("ses_restore_discovered");
+  });
+
+  it("uses orchestratorModel when restoring orchestrator sessions", async () => {
+    const wsPath = join(tmpDir, "ws-app-orchestrator-restore");
+    mkdirSync(wsPath, { recursive: true });
+
+    const configWithOrchestratorModel: OrchestratorConfig = {
+      ...config,
+      projects: {
+        ...config.projects,
+        "my-app": {
+          ...config.projects["my-app"],
+          agentConfig: {
+            model: "worker-model",
+            orchestratorModel: "orchestrator-model",
+          },
+        },
+      },
+    };
+
+    writeMetadata(sessionsDir, "app-orchestrator", {
+      worktree: wsPath,
+      branch: "main",
+      status: "killed",
+      project: "my-app",
+      role: "orchestrator",
+      runtimeHandle: JSON.stringify(makeHandle("rt-old")),
+    });
+
+    const sm = createSessionManager({
+      config: configWithOrchestratorModel,
+      registry: mockRegistry,
+    });
+    await sm.restore("app-orchestrator");
+
+    expect(mockAgent.getLaunchCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "orchestrator-model" }),
+    );
   });
 
   it("uses getRestoreCommand when available", async () => {

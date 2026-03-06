@@ -101,7 +101,7 @@ function createOpenCodeAgent(): Agent {
         const runCommand = promptValue
           ? ["opencode", "run", ...runOptions, promptValue].join(" ")
           : ["opencode", "run", ...runOptions, "--command", "true"].join(" ");
-        const continueSession = `"$(opencode session list --format json | node -e ${shellEscape("let input='';process.stdin.on('data',c=>input+=c).on('end',()=>{const title=process.argv[1];const rows=JSON.parse(input);if(!Array.isArray(rows))process.exit(1);const matches=rows.filter((r)=>r&&r.title===title&&typeof r.id==='string');if(matches.length===0)process.exit(1);process.stdout.write(matches[0].id);});")} ${shellEscape(`AO:${config.sessionId}`)})"`;
+        const continueSession = `"$(opencode session list --format json | node -e ${shellEscape("let input='';process.stdin.on('data',c=>input+=c).on('end',()=>{const title=process.argv[1];let rows;try{rows=JSON.parse(input)}catch{process.exit(1)};if(!Array.isArray(rows))process.exit(1);const matches=rows.filter((r)=>r&&r.title===title&&typeof r.id==='string');if(matches.length===0)process.exit(1);process.stdout.write(matches[0].id);});")} ${shellEscape(`AO:${config.sessionId}`)})"`;
         const continueCommand = ["opencode", "--session", continueSession, ...sharedOptions].join(
           " ",
         );
@@ -226,10 +226,6 @@ function createOpenCodeAgent(): Agent {
     async getSessionInfo(_session: Session): Promise<AgentSessionInfo | null> {
       // OpenCode doesn't have JSONL session files for introspection yet
       return null;
-    },
-
-    async postLaunchSetup(_session: Session): Promise<void> {
-      return;
     },
   };
 }
