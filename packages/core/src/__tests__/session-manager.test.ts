@@ -1358,6 +1358,24 @@ describe("kill", () => {
     expect(mockWorkspace.destroy).not.toHaveBeenCalled();
   });
 
+  it("does not destroy workspace when worktree resolves to project path", async () => {
+    const projectPath = config.projects["my-app"]?.path;
+    if (!projectPath) throw new Error("missing project path");
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: `${projectPath}/`,
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    await sm.kill("app-1");
+
+    expect(mockWorkspace.destroy).not.toHaveBeenCalled();
+  });
+
   it("throws for nonexistent session", async () => {
     const sm = createSessionManager({ config, registry: mockRegistry });
     await expect(sm.kill("nonexistent")).rejects.toThrow("not found");
