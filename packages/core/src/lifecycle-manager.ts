@@ -505,6 +505,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
     // --- Pending (human) review comments ---
     // null = SCM fetch failed; skip processing to preserve existing metadata.
+    if (pendingComments === null) {
+      console.debug(
+        `[ao lifecycle] Pending comments fetch failed for ${session.id}, preserving existing metadata`,
+      );
+    }
     if (pendingComments !== null) {
       const pendingFingerprint = makeFingerprint(pendingComments.map((comment) => comment.id));
       const lastPendingFingerprint = session.metadata["lastPendingReviewFingerprint"] ?? "";
@@ -566,6 +571,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     }
 
     // --- Automated (bot) review comments ---
+    if (automatedComments === null) {
+      console.debug(
+        `[ao lifecycle] Automated comments fetch failed for ${session.id}, preserving existing metadata`,
+      );
+    }
     if (automatedComments !== null) {
       const automatedFingerprint = makeFingerprint(
         automatedComments.map((comment) => comment.id),
