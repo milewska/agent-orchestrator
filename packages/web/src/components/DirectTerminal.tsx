@@ -57,7 +57,6 @@ export function DirectTerminal({
   const [error, setError] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
   const [reloadError, setReloadError] = useState<string | null>(null);
-  const [resolvedReloadCommand, setResolvedReloadCommand] = useState<string | null>(null);
 
   // Update URL when fullscreen changes
   useEffect(() => {
@@ -78,7 +77,7 @@ export function DirectTerminal({
     setReloadError(null);
     setReloading(true);
     try {
-      let commandToSend = resolvedReloadCommand ?? reloadCommand;
+      let commandToSend = reloadCommand;
 
       if (!commandToSend) {
         const remapRes = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/remap`, {
@@ -95,7 +94,6 @@ export function DirectTerminal({
           throw new Error("Missing OpenCode session id after remap");
         }
         commandToSend = `/exit\nopencode --session ${remapData.opencodeSessionId}\n`;
-        setResolvedReloadCommand(commandToSend);
       }
 
       const sendRes = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/send`, {
