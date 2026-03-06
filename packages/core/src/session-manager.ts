@@ -362,13 +362,6 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     });
   }
 
-  function findReusableOpenCodeSessionId(
-    sessionsDir: string,
-    criteria: { issueId?: string; sessionId?: string },
-  ): string | undefined {
-    return findOpenCodeSessionIds(sessionsDir, criteria)[0];
-  }
-
   function findOpenCodeSessionIds(
     sessionsDir: string,
     criteria: { issueId?: string; sessionId?: string },
@@ -397,6 +390,34 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     }
 
     return [...new Set(ids)];
+  }
+
+  async function resolveOpenCodeSessionReuse(options: {
+    sessionsDir: string;
+    criteria: { issueId?: string; sessionId?: string };
+    strategy: "reuse" | "delete" | "ignore";
+    includeTitleDiscoveryForSessionId?: boolean;
+  }): Promise<string | undefined> {
+    const { sessionsDir, criteria, strategy, includeTitleDiscoveryForSessionId = false } = options;
+    if (strategy === "ignore") return undefined;
+
+    let candidateIds = findOpenCodeSessionIds(sessionsDir, criteria);
+
+    if (strategy === "delete") {
+      if (includeTitleDiscoveryForSessionId && criteria.sessionId) {
+        candidateIds = [
+          ...candidateIds,
+          ...(await discoverOpenCodeSessionIdsByTitle(criteria.sessionId)),
+        ];
+      }
+
+      for (const openCodeSessionId of [...new Set(candidateIds)]) {
+        await deleteOpenCodeSession(openCodeSessionId);
+      }
+      return undefined;
+    }
+
+    return candidateIds[0];
   }
 
   /** Resolve which plugins to use for a project. */
@@ -680,22 +701,13 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
 
     // Get agent launch config and create runtime — clean up workspace on failure
     const opencodeIssueSessionStrategy = project.opencodeIssueSessionStrategy ?? "reuse";
-    if (
-      plugins.agent.name === "opencode" &&
-      spawnConfig.issueId &&
-      opencodeIssueSessionStrategy === "delete"
-    ) {
-      for (const openCodeSessionId of findOpenCodeSessionIds(sessionsDir, {
-        issueId: spawnConfig.issueId,
-      })) {
-        await deleteOpenCodeSession(openCodeSessionId);
-      }
-    }
     const reusedOpenCodeSessionId =
-      plugins.agent.name === "opencode" &&
-      spawnConfig.issueId &&
-      opencodeIssueSessionStrategy === "reuse"
-        ? findReusableOpenCodeSessionId(sessionsDir, { issueId: spawnConfig.issueId })
+      plugins.agent.name === "opencode" && spawnConfig.issueId
+        ? await resolveOpenCodeSessionReuse({
+            sessionsDir,
+            criteria: { issueId: spawnConfig.issueId },
+            strategy: opencodeIssueSessionStrategy,
+          })
         : undefined;
 
     const agentLaunchConfig = {
@@ -891,7 +903,11 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     const existingOrchestrator = await get(sessionId);
     const reusableOpenCodeSessionId =
       plugins.agent.name === "opencode" && orchestratorSessionStrategy === "reuse"
-        ? findReusableOpenCodeSessionId(sessionsDir, { sessionId })
+        ? await resolveOpenCodeSessionReuse({
+            sessionsDir,
+            criteria: { sessionId },
+            strategy: "reuse",
+          })
         : undefined;
     if (existingOrchestrator?.runtimeHandle) {
       const existingAlive = await plugins.runtime
@@ -906,16 +922,12 @@ export function createSessionManager(deps: SessionManagerDeps): SessionManager {
     }
 
     if (plugins.agent.name === "opencode" && orchestratorSessionStrategy === "delete") {
-      const mappedOpenCodeSessionIds = [
-        readMetadataRaw(sessionsDir, sessionId)?.["opencodeSessionId"],
-        readArchivedMetadataRaw(sessionsDir, sessionId)?.["opencodeSessionId"],
-        ...(await discoverOpenCodeSessionIdsByTitle(sessionId)),
-      ].filter((id): id is string => typeof id === "string" && id.length > 0);
-
-      const uniqueIds = [...new Set(mappedOpenCodeSessionIds)];
-      for (const openCodeSessionId of uniqueIds) {
-        await deleteOpenCodeSession(openCodeSessionId);
-      }
+      await resolveOpenCodeSessionReuse({
+        sessionsDir,
+        criteria: { sessionId },
+        strategy: "delete",
+        includeTitleDiscoveryForSessionId: true,
+      });
     }
 
     // Get agent launch config — uses systemPromptFile, no issue/tracker interaction.
