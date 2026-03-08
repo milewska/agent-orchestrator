@@ -116,7 +116,7 @@ describe("getLaunchCommand", () => {
     expect(cmd).toContain("exec opencode --session");
     expect(cmd).toContain("opencode session list --format json");
     expect(cmd).toContain("AO:sess-1");
-    expect(cmd).toContain("try { rows = JSON.parse(input); } catch { process.exit(1); }");
+    expect(cmd).toContain("try{rows=JSON.parse(input)}catch{process.exit(1)}");
   });
 
   it("uses --prompt with shell-escaped prompt", () => {
