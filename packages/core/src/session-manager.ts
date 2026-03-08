@@ -65,6 +65,12 @@ import {
 } from "./paths.js";
 import { asValidOpenCodeSessionId } from "./opencode-session-id.js";
 import { normalizeOrchestratorSessionStrategy } from "./orchestrator-session-strategy.js";
+import {
+  GLOBAL_PAUSE_UNTIL_KEY,
+  GLOBAL_PAUSE_REASON_KEY,
+  GLOBAL_PAUSE_SOURCE_KEY,
+  parsePauseUntil,
+} from "./global-pause.js";
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_DISCOVERY_TIMEOUT_MS = 2_000;
@@ -228,9 +234,6 @@ const SEND_RESTORE_READY_POLL_MS = 500;
 const SEND_CONFIRMATION_ATTEMPTS = 3;
 const SEND_CONFIRMATION_POLL_MS = 500;
 const SEND_CONFIRMATION_OUTPUT_LINES = 20;
-const GLOBAL_PAUSE_UNTIL_KEY = "globalPauseUntil";
-const GLOBAL_PAUSE_REASON_KEY = "globalPauseReason";
-const GLOBAL_PAUSE_SOURCE_KEY = "globalPauseSource";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -310,13 +313,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
    */
   function getProjectSessionsDir(project: ProjectConfig): string {
     return getSessionsDir(config.configPath, project.path);
-  }
-
-  function parsePauseUntil(raw: string | undefined): Date | null {
-    if (!raw) return null;
-    const parsed = new Date(raw);
-    if (Number.isNaN(parsed.getTime())) return null;
-    return parsed;
   }
 
   function getProjectPause(project: ProjectConfig): {

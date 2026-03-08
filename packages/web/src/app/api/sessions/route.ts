@@ -8,25 +8,11 @@ import {
   enrichSessionsMetadata,
   computeStats,
 } from "@/lib/serialize";
+import { resolveGlobalPause } from "@/lib/global-pause";
 
 const METADATA_ENRICH_TIMEOUT_MS = 3_000;
 const PR_ENRICH_TIMEOUT_MS = 4_000;
 const PER_PR_ENRICH_TIMEOUT_MS = 1_500;
-
-function resolveGlobalPause(coreSessions: Array<{ id: string; metadata: Record<string, string> }>) {
-  const orchestrator = coreSessions.find((s) => s.id.endsWith("-orchestrator"));
-  const pausedUntil = orchestrator?.metadata["globalPauseUntil"];
-  if (!pausedUntil) return null;
-
-  const parsed = new Date(pausedUntil);
-  if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) return null;
-
-  return {
-    pausedUntil: parsed.toISOString(),
-    reason: orchestrator?.metadata["globalPauseReason"] ?? "Model rate limit reached",
-    sourceSessionId: orchestrator?.metadata["globalPauseSource"] ?? null,
-  };
-}
 
 async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;

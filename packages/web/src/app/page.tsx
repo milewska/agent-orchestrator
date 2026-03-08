@@ -11,23 +11,9 @@ import {
 } from "@/lib/serialize";
 import { prCache, prCacheKey } from "@/lib/cache";
 import { getProjectName } from "@/lib/project-name";
+import { resolveGlobalPause, type GlobalPauseState } from "@/lib/global-pause";
 
 export const dynamic = "force-dynamic";
-
-function resolveGlobalPause(sessions: Array<{ id: string; metadata: Record<string, string> }>) {
-  const orchestrator = sessions.find((s) => s.id.endsWith("-orchestrator"));
-  const pausedUntil = orchestrator?.metadata["globalPauseUntil"];
-  if (!pausedUntil) return null;
-
-  const parsed = new Date(pausedUntil);
-  if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) return null;
-
-  return {
-    pausedUntil: parsed.toISOString(),
-    reason: orchestrator?.metadata["globalPauseReason"] ?? "Model rate limit reached",
-    sourceSessionId: orchestrator?.metadata["globalPauseSource"] ?? null,
-  };
-}
 
 export async function generateMetadata(): Promise<Metadata> {
   const projectName = getProjectName();
@@ -38,8 +24,7 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function Home() {
   let sessions: DashboardSession[] = [];
   let orchestratorId: string | null = null;
-  let globalPause: { pausedUntil: string; reason: string; sourceSessionId: string | null } | null =
-    null;
+  let globalPause: GlobalPauseState | null = null;
   const projectName = getProjectName();
   try {
     const { config, registry, sessionManager } = await getServices();
