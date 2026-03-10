@@ -86,6 +86,21 @@ feedback:
     forkStrategy: upstream # upstream | fork | skip
 ```
 
+## Consent Gates (Default Policy)
+
+For projects other than AO dogfooding, these are hard defaults:
+
+1. Explicit human consent is required before creating a fork.
+2. Explicit human consent is required before creating a PR.
+3. Explicit human consent is required before switching execution target between upstream and fork.
+4. No silent infrastructure flip is allowed by default.
+
+Override model:
+
+1. Project-level override is optional and must be explicitly enabled by project owner.
+2. Overrides are scoped per operation (`createFork`, `createPR`, `switchTarget`) and must be auditable.
+3. Without explicit owner override, consent gate defaults remain enforced.
+
 ## 4) PR Creation/Linking Requirements
 
 For any PR action, orchestrator enforces:
@@ -125,6 +140,41 @@ Journal semantics:
 1. Minimal journal record per report in `scm` mode:
    - `dedupeKey`, `stage`, `status`, `issueUrl`, `prUrl`, `targetRepo`, `lastError`.
 2. Journal drives recovery and prevents duplicate creation on restart.
+
+Plain-language journal behavior:
+
+1. Think of the journal as a progress log for each report.
+2. Before each mutation attempt, orchestrator writes what it is about to do.
+3. After attempt completion, orchestrator updates the same record with success/failure and links.
+4. On retry, orchestrator keeps the same identity keys and increments attempt metadata instead of creating a parallel track.
+5. Consent decisions (approved/denied) are written so operators can audit why a path was or was not taken.
+
+Minimal journal schema example:
+
+```json
+{
+  "reportId": "fr_01HT2H2F3H4A5",
+  "dedupeKey": "f4d7dbe5b0f8...",
+  "mode": "scm",
+  "stage": "create_pr",
+  "status": "failed",
+  "attempt": 2,
+  "operationKey": "create_pr:f4d7dbe5b0f8:upstream",
+  "targetRepo": "ComposioHQ/agent-orchestrator",
+  "issueUrl": "https://github.com/ComposioHQ/agent-orchestrator/issues/399",
+  "prUrl": null,
+  "consent": {
+    "createFork": "approved",
+    "createPR": "approved",
+    "switchTarget": "not-needed"
+  },
+  "lastError": {
+    "code": "FORBIDDEN",
+    "message": "PR creation blocked by repository policy"
+  },
+  "updatedAt": "2026-03-10T15:45:00Z"
+}
+```
 
 ## 6) Governance Hooks Per Fork Owner Policy
 
@@ -192,9 +242,17 @@ feedback:
   followUp:
     enableAgentSession: true
     requireIssueBeforeSession: true
+  consent:
+    defaultPolicy: require_human_for_major_mutations # hard default outside AO dogfooding
+    requireFor:
+      createFork: true
+      createPR: true
+      switchTarget: true
+    projectOverride:
+      enabled: false # must be explicitly enabled by project owner
   governance:
     allowedForkOwners: ["<org-or-user>"]
-    requireApprovalForForkCreation: false
+    requireApprovalForForkCreation: true
 ```
 
 ## Testing Strategy

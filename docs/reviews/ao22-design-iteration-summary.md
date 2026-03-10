@@ -20,6 +20,14 @@
 
 This iteration is design formalization only. No runtime/code behavior was introduced by this request.
 
+## Feedback incorporated
+
+- Added a dedicated `Consent Gates (Default Policy)` section with hard defaults for non-AO dogfooding:
+  - explicit approval required for `createFork`, `createPR`, and upstream/fork target switching.
+- Clarified that project-level override is optional and only active when explicitly enabled by the owner.
+- Expanded journal behavior in plain language to describe how records are written/updated/retried.
+- Added a minimal journal schema example for the feedback pipeline.
+
 ## Ready for review
 
 The docs now provide a deterministic contract for implementing fork-aware report->issue->session->PR execution in follow-up PRs.
