@@ -48,7 +48,9 @@ const BOT_AUTHORS = new Set([
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function execCli(bin: string, args: string[], cwd?: string): Promise<string> {
+type ExecCommand = "gh" | "git";
+
+async function execCli(bin: ExecCommand, args: string[], cwd?: string): Promise<string> {
   try {
     const { stdout } = await execFileAsync(bin, args, {
       ...(cwd ? { cwd } : {}),
@@ -370,7 +372,8 @@ function parseGitHubWebhookEvent(
       repository,
       prNumber: typeof issueRecord["number"] === "number" ? issueRecord["number"] : undefined,
       timestamp: parseTimestamp(
-        (payload["comment"] as Record<string, unknown> | undefined)?.["updated_at"],
+        (payload["comment"] as Record<string, unknown> | undefined)?.["updated_at"] ??
+          (payload["comment"] as Record<string, unknown> | undefined)?.["created_at"],
       ),
       data: payload,
     };

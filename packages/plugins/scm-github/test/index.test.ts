@@ -209,6 +209,26 @@ describe("scm-github plugin", () => {
       );
     });
 
+    it("falls back to comment.created_at for issue_comment timestamps", async () => {
+      const event = await scm.parseWebhook?.(
+        makeWebhookRequest({
+          headers: { "x-github-event": "issue_comment" },
+          body: JSON.stringify({
+            action: "created",
+            repository: { owner: { login: "acme" }, name: "repo" },
+            issue: { number: 42, pull_request: { url: "https://api.github.com/..." } },
+            comment: { created_at: "2026-03-10T12:00:00Z" },
+          }),
+        }),
+        project,
+      );
+
+      expect(event).toEqual(
+        expect.objectContaining({ provider: "github", kind: "comment", prNumber: 42 }),
+      );
+      expect(event?.timestamp?.toISOString()).toBe("2026-03-10T12:00:00.000Z");
+    });
+
     it("parses pull_request_review_comment timestamp from comment payload", async () => {
       const event = await scm.parseWebhook?.(
         makeWebhookRequest({
