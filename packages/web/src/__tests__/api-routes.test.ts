@@ -1,15 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import {
+  SessionNotFoundError,
   SessionNotRestorableError,
   type Session,
   type SessionManager,
   type OrchestratorConfig,
   type PluginRegistry,
   type SCM,
-  type LifecycleManager,
 } from "@composio/ao-core";
-import { createScopedLifecycleManager } from "@/lib/services";
+import * as serialize from "@/lib/serialize";
+import { createScopedLifecycleManager, getSCM } from "@/lib/services";
 
 // ── Mock Data ─────────────────────────────────────────────────────────
 // Provides test sessions covering the key states the dashboard needs.
@@ -75,12 +76,12 @@ const mockSessionManager: SessionManager = {
   ),
   kill: vi.fn(async (id: string) => {
     if (!testSessions.find((s) => s.id === id)) {
-      throw new Error(`Session ${id} not found`);
+      throw new SessionNotFoundError(id);
     }
   }),
   send: vi.fn(async (id: string) => {
     if (!testSessions.find((s) => s.id === id)) {
-      throw new Error(`Session ${id} not found`);
+      throw new SessionNotFoundError(id);
     }
   }),
   cleanup: vi.fn(async () => ({ killed: [], skipped: [], errors: [] })),
@@ -89,7 +90,7 @@ const mockSessionManager: SessionManager = {
   restore: vi.fn(async (id: string) => {
     const session = testSessions.find((s) => s.id === id);
     if (!session) {
-      throw new Error(`Session ${id} not found`);
+      throw new SessionNotFoundError(id);
     }
     // Simulate SessionNotRestorableError for non-terminal sessions
     if (session.status === "working" && session.activity !== "exited") {
@@ -108,7 +109,7 @@ const mockSCM: SCM = {
   })),
   parseWebhook: vi.fn(async () => ({
     provider: "github",
-    kind: "pull_request",
+    kind: "pull_request" as const,
     action: "opened",
     rawEventType: "pull_request",
     deliveryId: "delivery-1",
@@ -144,11 +145,9 @@ const mockRegistry: PluginRegistry = {
   loadFromConfig: vi.fn(async () => {}),
 };
 
-const mockLifecycleManager: LifecycleManager = {
-  start: vi.fn(),
-  stop: vi.fn(),
-  getStates: vi.fn(() => new Map()),
+const mockLifecycleManager = {
   check: vi.fn(async () => {}),
+  getStates: vi.fn(() => new Map()),
 };
 
 const mockConfig: OrchestratorConfig = {
@@ -176,9 +175,11 @@ vi.mock("@/lib/services", () => ({
     config: mockConfig,
     registry: mockRegistry,
     sessionManager: mockSessionManager,
+    lifecycleManager: mockLifecycleManager,
   })),
-  getSCM: vi.fn(() => mockSCM),
   createScopedLifecycleManager: vi.fn(() => mockLifecycleManager),
+  getSCM: vi.fn(() => mockSCM),
+  startBacklogPoller: vi.fn(() => {}),
 }));
 
 // ── Import routes after mocking ───────────────────────────────────────
@@ -260,6 +261,24 @@ describe("API Routes", () => {
       expect(session).toHaveProperty("activity");
       expect(session).toHaveProperty("createdAt");
     });
+
+    it("skips PR enrichment when metadata enrichment hits timeout", async () => {
+      vi.useFakeTimers();
+
+      const metadataSpy = vi
+        .spyOn(serialize, "enrichSessionsMetadata")
+        .mockImplementation(() => new Promise<void>(() => {}));
+
+      const responsePromise = sessionsGET(makeRequest("http://localhost:3000/api/sessions"));
+      await vi.advanceTimersByTimeAsync(3_000);
+      const res = await responsePromise;
+
+      expect(res.status).toBe(200);
+      expect(getSCM).not.toHaveBeenCalled();
+
+      metadataSpy.mockRestore();
+      vi.useRealTimers();
+    });
   });
 
   // ── POST /api/spawn ────────────────────────────────────────────────
@@ -332,7 +351,7 @@ describe("API Routes", () => {
 
     it("returns 404 for unknown session", async () => {
       (mockSessionManager.send as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error("Session nonexistent not found"),
+        new SessionNotFoundError("nonexistent"),
       );
       const req = makeRequest("/api/sessions/nonexistent/send", {
         method: "POST",
@@ -379,9 +398,21 @@ describe("API Routes", () => {
   });
 
   describe("POST /api/sessions/:id/message", () => {
+    it("sends a message to a valid session", async () => {
+      const req = makeRequest("/api/sessions/backend-3/message", {
+        method: "POST",
+        body: JSON.stringify({ message: "Fix the tests" }),
+        headers: { "Content-Type": "application/json" },
+      });
+      const res = await messagePOST(req, { params: Promise.resolve({ id: "backend-3" }) });
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+    });
+
     it("returns 404 for unknown session", async () => {
       (mockSessionManager.send as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error("Session nonexistent not found"),
+        new SessionNotFoundError("nonexistent"),
       );
 
       const req = makeRequest("/api/sessions/nonexistent/message", {
@@ -392,6 +423,40 @@ describe("API Routes", () => {
 
       const res = await messagePOST(req, { params: Promise.resolve({ id: "nonexistent" }) });
       expect(res.status).toBe(404);
+    });
+
+    it("returns 400 when message is missing", async () => {
+      const req = makeRequest("/api/sessions/backend-3/message", {
+        method: "POST",
+        body: JSON.stringify({}),
+        headers: { "Content-Type": "application/json" },
+      });
+      const res = await messagePOST(req, { params: Promise.resolve({ id: "backend-3" }) });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toMatch(/message/);
+    });
+
+    it("returns 400 for invalid JSON body", async () => {
+      const req = makeRequest("/api/sessions/backend-3/message", {
+        method: "POST",
+        body: "not json",
+        headers: { "Content-Type": "application/json" },
+      });
+      const res = await messagePOST(req, { params: Promise.resolve({ id: "backend-3" }) });
+      expect(res.status).toBe(400);
+    });
+
+    it("returns 400 for control-char-only message", async () => {
+      const req = makeRequest("/api/sessions/backend-3/message", {
+        method: "POST",
+        body: JSON.stringify({ message: "\x00\x01\x02" }),
+        headers: { "Content-Type": "application/json" },
+      });
+      const res = await messagePOST(req, { params: Promise.resolve({ id: "backend-3" }) });
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toMatch(/empty/);
     });
   });
 
@@ -409,7 +474,7 @@ describe("API Routes", () => {
 
     it("returns 404 for unknown session", async () => {
       (mockSessionManager.kill as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error("Session nonexistent not found"),
+        new SessionNotFoundError("nonexistent"),
       );
       const req = makeRequest("/api/sessions/nonexistent/kill", { method: "POST" });
       const res = await killPOST(req, { params: Promise.resolve({ id: "nonexistent" }) });
@@ -457,7 +522,7 @@ describe("API Routes", () => {
 
     it("returns 404 when session is missing", async () => {
       (mockSessionManager.remap as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error("Session missing not found"),
+        new SessionNotFoundError("missing"),
       );
       const req = makeRequest("/api/sessions/missing/remap", { method: "POST" });
       const res = await remapPOST(req, { params: Promise.resolve({ id: "missing" }) });
