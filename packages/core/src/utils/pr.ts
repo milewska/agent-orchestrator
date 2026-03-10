@@ -1,29 +1,14 @@
-/**
- * PR-related utilities for */
+import type { PRInfo } from "../types.js";
 
-/**
- * Information about a GitHub PR extracted from its URL.
- */
-export interface PRInfo {
-  owner: string;
-  repo: string;
-  number: number;
-  url: string;
-}
+export type ParsedPrUrl = Pick<PRInfo, "owner" | "repo" | "number" | "url">;
 
-// GitHub PR URL pattern
 const GITHUB_PR_URL_REGEX = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/;
-// Fallback: extract PR number from end of URL (e.g., /123)
-const GITHUB_PR_NUMBER_REGEX = /\/(\d+)$/;
+const TRAILING_NUMBER_REGEX = /\/(\d+)$/;
 
-/**
- * Parse PR information from a GitHub PR URL.
- * Returns null if the URL is not a valid GitHub PR URL.
- */
-export function parsePrFromUrl(prUrl: string): PRInfo | null {
-  const ghMatch = prUrl.match(GITHUB_PR_URL_REGEX);
-  if (ghMatch) {
-    const [, owner, repo, prNumber] = ghMatch;
+export function parsePrFromUrl(prUrl: string): ParsedPrUrl | null {
+  const githubMatch = prUrl.match(GITHUB_PR_URL_REGEX);
+  if (githubMatch) {
+    const [, owner, repo, prNumber] = githubMatch;
     return {
       owner,
       repo,
@@ -32,13 +17,12 @@ export function parsePrFromUrl(prUrl: string): PRInfo | null {
     };
   }
 
-  // Fallback: try to extract PR number from URL ending (e.g., /pull/123)
-  const numMatch = prUrl.match(GITHUB_PR_NUMBER_REGEX);
-  if (numMatch) {
+  const trailingNumberMatch = prUrl.match(TRAILING_NUMBER_REGEX);
+  if (trailingNumberMatch) {
     return {
       owner: "",
       repo: "",
-      number: parseInt(numMatch[1], 10),
+      number: parseInt(trailingNumberMatch[1], 10),
       url: prUrl,
     };
   }
