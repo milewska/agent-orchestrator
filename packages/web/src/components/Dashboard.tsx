@@ -20,7 +20,6 @@ import type { ProjectInfo } from "@/lib/project-name";
 
 interface DashboardProps {
   initialSessions: DashboardSession[];
-  stats: DashboardStats;
   orchestratorId?: string | null;
   projectId?: string;
   projectName?: string;
@@ -32,7 +31,6 @@ const KANBAN_LEVELS = ["working", "pending", "review", "respond", "merge"] as co
 
 export function Dashboard({
   initialSessions,
-  stats: _stats,
   orchestratorId,
   projectId,
   projectName,

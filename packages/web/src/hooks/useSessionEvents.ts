@@ -66,7 +66,7 @@ export function useSessionEvents(
     const url = project ? `/api/events?project=${encodeURIComponent(project)}` : "/api/events";
     const es = new EventSource(url);
 
-    es.onmessage = async (event: MessageEvent) => {
+    es.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data as string) as { type: string };
         if (data.type === "snapshot") {
@@ -99,6 +99,7 @@ export function useSessionEvents(
                   }
                 },
               )
+              .catch(() => undefined)
               .finally(() => {
                 refreshingRef.current = false;
               });

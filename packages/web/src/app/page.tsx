@@ -9,7 +9,6 @@ import {
   resolveProject,
   enrichSessionPR,
   enrichSessionsMetadata,
-  computeStats,
 } from "@/lib/serialize";
 import { prCache, prCacheKey } from "@/lib/cache";
 import { getPrimaryProjectId, getProjectName, getAllProjects } from "@/lib/project-name";
@@ -104,7 +103,6 @@ export default async function Home(props: { searchParams: Promise<{ project?: st
   return (
     <Dashboard
       initialSessions={sessions}
-      stats={computeStats(sessions)}
       orchestratorId={orchestratorId}
       projectId={projectFilter === "all" ? undefined : projectFilter}
       projectName={projectName}
