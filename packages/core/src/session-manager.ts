@@ -203,6 +203,10 @@ const PR_TRACKING_STATUSES: ReadonlySet<string> = new Set([
   "mergeable",
 ]);
 
+function isOrchestratorSession(sessionId: string, raw?: Record<string, string> | null): boolean {
+  return raw?.["role"] === "orchestrator" || sessionId.endsWith("-orchestrator");
+}
+
 const SEND_RESTORE_READY_TIMEOUT_MS = 5_000;
 const SEND_RESTORE_READY_POLL_MS = 500;
 const SEND_CONFIRMATION_ATTEMPTS = 3;
@@ -506,12 +510,55 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   function findSessionRecord(sessionId: SessionId): LocatedSession | null {
     for (const [projectId, project] of Object.entries(config.projects)) {
       const sessionsDir = getProjectSessionsDir(project);
-      const raw = readMetadataRaw(sessionsDir, sessionId);
+      const raw = repairOrchestratorMetadata(
+        sessionId,
+        sessionsDir,
+        readMetadataRaw(sessionsDir, sessionId),
+      );
       if (!raw) continue;
       return { raw, sessionsDir, project, projectId };
     }
 
     return null;
+  }
+
+  function repairOrchestratorMetadata(
+    sessionId: SessionId,
+    sessionsDir: string,
+    raw: Record<string, string> | null,
+  ): Record<string, string> | null {
+    if (!raw || !isOrchestratorSession(sessionId, raw)) return raw;
+
+    const updates: Partial<Record<string, string>> = {};
+    let repaired: Record<string, string> | null = null;
+
+    const applyUpdate = (key: string, value: string): void => {
+      if (!repaired) repaired = { ...raw };
+      if (value === "") {
+        delete repaired[key];
+      } else {
+        repaired[key] = value;
+      }
+      updates[key] = value;
+    };
+
+    if (raw["role"] !== "orchestrator") {
+      applyUpdate("role", "orchestrator");
+    }
+    if (raw["pr"] !== undefined) {
+      applyUpdate("pr", "");
+    }
+    if (raw["prAutoDetect"] !== undefined) {
+      applyUpdate("prAutoDetect", "");
+    }
+    if (raw["status"] !== undefined && PR_TRACKING_STATUSES.has(raw["status"])) {
+      applyUpdate("status", "working");
+    }
+
+    if (!repaired) return raw;
+
+    updateMetadata(sessionsDir, sessionId, updates);
+    return repaired;
   }
 
   /**
@@ -1130,7 +1177,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       if (!project) return null;
 
       const sessionsDir = getProjectSessionsDir(project);
-      const raw = readMetadataRaw(sessionsDir, sessionName);
+      const raw = repairOrchestratorMetadata(
+        sessionName,
+        sessionsDir,
+        readMetadataRaw(sessionsDir, sessionName),
+      );
       if (!raw) return null;
 
       let createdAt: Date | undefined;
@@ -1185,7 +1236,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     // Try to find the session in any project's sessions directory
     for (const project of Object.values(config.projects)) {
       const sessionsDir = getProjectSessionsDir(project);
-      const raw = readMetadataRaw(sessionsDir, sessionId);
+      const raw = repairOrchestratorMetadata(
+        sessionId,
+        sessionsDir,
+        readMetadataRaw(sessionsDir, sessionId),
+      );
       if (!raw) continue;
 
       // Get file timestamps for createdAt/lastActivityAt
@@ -1680,7 +1735,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     if (!located) throw new SessionNotFoundError(sessionId);
 
     const { raw, sessionsDir, project, projectId } = located;
-    if (raw["role"] === "orchestrator") {
+    if (isOrchestratorSession(sessionId, raw)) {
       throw new Error(`Session ${sessionId} is an orchestrator session and cannot claim PRs`);
     }
 
@@ -1702,8 +1757,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     for (const { sessionName } of listAllSessions(projectId)) {
       if (sessionName === sessionId) continue;
 
-      const otherRaw = readMetadataRaw(sessionsDir, sessionName);
-      if (!otherRaw || otherRaw["role"] === "orchestrator") continue;
+      const otherRaw = repairOrchestratorMetadata(
+        sessionName,
+        sessionsDir,
+        readMetadataRaw(sessionsDir, sessionName),
+      );
+      if (!otherRaw || isOrchestratorSession(sessionName, otherRaw)) continue;
 
       const samePr = otherRaw["pr"] === pr.url;
       const sameBranch =

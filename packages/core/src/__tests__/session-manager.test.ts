@@ -1427,6 +1427,54 @@ describe("get", () => {
     expect(session).not.toBeNull();
     expect(session!.metadata["prAutoDetect"]).toBe("off");
   });
+
+  it("repairs stale orchestrator PR metadata when loading a session", async () => {
+    writeMetadata(sessionsDir, "app-orchestrator", {
+      worktree: "/tmp",
+      branch: "feat/existing-pr",
+      status: "review_pending",
+      project: "my-app",
+      pr: "https://github.com/org/my-app/pull/42",
+      prAutoDetect: "off",
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    const session = await sm.get("app-orchestrator");
+
+    expect(session).not.toBeNull();
+    expect(session!.pr).toBeNull();
+    expect(session!.status).toBe("working");
+    expect(session!.metadata["role"]).toBe("orchestrator");
+    expect(session!.metadata["pr"]).toBeUndefined();
+    expect(session!.metadata["prAutoDetect"]).toBeUndefined();
+
+    const raw = readMetadataRaw(sessionsDir, "app-orchestrator");
+    expect(raw!["role"]).toBe("orchestrator");
+    expect(raw!["pr"]).toBeUndefined();
+    expect(raw!["prAutoDetect"]).toBeUndefined();
+    expect(raw!["status"]).toBe("working");
+  });
+
+  it("does not repair sessions whose ids only contain orchestrator as a substring", async () => {
+    writeMetadata(sessionsDir, "app-orchestrator-helper-1", {
+      worktree: "/tmp",
+      branch: "feat/existing-pr",
+      status: "review_pending",
+      project: "my-app",
+      pr: "https://github.com/org/my-app/pull/42",
+      prAutoDetect: "off",
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    const session = await sm.get("app-orchestrator-helper-1");
+
+    expect(session).not.toBeNull();
+    expect(session!.pr?.number).toBe(42);
+    expect(session!.status).toBe("review_pending");
+    expect(session!.metadata["role"]).toBeUndefined();
+    expect(session!.metadata["pr"]).toBe("https://github.com/org/my-app/pull/42");
+    expect(session!.metadata["prAutoDetect"]).toBe("off");
+  });
 });
 
 describe("kill", () => {
@@ -3595,6 +3643,61 @@ describe("claimPR", () => {
       pr: "https://github.com/org/my-app/pull/42",
     });
     expect(raw!["prAutoDetect"]).toBeUndefined();
+  });
+
+  it("rejects legacy orchestrator sessions by name fallback", async () => {
+    const mockSCM = makeSCM();
+
+    writeMetadata(sessionsDir, "app-orchestrator", {
+      worktree: "/tmp/ws-orchestrator",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      runtimeHandle: JSON.stringify(makeHandle("rt-orchestrator")),
+    });
+
+    const sm = createSessionManager({ config, registry: registryWithSCM(mockSCM) });
+
+    await expect(sm.claimPR("app-orchestrator", "42")).rejects.toThrow(
+      "is an orchestrator session and cannot claim PRs",
+    );
+    expect(mockSCM.resolvePR).not.toHaveBeenCalled();
+
+    const raw = readMetadataRaw(sessionsDir, "app-orchestrator");
+    expect(raw!["role"]).toBe("orchestrator");
+  });
+
+  it("repairs stale orchestrator PR metadata while claiming a worker PR", async () => {
+    const mockSCM = makeSCM();
+
+    writeMetadata(sessionsDir, "app-orchestrator", {
+      worktree: "/tmp/ws-orchestrator",
+      branch: "feat/existing-pr",
+      status: "pr_open",
+      project: "my-app",
+      pr: "https://github.com/org/my-app/pull/42",
+      prAutoDetect: "off",
+      runtimeHandle: JSON.stringify(makeHandle("rt-orchestrator")),
+    });
+
+    writeMetadata(sessionsDir, "app-2", {
+      worktree: "/tmp/ws-app-2",
+      branch: "feat/other-work",
+      status: "working",
+      project: "my-app",
+      runtimeHandle: JSON.stringify(makeHandle("rt-2")),
+    });
+
+    const sm = createSessionManager({ config, registry: registryWithSCM(mockSCM) });
+    const result = await sm.claimPR("app-2", "42");
+
+    expect(result.takenOverFrom).toEqual([]);
+
+    const orchestratorRaw = readMetadataRaw(sessionsDir, "app-orchestrator");
+    expect(orchestratorRaw!["role"]).toBe("orchestrator");
+    expect(orchestratorRaw!["pr"]).toBeUndefined();
+    expect(orchestratorRaw!["prAutoDetect"]).toBeUndefined();
+    expect(orchestratorRaw!["status"]).toBe("working");
   });
 
   it("supports takeover by disabling PR auto-detect on the previous session", async () => {
