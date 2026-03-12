@@ -225,7 +225,8 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
     const recordDisconnect = (outcome: "success" | "failure", reason: string) => {
       if (disconnectRecorded) return;
       disconnectRecorded = true;
-      metrics.activeConnections = activeSessions.size;
+      const activeConnections = activeSessions.size;
+      metrics.activeConnections = activeConnections;
       metrics.totalDisconnects += 1;
       metrics.lastDisconnectedAt = new Date().toISOString();
       metrics.lastDisconnectReason = reason;
@@ -234,6 +235,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
         outcome,
         sessionId,
         reason,
+        data: { activeConnections },
       });
     };
 
@@ -298,7 +300,6 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
         activeSessions.delete(sessionId);
       }
       recordDisconnect("failure", `ws_error:${err.message}`);
-      metrics.activeConnections = activeSessions.size;
       metrics.totalErrors += 1;
       metrics.lastErrorAt = new Date().toISOString();
       metrics.lastErrorReason = err.message;
