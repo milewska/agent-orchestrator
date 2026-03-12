@@ -1995,7 +1995,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           (baselineUpdatedAt !== undefined &&
             updatedAt !== undefined &&
             updatedAt > baselineUpdatedAt) ||
-          (baselineUpdatedAt === undefined && updatedAt !== undefined) ||
           hasQueuedMessage(output) ||
           (output.length > 0 && output !== baselineOutput) ||
           (baselineActivity !== "active" && activity === "active") ||

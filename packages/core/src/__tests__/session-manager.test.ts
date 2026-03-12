@@ -2446,6 +2446,51 @@ describe("send", () => {
       "confirm via updated timestamp",
     );
   });
+
+  it("does not confirm OpenCode delivery from timestamp visibility alone", async () => {
+    const deleteLogPath = join(tmpDir, "opencode-send-no-false-positive.log");
+    const listLogPath = join(tmpDir, "opencode-send-no-false-positive-list.log");
+    const mockBin = installMockOpencodeSequence(
+      [
+        "[]",
+        JSON.stringify([
+          {
+            id: "ses_send_visibility_only",
+            title: "AO:app-1",
+            updated: "2026-01-01T00:00:00.000Z",
+          },
+        ]),
+      ],
+      deleteLogPath,
+      listLogPath,
+    );
+    process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      agent: "opencode",
+      opencodeSessionId: "ses_send_visibility_only",
+      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+    });
+
+    vi.mocked(mockRuntime.getOutput).mockResolvedValue("steady output");
+    vi.mocked(mockAgent.detectActivity).mockReturnValue("idle");
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    const startedAt = Date.now();
+    await sm.send("app-1", "do not confirm on visibility");
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(elapsedMs).toBeGreaterThanOrEqual(2_000);
+    expect(readFileSync(listLogPath, "utf-8").trim().split("\n").length).toBeGreaterThanOrEqual(2);
+    expect(mockRuntime.sendMessage).toHaveBeenCalledWith(
+      makeHandle("rt-1"),
+      "do not confirm on visibility",
+    );
+  });
 });
 
 describe("remap", () => {
