@@ -32,7 +32,6 @@ import {
   type Session,
   type EventPriority,
   type ProjectConfig as _ProjectConfig,
-  isOrchestratorSession,
 } from "./types.js";
 import { updateMetadata } from "./metadata.js";
 import { getSessionsDir } from "./paths.js";
