@@ -5,6 +5,7 @@ const {
   mockRegister,
   mockCreateSessionManager,
   mockRegistry,
+  dockerPlugin,
   tmuxPlugin,
   claudePlugin,
   opencodePlugin,
@@ -29,6 +30,7 @@ const {
     mockRegister,
     mockCreateSessionManager,
     mockRegistry,
+    dockerPlugin: { manifest: { name: "docker" } },
     tmuxPlugin: { manifest: { name: "tmux" } },
     claudePlugin: { manifest: { name: "claude-code" } },
     opencodePlugin: { manifest: { name: "opencode" } },
@@ -57,6 +59,7 @@ vi.mock("@composio/ao-core", () => ({
   TERMINAL_STATUSES: new Set(["merged", "killed"]) as ReadonlySet<string>,
 }));
 
+vi.mock("@composio/ao-plugin-runtime-docker", () => ({ default: dockerPlugin }));
 vi.mock("@composio/ao-plugin-runtime-tmux", () => ({ default: tmuxPlugin }));
 vi.mock("@composio/ao-plugin-agent-claude-code", () => ({ default: claudePlugin }));
 vi.mock("@composio/ao-plugin-agent-opencode", () => ({ default: opencodePlugin }));
@@ -76,6 +79,7 @@ describe("services", () => {
       port: 3000,
       readyThresholdMs: 300_000,
       defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+      runtimes: {},
       projects: {},
       notifiers: {},
       notificationRouting: { urgent: [], action: [], warning: [], info: [] },
@@ -97,6 +101,29 @@ describe("services", () => {
     await getServices();
 
     expect(mockRegister).toHaveBeenCalledWith(opencodePlugin);
+  });
+
+  it("registers the Docker runtime plugin with runtime config", async () => {
+    mockLoadConfig.mockReturnValueOnce({
+      configPath: "/tmp/agent-orchestrator.yaml",
+      port: 3000,
+      readyThresholdMs: 300_000,
+      defaults: { runtime: "docker", agent: "claude-code", workspace: "worktree", notifiers: [] },
+      runtimes: { docker: { image: "node:20-bookworm", dashboardPorts: [3000] } },
+      projects: {},
+      notifiers: {},
+      notificationRouting: { urgent: [], action: [], warning: [], info: [] },
+      reactions: {},
+    });
+
+    const { getServices } = await import("../lib/services");
+
+    await getServices();
+
+    expect(mockRegister).toHaveBeenCalledWith(dockerPlugin, {
+      image: "node:20-bookworm",
+      dashboardPorts: [3000],
+    });
   });
 
   it("caches initialized services across repeated calls", async () => {
