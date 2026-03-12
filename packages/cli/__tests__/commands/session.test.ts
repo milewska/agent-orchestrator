@@ -331,6 +331,24 @@ describe("session ls", () => {
     const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
     expect(output).toContain("https://github.com/org/repo/pull/42");
   });
+
+  it("shows dashboard URL when runtime metadata provides one", async () => {
+    writeFileSync(
+      join(sessionsDir, "app-1"),
+      "branch=fix\nstatus=working\ndashboardUrl=http://127.0.0.1:38123\n",
+    );
+
+    mockTmux.mockImplementation(async (...args: string[]) => {
+      if (args[0] === "list-sessions") return "app-1";
+      return null;
+    });
+    mockGit.mockResolvedValue(null);
+
+    await program.parseAsync(["node", "test", "session", "ls"]);
+
+    const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("http://127.0.0.1:38123");
+  });
 });
 
 describe("session kill", () => {

@@ -68,6 +68,8 @@ export function registerSession(program: Command): void {
           if (s.status) parts.push(chalk.dim(`[${s.status}]`));
           const prUrl = s.metadata["pr"];
           if (prUrl) parts.push(chalk.blue(prUrl));
+          const dashboardUrl = s.metadata["dashboardUrl"];
+          if (dashboardUrl) parts.push(chalk.magenta(dashboardUrl));
 
           console.log(`  ${parts.join("  ")}`);
         }
