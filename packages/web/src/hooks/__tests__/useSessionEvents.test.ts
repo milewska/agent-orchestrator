@@ -246,7 +246,7 @@ describe("useSessionEvents", () => {
       });
 
       expect(fetch).toHaveBeenCalledTimes(1);
-      expect(fetch).toHaveBeenCalledWith("/api/sessions");
+      expect(fetch).toHaveBeenCalledWith("/api/sessions", { signal: expect.any(AbortSignal) });
       expect(result.current.globalPause?.reason).toBe("Pause updated during steady-state SSE");
     });
   });
@@ -470,7 +470,109 @@ describe("useSessionEvents", () => {
       });
 
       expect(fetch).toHaveBeenCalledTimes(1);
-      expect(fetch).toHaveBeenCalledWith("/api/sessions");
+      expect(fetch).toHaveBeenCalledWith("/api/sessions", { signal: expect.any(AbortSignal) });
+    });
+
+    it("ignores stale refresh completions after project changes", async () => {
+      vi.useFakeTimers();
+      const alphaSessions = [makeSession({ id: "alpha-0", projectId: "alpha" })];
+      const betaSessions = [makeSession({ id: "beta-0", projectId: "beta" })];
+      let resolveAlphaFetch: ((value: Response) => void) | null = null;
+
+      vi.mocked(fetch).mockImplementation((input) => {
+        const url = typeof input === "string" ? input : input.toString();
+        if (url.includes("project=alpha")) {
+          return new Promise<Response>((resolve) => {
+            resolveAlphaFetch = resolve;
+          });
+        }
+
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            sessions: [...betaSessions, makeSession({ id: "beta-1", projectId: "beta" })],
+            globalPause: null,
+          }),
+        } as unknown as Response);
+      });
+
+      const { result, rerender } = renderHook(
+        ({ sessions, project }) => useSessionEvents(sessions, null, project),
+        {
+          initialProps: { sessions: alphaSessions, project: "alpha" },
+        },
+      );
+
+      await act(async () => {
+        eventSourceInstances[0].onmessage?.({
+          data: JSON.stringify({
+            type: "snapshot",
+            sessions: [
+              {
+                id: "alpha-0",
+                status: "working",
+                activity: "active",
+                lastActivityAt: alphaSessions[0].lastActivityAt,
+              },
+              {
+                id: "alpha-1",
+                status: "working",
+                activity: "active",
+                lastActivityAt: new Date().toISOString(),
+              },
+            ],
+          }),
+        } as MessageEvent);
+        await vi.advanceTimersByTimeAsync(120);
+      });
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetch).toHaveBeenNthCalledWith(1, "/api/sessions?project=alpha", {
+        signal: expect.any(AbortSignal),
+      });
+
+      rerender({ sessions: betaSessions, project: "beta" });
+
+      await act(async () => {
+        resolveAlphaFetch?.({
+          ok: true,
+          json: async () => ({
+            sessions: [...alphaSessions, makeSession({ id: "alpha-1", projectId: "alpha" })],
+            globalPause: null,
+          }),
+        } as unknown as Response);
+        await Promise.resolve();
+      });
+
+      expect(result.current.sessions).toEqual(betaSessions);
+
+      await act(async () => {
+        eventSourceInstances[1].onmessage?.({
+          data: JSON.stringify({
+            type: "snapshot",
+            sessions: [
+              {
+                id: "beta-0",
+                status: "working",
+                activity: "active",
+                lastActivityAt: betaSessions[0].lastActivityAt,
+              },
+              {
+                id: "beta-1",
+                status: "working",
+                activity: "active",
+                lastActivityAt: new Date().toISOString(),
+              },
+            ],
+          }),
+        } as MessageEvent);
+        await vi.advanceTimersByTimeAsync(120);
+      });
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenNthCalledWith(2, "/api/sessions?project=beta", {
+        signal: expect.any(AbortSignal),
+      });
     });
 
     it("swallows refresh fetch JSON failures without resetting sessions", async () => {
@@ -508,7 +610,9 @@ describe("useSessionEvents", () => {
       });
 
       await waitFor(() => {
-        expect(fetch).toHaveBeenCalledWith("/api/sessions");
+        expect(fetch).toHaveBeenCalledWith("/api/sessions", {
+          signal: expect.any(AbortSignal),
+        });
       });
 
       expect(result.current.sessions).toHaveLength(1);

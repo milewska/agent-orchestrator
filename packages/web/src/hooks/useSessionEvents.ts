@@ -80,6 +80,8 @@ export function useSessionEvents(
   useEffect(() => {
     const url = project ? `/api/events?project=${encodeURIComponent(project)}` : "/api/events";
     const es = new EventSource(url);
+    let disposed = false;
+    let activeRefreshController: AbortController | null = null;
 
     const clearRefreshTimer = () => {
       if (refreshTimerRef.current) {
@@ -89,21 +91,25 @@ export function useSessionEvents(
     };
 
     const scheduleRefresh = () => {
+      if (disposed) return;
       if (refreshingRef.current || refreshTimerRef.current) return;
       refreshTimerRef.current = setTimeout(() => {
+        if (disposed) return;
         refreshTimerRef.current = null;
         refreshingRef.current = true;
         const requestedMembershipKey = pendingMembershipKeyRef.current;
+        const refreshController = new AbortController();
+        activeRefreshController = refreshController;
 
         const sessionsUrl = project
           ? `/api/sessions?project=${encodeURIComponent(project)}`
           : "/api/sessions";
 
-        void fetch(sessionsUrl)
+        void fetch(sessionsUrl, { signal: refreshController.signal })
           .then((res) => (res.ok ? res.json() : null))
           .then(
             (updated: { sessions?: DashboardSession[]; globalPause?: GlobalPauseState } | null) => {
-              if (!updated?.sessions) return;
+              if (disposed || refreshController.signal.aborted || !updated?.sessions) return;
 
               lastRefreshAtRef.current = Date.now();
               dispatch({
@@ -115,6 +121,14 @@ export function useSessionEvents(
           )
           .catch(() => undefined)
           .finally(() => {
+            if (activeRefreshController === refreshController) {
+              activeRefreshController = null;
+            }
+            if (disposed || refreshController.signal.aborted) {
+              refreshingRef.current = false;
+              return;
+            }
+
             refreshingRef.current = false;
 
             if (
@@ -158,6 +172,11 @@ export function useSessionEvents(
     es.onerror = () => undefined;
 
     return () => {
+      disposed = true;
+      activeRefreshController?.abort();
+      activeRefreshController = null;
+      refreshingRef.current = false;
+      pendingMembershipKeyRef.current = null;
       clearRefreshTimer();
       es.close();
     };
