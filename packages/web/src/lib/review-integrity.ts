@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import {
   ReviewResolutionStore,
@@ -35,7 +36,12 @@ export function getReviewResolutionStore(
     try {
       return getReviewIntegrityDir(config.configPath, project.path);
     } catch {
-      return join(project.path, ".ao-review-integrity");
+      return join(
+        homedir(),
+        ".agent-orchestrator",
+        "review-integrity-fallback",
+        basename(project.path),
+      );
     }
   })();
   return new ReviewResolutionStore(dir);

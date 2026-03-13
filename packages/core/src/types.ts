@@ -15,13 +15,13 @@
  *   8. Lifecycle Manager (core, not pluggable)
  */
 
+import type { ReviewThreadSnapshot } from "./review-integrity.js";
+
 // =============================================================================
 // SESSION
 // =============================================================================
 
 /** Unique session identifier, e.g. "my-app-1", "backend-12" */
-import type { ReviewThreadSnapshot } from "./review-integrity.js";
-
 export type SessionId = string;
 
 /** Session lifecycle states */
