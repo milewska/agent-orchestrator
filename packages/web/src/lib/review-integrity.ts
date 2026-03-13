@@ -176,7 +176,6 @@ export async function evaluateMergeGuardForPR(input: {
       ],
     };
 
-    checkConclusions.set("review-integrity", "failed");
     const guard = evaluateMergeGuard({
       integrity,
       requiredChecks,
@@ -195,12 +194,6 @@ export async function evaluateMergeGuardForPR(input: {
     currentHeadSha: input.reverifyOnNewCommits ? headSha : undefined,
     requireEvidenceForBotThreads: input.requireEvidenceForBotThreads,
   });
-
-  if (integrity.status === "pass") {
-    checkConclusions.set("review-integrity", "passed");
-  } else {
-    checkConclusions.set("review-integrity", "failed");
-  }
 
   const guard = evaluateMergeGuard({
     integrity,
