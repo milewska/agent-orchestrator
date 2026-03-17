@@ -44,7 +44,7 @@ interface PtyOptions {
 
 type PtySpawnFn = (
   file: string,
-  args: readonly string[] | string[],
+  args: ReadonlyArray<string> | string,
   options?: PtyOptions,
 ) => IPty;
 
