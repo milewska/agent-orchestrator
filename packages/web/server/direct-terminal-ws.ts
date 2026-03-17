@@ -246,6 +246,7 @@ export function createDirectTerminalServer(
       PATH: process.env.PATH || "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin",
       TERM: "xterm-256color",
       LANG: process.env.LANG || "en_US.UTF-8",
+      NODE_ENV: "production",
       TMPDIR: process.env.TMPDIR || "/tmp",
     } satisfies NodeJS.ProcessEnv;
 
