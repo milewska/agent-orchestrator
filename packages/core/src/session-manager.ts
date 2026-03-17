@@ -12,6 +12,7 @@
  */
 
 import { statSync, existsSync, readdirSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -1435,6 +1436,17 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         /* best effort */
       }
       throw err;
+    }
+
+    // Send system prompt post-launch for orchestrators
+    if (plugins.agent.promptDelivery === "post-launch" && systemPromptFile) {
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+        const systemPromptContent = await readFile(systemPromptFile, "utf-8");
+        await plugins.runtime.sendMessage(handle, systemPromptContent);
+      } catch {
+        // Non-fatal: agent is running but didn't receive the system prompt.
+      }
     }
 
     return session;

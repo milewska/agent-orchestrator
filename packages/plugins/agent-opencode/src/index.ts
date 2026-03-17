@@ -180,15 +180,6 @@ function createOpenCodeAgent(): Agent {
         sharedOptions.push("--model", shellEscape(config.model));
       }
 
-      // Build system prompt value for orchestrators (still inlined in launch command)
-      // Task prompt (config.prompt) is delivered post-launch via runtime.sendMessage()
-      let systemPromptValue: string | undefined;
-      if (config.systemPromptFile) {
-        systemPromptValue = `"$(cat ${shellEscape(config.systemPromptFile)})"`;
-      } else if (config.systemPrompt) {
-        systemPromptValue = shellEscape(config.systemPrompt);
-      }
-
       if (!existingSessionId) {
         const runOptions = [
           "--format",
@@ -200,11 +191,7 @@ function createOpenCodeAgent(): Agent {
         const captureScript = buildSessionIdCaptureScript();
         const fallbackScript = buildSessionLookupScript();
         const runCommand = ["opencode", "run", ...runOptions, "--command", "true"].join(" ");
-        const resumeOptions = [
-          ...(systemPromptValue ? ["--prompt", systemPromptValue] : []),
-          ...sharedOptions,
-        ];
-        const resumeOptionsSuffix = resumeOptions.length > 0 ? ` ${resumeOptions.join(" ")}` : "";
+        const resumeOptionsSuffix = sharedOptions.length > 0 ? ` ${sharedOptions.join(" ")}` : "";
         const missingSessionError = shellEscape(
           `failed to discover OpenCode session ID for AO:${config.sessionId}`,
         );
@@ -213,10 +200,6 @@ function createOpenCodeAgent(): Agent {
           `if [ -z "$SES_ID" ]; then SES_ID=$(opencode session list --format json | node -e ${shellEscape(fallbackScript)} ${shellEscape(`AO:${config.sessionId}`)}); fi`,
           `[ -n "$SES_ID" ] && exec opencode --session "$SES_ID"${resumeOptionsSuffix}; echo ${missingSessionError} >&2; exit 1`,
         ].join("; ");
-      }
-
-      if (systemPromptValue) {
-        options.push("--prompt", systemPromptValue);
       }
 
       options.push(...sharedOptions);
