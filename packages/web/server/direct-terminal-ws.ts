@@ -23,7 +23,7 @@ import { createObserverContext, inferProjectId } from "./terminal-observability.
 // Dynamically import node-pty with graceful fallback for missing prebuilt binaries
 // This allows the dashboard to start on platforms where node-pty doesn't have
 // prebuilt binaries (e.g., linux-arm64 without build tools)
-let ptySpawn: typeof import("node-pty").spawn | null = null;
+let ptySpawn: any = null;
 
 // Type for PTY instance (defined here to avoid top-level await type issues)
 interface IPty {
