@@ -32,24 +32,34 @@ Replace static import with dynamic import wrapped in try-catch:
 
 ```typescript
 let ptySpawn: typeof import("node-pty").spawn | null = null;
+let nodePtyLoadError: string | null = null;
 
 try {
   const pty = await import("node-pty");
   ptySpawn = pty.spawn;
 } catch (err) {
-  console.error("[DirectTerminal] Failed to load node-pty:", err.message);
+  nodePtyLoadError = err instanceof Error ? err.message : String(err);
+  console.error("[DirectTerminal] Failed to load node-pty:", nodePtyLoadError);
+  console.error("[DirectTerminal] This is expected on linux-arm64 without build tools installed.");
   console.error("[DirectTerminal] Falling back to ttyd terminal on port 14800.");
   console.error("[DirectTerminal] To enable direct-terminal, install build tools:");
   console.error("[DirectTerminal]   sudo apt-get install build-essential && pnpm install");
-  // Exit cleanly (code 0) so concurrently doesn't kill the dashboard
-  process.exit(0);
+
+  // Exit cleanly (code 0) when running as main module, but allow tests to import
+  const isMainModule =
+    process.argv[1]?.endsWith("direct-terminal-ws.ts") ||
+    process.argv[1]?.endsWith("direct-terminal-ws.js");
+  if (isMainModule) {
+    process.exit(0);
+  }
 }
 ```
 
-**Key Design Decision:** Exit with code 0 (success) rather than throwing. This ensures:
+**Key Design Decision:** Exit with code 0 (success) only when running as the main module. This ensures:
 - `concurrently` continues running other processes
 - Users can still access the dashboard and ttyd terminal
 - No manual intervention required to start the dashboard
+- Tests can import the module without premature exit
 
 #### 2. Update createDirectTerminalServer Signature
 
@@ -85,10 +95,14 @@ Called only in standalone execution path, not in tests.
 #### 4. Update dev:direct-terminal Script
 
 ```json
-"dev:direct-terminal": "tsx watch server/direct-terminal-ws.ts || true"
+"dev:direct-terminal": "tsx watch server/direct-terminal-ws.ts"
 ```
 
-The `|| true` ensures the script always succeeds even when direct-terminal-ws exits.
+**Key Design Principle:** The process controls its own exit codes:
+- `process.exit(0)` when node-pty is gracefully unavailable (not an error condition)
+- Non-zero exit codes for real errors that should surface to developers
+
+This allows `concurrently` to continue running other processes for graceful failures while surfacing actual bugs.
 
 ## Flow Diagrams
 
@@ -129,7 +143,7 @@ The `|| true` ensures the script always succeeds even when direct-terminal-ws ex
    ↓
 6. Exits with code 0 (clean exit)
    ↓
-7. || true ensures dev:direct-terminal script succeeds
+7. Exit code 0 allows concurrently to continue running other processes
    ↓
 8. concurrently continues running next dev and ttyd
    ↓
@@ -261,7 +275,7 @@ Dashboard shows both terminal options.
 - [x] Exit with code 0 on import failure
 - [x] Update createDirectTerminalServer signature to accept ptySpawnFn
 - [x] Add ensurePtySpawn() non-null check
-- [x] Update dev:direct-terminal script with `|| true`
+- [x] Keep dev:direct-terminal script clean (process controls its exit codes)
 - [x] Add unit tests for graceful failure
 - [x] Update integration tests to pass mock ptySpawn
 - [x] Create design documentation

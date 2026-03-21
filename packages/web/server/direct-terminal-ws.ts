@@ -24,6 +24,7 @@ import { createObserverContext, inferProjectId } from "./terminal-observability.
 // This allows the dashboard to start on platforms where node-pty doesn't have
 // prebuilt binaries (e.g., linux-arm64 without build tools)
 let ptySpawn: unknown = null;
+let nodePtyLoadError: string | null = null;
 
 // Non-null check to ensure ptySpawn is available before use
 // Returns the spawn function, throws if not available
@@ -60,9 +61,10 @@ try {
   const pty = await import("node-pty");
   ptySpawn = pty.spawn;
 } catch (err) {
+  nodePtyLoadError = err instanceof Error ? err.message : String(err);
   console.error(
     "[DirectTerminal] Failed to load node-pty:",
-    err instanceof Error ? err.message : String(err),
+    nodePtyLoadError,
   );
   console.error(
     "[DirectTerminal] This is expected on linux-arm64 without build tools installed.",
@@ -74,8 +76,14 @@ try {
   console.error(
     "[DirectTerminal]   sudo apt-get install build-essential && pnpm install",
   );
-  // Exit cleanly (code 0) so concurrently doesn't kill the dashboard
-  process.exit(0);
+  // Exit cleanly (code 0) when running as main module, but allow tests to import
+  // This ensures concurrently continues running other processes
+  const isMainModule =
+    process.argv[1]?.endsWith("direct-terminal-ws.ts") ||
+    process.argv[1]?.endsWith("direct-terminal-ws.js");
+  if (isMainModule) {
+    process.exit(0);
+  }
 }
 
 interface TerminalSession {
