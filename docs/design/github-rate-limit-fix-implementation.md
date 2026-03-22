@@ -116,13 +116,13 @@ export async function enrichSessionPR(dashboard, scm, pr) {
 
 ### The Three-Part Strategy
 
-This implementation combines **three complementary approaches** to maximize API call reduction:
+This implementation uses **two complementary approaches** to maximize API call reduction; a third is planned as future work:
 
 | Strategy | What It Does | Impact |
 |----------|---------------|---------|
-| **1. Cache** | Store responses with TTL | ~70% reduction |
-| **2. Deduplication** | Share concurrent identical requests | ~15% reduction |
-| **3. Batching** | Combine multiple gh calls into one | ~10% reduction |
+| **1. Cache** (implemented) | Store responses with TTL | ~70% reduction |
+| **2. Deduplication** (implemented) | Share concurrent identical requests | ~15% reduction |
+| **3. Batching** (future work) | Combine multiple gh calls into one | TBD |
 
 ### Architecture Diagram
 
@@ -172,10 +172,8 @@ This implementation combines **three complementary approaches** to maximize API 
 | Operation | TTL | Rationale |
 |-----------|-----|-----------|
 | prChecks | 15s | CI status changes frequently |
-| prView | 30s | PR metadata changes infrequently |
-| reviewDecision | 60s | Reviews don't change often |
-| comments | 60s | Comments don't change often |
-| default | 30s | Conservative default |
+| prView | 30s | PR metadata (including reviewDecision) changes infrequently |
+| default | 30s | Conservative default for api/graphql and unknown operations |
 
 ---
 
@@ -200,14 +198,12 @@ export class GhCache {
   private readonly TTL = {
     prChecks: 15_000,
     prView: 30_000,
-    reviewDecision: 60_000,
-    comments: 60_000,
     default: 30_000,
   };
 
   key(args: string[]): string
   getTTL(args: string[]): number
-  get<T>(key: string, ttlMs: number): T | null
+  get<T>(key: string): T | null
   set<T>(key: string, value: T, ttlMs: number): void
   async dedupe<T>(key: string, fn: () => Promise<T>): Promise<T>
   invalidatePR(pr: { owner: string; repo: string; number: number }): void
@@ -227,7 +223,7 @@ async function cachedGh(args: string[]): Promise<string> {
   const ttl = ghCache.getTTL(args);
 
   // Check cache first
-  const cached = ghCache.get<string>(cacheKey, ttl);
+  const cached = ghCache.get<string>(cacheKey);
   if (cached !== null) {
     return cached;
   }
@@ -286,7 +282,7 @@ async assignPRToCurrentUser(pr: PRInfo): Promise<void> {
 
 ```typescript
 // Export cache for testing and monitoring
-export { ghCache } from "./cache";
+export { ghCache } from "./cache.js";
 ```
 
 ---

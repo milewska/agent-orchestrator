@@ -41,6 +41,11 @@ describe("GhCache", () => {
       expect(cache.getTTL(["unknown"])).toBe(30_000);
       expect(cache.getTTL(["pr", "unknown"])).toBe(30_000);
     });
+
+    it("uses default TTL for api/graphql (reviewDecision, comments endpoints)", () => {
+      // GraphQL calls for reviewDecision and comments use default TTL
+      expect(cache.getTTL(["api", "graphql"])).toBe(30_000);
+    });
   });
 
   describe("get() and set()", () => {
@@ -152,38 +157,86 @@ describe("GhCache", () => {
 
   describe("invalidatePR()", () => {
     it("removes all cache entries for a specific PR", () => {
-      cache.set("gh:pr:owner/repo:123:view", "data1", 60_000);
-      cache.set("gh:pr:owner/repo:123:checks", "data2", 60_000);
-      cache.set("gh:pr:owner/repo:456:view", "data3", 60_000);
-      cache.set("gh:pr:different/repo:123:view", "data4", 60_000);
+      // Generate keys using cache.key() to match production behavior
+      const pr123ViewKey = cache.key(["pr", "view", "123", "--repo", "owner/repo", "--json", "state"]);
+      const pr123ChecksKey = cache.key(["pr", "checks", "123", "--repo", "owner/repo"]);
+      const pr456ViewKey = cache.key(["pr", "view", "456", "--repo", "owner/repo", "--json", "state"]);
+      const differentPr123ViewKey = cache.key(["pr", "view", "123", "--repo", "different/repo", "--json", "state"]);
+
+      cache.set(pr123ViewKey, "data1", 60_000);
+      cache.set(pr123ChecksKey, "data2", 60_000);
+      cache.set(pr456ViewKey, "data3", 60_000);
+      cache.set(differentPr123ViewKey, "data4", 60_000);
 
       cache.invalidatePR({ owner: "owner", repo: "repo", number: 123 });
 
-      expect(cache.get("gh:pr:owner/repo:123:view")).toBeNull();
-      expect(cache.get("gh:pr:owner/repo:123:checks")).toBeNull();
-      expect(cache.get("gh:pr:owner/repo:456:view")).toBe("data3");
-      expect(cache.get("gh:pr:different/repo:123:view")).toBe("data4");
+      expect(cache.get(pr123ViewKey)).toBeNull();
+      expect(cache.get(pr123ChecksKey)).toBeNull();
+      expect(cache.get(pr456ViewKey)).toBe("data3");
+      expect(cache.get(differentPr123ViewKey)).toBe("data4");
+    });
+
+    it("removes GraphQL and REST API entries for the same PR", () => {
+      // GraphQL query key (includes number=123)
+      const graphqlKey = cache.key([
+        "api",
+        "graphql",
+        "-f",
+        "owner=owner",
+        "-f",
+        "name=repo",
+        "-F",
+        "number=123",
+        "-f",
+        "query=some query",
+      ]);
+      // REST API key (includes pulls/123/)
+      const restKey = cache.key(["api", "--method", "GET", "repos/owner/repo/pulls/123/comments"]);
+
+      cache.set(graphqlKey, "graphqlData", 60_000);
+      cache.set(restKey, "restData", 60_000);
+
+      cache.invalidatePR({ owner: "owner", repo: "repo", number: 123 });
+
+      expect(cache.get(graphqlKey)).toBeNull();
+      expect(cache.get(restKey)).toBeNull();
     });
 
     it("does not affect cache if no matching entries", () => {
-      cache.set("gh:api:repos:...", "data", 60_000);
+      const unrelatedKey = cache.key(["api", "repos", "other/owner", "issues"]);
+      cache.set(unrelatedKey, "data", 60_000);
       cache.invalidatePR({ owner: "owner", repo: "repo", number: 123 });
 
-      expect(cache.get("gh:api:repos:...")).toBe("data");
+      expect(cache.get(unrelatedKey)).toBe("data");
     });
   });
 
   describe("invalidateRepo()", () => {
     it("removes all cache entries for a specific repository", () => {
-      cache.set("gh:pr:owner/repo:123:view", "data1", 60_000);
-      cache.set("gh:pr:owner/repo:456:checks", "data2", 60_000);
-      cache.set("gh:pr:other/repo:123:view", "data3", 60_000);
+      // Generate keys using cache.key() to match production behavior
+      const ownerRepoPr123ViewKey = cache.key(["pr", "view", "123", "--repo", "owner/repo", "--json", "state"]);
+      const ownerRepoPr456ChecksKey = cache.key(["pr", "checks", "456", "--repo", "owner/repo"]);
+      const otherRepoPr123ViewKey = cache.key(["pr", "view", "123", "--repo", "other/repo", "--json", "state"]);
+
+      cache.set(ownerRepoPr123ViewKey, "data1", 60_000);
+      cache.set(ownerRepoPr456ChecksKey, "data2", 60_000);
+      cache.set(otherRepoPr123ViewKey, "data3", 60_000);
 
       cache.invalidateRepo("owner", "repo");
 
-      expect(cache.get("gh:pr:owner/repo:123:view")).toBeNull();
-      expect(cache.get("gh:pr:owner/repo:456:checks")).toBeNull();
-      expect(cache.get("gh:pr:other/repo:123:view")).toBe("data3");
+      expect(cache.get(ownerRepoPr123ViewKey)).toBeNull();
+      expect(cache.get(ownerRepoPr456ChecksKey)).toBeNull();
+      expect(cache.get(otherRepoPr123ViewKey)).toBe("data3");
+    });
+
+    it("removes REST API entries for a specific repository", () => {
+      const restKey = cache.key(["api", "--method", "GET", "repos/owner/repo/pulls/123/comments"]);
+
+      cache.set(restKey, "data", 60_000);
+
+      cache.invalidateRepo("owner", "repo");
+
+      expect(cache.get(restKey)).toBeNull();
     });
   });
 

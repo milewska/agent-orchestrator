@@ -1074,7 +1074,9 @@ export function create(): SCM {
   return createGitHubSCM();
 }
 
-// Export cache for testing and monitoring
+// Export ghCache for testing and monitoring. This allows external callers to:
+// - Inspect cache statistics (size, pending requests) for monitoring
+// - Clear cache in test environments via __clearGhCacheForTesting__()
 export { ghCache } from "./cache.js";
 
 export default { manifest, create } satisfies PluginModule<SCM>;
