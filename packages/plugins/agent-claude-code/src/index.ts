@@ -26,7 +26,6 @@ const execFileAsync = promisify(execFile);
 // Get the directory where this module is located (ESM-safe)
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 
-const execFileAsync = promisify(execFile);
 
 function normalizePermissionMode(mode: string | undefined): "permissionless" | "default" | "auto-edit" | "suggest" | undefined {
   if (!mode) return undefined;
