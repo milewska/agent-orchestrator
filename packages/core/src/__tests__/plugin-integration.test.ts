@@ -478,6 +478,11 @@ describe("plugin integration", () => {
       sm = createSessionManager({ config, registry });
       // Clear gh mock to ensure fresh mocks for each test
       ghMock.mockReset();
+      // Clear gh cache to ensure fresh state for each test
+      const scm = registry.get("github");
+      if (scm && "__clearGhCacheForTesting__" in scm) {
+        (scm as any).__clearGhCacheForTesting__();
+      }
     });
 
     function seedSession(overrides: Partial<Session> = {}): Session {
