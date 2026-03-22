@@ -25,7 +25,7 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 // Get the directory where this module is located (ESM-safe)
-const moduleDir = dirname(fileURLToPath(import.meta.url));
+const moduleDir = dirname(dirname(fileURLToPath(import.meta.url)));
 
 
 function normalizePermissionMode(mode: string | undefined): "permissionless" | "default" | "auto-edit" | "suggest" | undefined {
@@ -585,7 +585,7 @@ async function setupHookInWorkspace(workspacePath: string, hookCommand: string):
     await chmod(parserDestPath, 0o755); // Make executable
 
     // Copy shell-quote dependency to .claude/node_modules
-    const shellQuoteSrc = join(moduleDir, "..", "..", "..", "node_modules", "shell-quote");
+    const shellQuoteSrc = join(moduleDir, "node_modules", "shell-quote");
     if (existsSync(shellQuoteSrc)) {
       const shellQuoteDest = join(nodeModulesPath, "shell-quote");
       mkdirSync(nodeModulesPath, { recursive: true });
