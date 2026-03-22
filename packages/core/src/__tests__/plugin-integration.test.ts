@@ -476,6 +476,8 @@ describe("plugin integration", () => {
     beforeEach(() => {
       registry = createTestRegistry();
       sm = createSessionManager({ config, registry });
+      // Clear gh mock to ensure fresh mocks for each test
+      ghMock.mockReset();
     });
 
     function seedSession(overrides: Partial<Session> = {}): Session {
