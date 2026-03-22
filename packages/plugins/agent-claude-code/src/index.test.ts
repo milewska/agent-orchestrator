@@ -696,9 +696,9 @@ describe("getSessionInfo", () => {
 // METADATA_UPDATER_SCRIPT — content verification (unit tests)
 // =========================================================================
 describe("METADATA_UPDATER_SCRIPT content", () => {
-  it("uses inline JavaScript parser via node -e", () => {
-    // The script uses node -e to run the inline parser
-    expect(METADATA_UPDATER_SCRIPT).toContain("node -e");
+  it("uses inline JavaScript parser via node --input-type=module", () => {
+    // The script uses node --input-type=module with here-document to run the inline parser
+    expect(METADATA_UPDATER_SCRIPT).toContain("node --input-type=module -");
     expect(METADATA_UPDATER_SCRIPT).toContain("parseCommands");
   });
 

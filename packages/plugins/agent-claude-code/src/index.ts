@@ -132,7 +132,7 @@ update_metadata_key() {
 # The parser outputs: TYPE:value (e.g., PR_CREATE:https://... or BRANCH:feature)
 parsed_output=""
 if command -v node &>/dev/null; then
-  parsed_output=\$(node -e '
+  parsed_output=\$(node --input-type=module - << 'JSCODE' 2>/dev/null || echo ""
     const command = process.argv[2] || "";
     const output = process.argv[3] || "";
 
@@ -152,7 +152,7 @@ if command -v node &>/dev/null; then
             inQuote = false;
           }
           current += c;
-        } else if (c === '"' || c === "'"\''"'" || c === "'\`") {
+        } else if (c === '"' || c === "\`") {
           inQuote = true;
           quoteChar = c;
           current += c;
@@ -163,7 +163,7 @@ if command -v node &>/dev/null; then
           if (current.trim()) commands.push(current.trim());
           current = "";
           i++;
-        } else if (c === ";" || c === "|" || c === "\\|\\|") {
+        } else if (c === ";" || c === "|" || c === "||") {
           if (current.trim()) commands.push(current.trim());
           current = "";
         } else {
@@ -190,7 +190,7 @@ if command -v node &>/dev/null; then
       // gh pr create
       if (cmd === "gh" && arg1 === "pr" && arg2 === "create") {
         const prUrl = extractPRUrl(out);
-        return prUrl ? \`PR_CREATE:\${prUrl}\` : "NONE";
+        return prUrl ? "PR_CREATE:" + prUrl : "NONE";
       }
 
       // gh pr merge
@@ -200,19 +200,19 @@ if command -v node &>/dev/null; then
 
       // git checkout -b <branch>
       if (cmd === "git" && arg1 === "checkout" && arg2 === "-b" && arg3) {
-        return \`BRANCH:\${arg3}\`;
+        return "BRANCH:" + arg3;
       }
 
       // git switch -c <branch>
       if (cmd === "git" && arg1 === "switch" && arg2 === "-c" && arg3) {
-        return \`BRANCH:\${arg3}\`;
+        return "BRANCH:" + arg3;
       }
 
       // git checkout <feature-branch> (existing branch detection)
       if (cmd === "git" && arg1 === "checkout" && arg2) {
         const branch = arg2;
         if (branch && (branch.includes("/") || branch.includes("-")) && branch !== "HEAD") {
-          return \`BRANCH:\${branch}\`;
+          return "BRANCH:" + branch;
         }
       }
 
@@ -220,7 +220,7 @@ if command -v node &>/dev/null; then
       if (cmd === "git" && arg1 === "switch" && arg2) {
         const branch = arg2;
         if (branch && (branch.includes("/") || branch.includes("-")) && branch !== "HEAD") {
-          return \`BRANCH:\${branch}\`;
+          return "BRANCH:" + branch;
         }
       }
 
@@ -238,8 +238,8 @@ if command -v node &>/dev/null; then
     }
 
     console.log("NONE");
-  ' "\$command" "\$output" 2>/dev/null || echo "")
-fi
+JSCODE
+)
 
 # Handle: PR_CREATE
 if [[ "\$parsed_output" =~ ^PR_CREATE: ]]; then
