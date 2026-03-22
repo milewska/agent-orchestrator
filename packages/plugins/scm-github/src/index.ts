@@ -72,8 +72,11 @@ async function execCli(bin: ExecCommand, args: string[], cwd?: string): Promise<
   }
 }
 
+// Module-level gh function - can be replaced for testing
+let _gh = (args: string[]): Promise<string> => execCli("gh", args);
+
 async function gh(args: string[]): Promise<string> {
-  return execCli("gh", args);
+  return _gh(args);
 }
 
 async function ghInDir(args: string[], cwd: string): Promise<string> {
@@ -104,7 +107,7 @@ async function cachedGh(args: string[]): Promise<string> {
 
   // Cache miss - dedupe concurrent requests and execute
   return ghCache.dedupe(cacheKey, async () => {
-    const result = await gh(args);
+    const result = await _gh(args);
     ghCache.set(cacheKey, result, ttl);
     return result;
   });
@@ -1075,3 +1078,17 @@ export function create(): SCM {
 export { ghCache } from "./cache.js";
 
 export default { manifest, create } satisfies PluginModule<SCM>;
+
+// Export for testing - allows tests to mock the underlying gh function
+export { _gh as __internalGhForTesting__ };
+
+// Export for testing - allows tests to set a custom gh implementation
+export function __setGhImplementationForTesting__(fn: (args: string[]) => Promise<string>) {
+  _gh = fn;
+}
+
+// Export for testing - allows tests to clear the cache between test runs
+export function __clearGhCacheForTesting__() {
+  ghCache.clear();
+}
+
