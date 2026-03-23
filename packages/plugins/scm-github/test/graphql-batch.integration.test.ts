@@ -160,7 +160,7 @@ describe("GraphQL Query Generation", () => {
     expect(query).toMatch(/^query BatchPRs\(/);
     expect(query).toContain("$pr0Owner: String!");
     expect(query).toContain("$pr0Name: String!");
-    expect(query).toContain("$pr0Number: String!");
+    expect(query).toContain("$pr0Number: Int!");
     expect(query).toContain("pr0: repository");
     expect(query).toContain("pullRequest");
 

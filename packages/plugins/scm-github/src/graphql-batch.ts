@@ -50,10 +50,16 @@ const PR_FIELDS = `
           state
           contexts(first: 10) {
             nodes {
-              name
-              context
-              state
-              conclusion
+              ... on CheckRun {
+                name
+                state
+                conclusion
+              }
+              ... on StatusContext {
+                context
+                state
+                conclusion
+              }
             }
           }
         }
@@ -72,14 +78,25 @@ export function generateBatchQuery(prs: PRInfo[]): {
   query: string;
   variables: Record<string, unknown>;
 } {
+  // Handle empty array - return empty query to be handled by caller
+  if (prs.length === 0) {
+    return {
+      query: "",
+      variables: {},
+    };
+  }
+
   const selections: string[] = [];
   const variables: Record<string, unknown> = {};
 
   prs.forEach((pr, i) => {
     const alias = `pr${i}`;
+    // Using inline fragments to handle nullable repository type
     selections.push(`
       ${alias}: repository(owner: $${alias}Owner, name: $${alias}Name) {
-        pullRequest(number: $${alias}Number) { ${PR_FIELDS} }
+        ... on Repository {
+          pullRequest(number: $${alias}Number) { ${PR_FIELDS} }
+        }
       }
     `);
     variables[`${alias}Owner`] = pr.owner;
@@ -88,7 +105,13 @@ export function generateBatchQuery(prs: PRInfo[]): {
   });
 
   const variableDefs = Object.keys(variables)
-    .map((v) => `$${v}: String!`)
+    .map((v) => {
+      // PR numbers should be Int!, all others are String!
+      if (v.endsWith("Number")) {
+        return `$${v}: Int!`;
+      }
+      return `$${v}: String!`;
+    })
     .join(", ");
 
   return {
@@ -101,11 +124,18 @@ export function generateBatchQuery(prs: PRInfo[]): {
 
 /**
  * Execute a GraphQL batch query using the gh CLI.
+ *
+ * @throws Error if the query fails with GraphQL errors or parsing issues.
  */
 async function executeBatchQuery(
   prs: PRInfo[],
 ): Promise<Record<string, unknown>> {
   const { query, variables } = generateBatchQuery(prs);
+
+  // Handle empty array - no query needed
+  if (!query || prs.length === 0) {
+    return {};
+  }
 
   // Build gh CLI arguments with variables
   const varArgs: string[] = [];
@@ -124,7 +154,17 @@ async function executeBatchQuery(
     timeout: 30_000,
   });
 
-  const result: { data?: Record<string, unknown> } = JSON.parse(stdout.trim());
+  const result: {
+    data?: Record<string, unknown>;
+    errors?: Array<{ message: string; path?: string[] }>;
+  } = JSON.parse(stdout.trim());
+
+  // Check for GraphQL errors and throw to allow individual API fallback
+  if (result.errors && result.errors.length > 0) {
+    const errorMsg = result.errors.map((e) => e.message).join("; ");
+    throw new Error(`GraphQL query errors: ${errorMsg}`);
+  }
+
   return (result.data ?? {}) as Record<string, unknown>;
 }
 
@@ -210,10 +250,7 @@ function parsePRState(state: unknown): PRState {
 /**
  * Extract enrichment data from a single PR result.
  */
-function extractPREnrichment(
-  prKey: string,
-  pullRequest: unknown,
-): PREnrichmentData | null {
+function extractPREnrichment(pullRequest: unknown): PREnrichmentData | null {
   if (!pullRequest || typeof pullRequest !== "object") {
     return null;
   }
@@ -269,8 +306,13 @@ function extractPREnrichment(
   if (isDraft) blockers.push("PR is still a draft");
 
   // Determine if mergeable based on all conditions
+  // Merged/closed PRs are not considered mergeable for new changes
+  const isMergeableState = state === "open";
+  // Treat ciStatus "none" as passing (no CI checks configured), matching individual getMergeability
+  const ciPassing = ciStatus === "passing" || ciStatus === "none";
   const mergeReady =
-    ciStatus === "passing" &&
+    isMergeableState &&
+    ciPassing &&
     (reviewDecision === "approved" || reviewDecision === "none") &&
     !hasConflicts &&
     !isBehind &&
@@ -324,35 +366,19 @@ export async function enrichSessionsPRBatch(
         const repositoryData = data[alias] as { pullRequest?: unknown } | undefined;
 
         if (repositoryData?.pullRequest) {
-          const enrichment = extractPREnrichment(prKey, repositoryData.pullRequest);
+          const enrichment = extractPREnrichment(repositoryData.pullRequest);
           if (enrichment) {
             result.set(prKey, enrichment);
           }
-        } else {
-          // PR not found (deleted/closed/permission issue)
-          // We'll return null for this PR - caller should handle gracefully
-          result.set(prKey, {
-            state: "closed",
-            ciStatus: "none",
-            reviewDecision: "none",
-            mergeable: false,
-            blockers: ["PR not accessible"],
-          });
         }
+        // PR not found (deleted/closed/permission issue)
+        // Don't add to cache - let individual API fallback handle it
       });
     } catch (err) {
-      // Batch failed - mark all PRs in this batch with error data
+      // Batch failed - throw to allow individual API fallback
+      // instead of populating fake data that would block fallback
       const errorMsg = err instanceof Error ? err.message : String(err);
-      batch.forEach((pr) => {
-        const prKey = `${pr.owner}/${pr.repo}#${pr.number}`;
-        result.set(prKey, {
-          state: "open",
-          ciStatus: "none",
-          reviewDecision: "none",
-          mergeable: false,
-          blockers: [`Batch query failed: ${errorMsg}`],
-        });
-      });
+      throw new Error(`Batch enrichment failed: ${errorMsg}`);
     }
   }
 

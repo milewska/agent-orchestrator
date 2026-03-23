@@ -29,7 +29,7 @@ describe("GraphQL Batch Query Generation", () => {
 
     const { query, variables } = generateBatchQuery(prs);
 
-    expect(query).toContain("query BatchPRs($pr0Owner: String!, $pr0Name: String!, $pr0Number: String!)");
+    expect(query).toContain("query BatchPRs($pr0Owner: String!, $pr0Name: String!, $pr0Number: Int!)");
     expect(query).toContain("pr0: repository(owner: $pr0Owner, name: $pr0Name)");
     expect(query).toContain("pullRequest(number: $pr0Number)");
     expect(variables).toEqual({
@@ -100,7 +100,7 @@ describe("GraphQL Batch Query Generation", () => {
   it("should handle empty PR array", () => {
     const { query, variables } = generateBatchQuery([]);
 
-    expect(query).toBe("query BatchPRs() {\n      \n    }");
+    expect(query).toBe("");
     expect(variables).toEqual({});
   });
 
@@ -365,7 +365,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#1", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result).not.toBeNull();
     expect(result?.state).toBe("open");
@@ -410,7 +410,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#2", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result?.ciStatus).toBe("failing");
     expect(result?.mergeable).toBe(false);
@@ -442,7 +442,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#3", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result?.reviewDecision).toBe("changes_requested");
     expect(result?.mergeable).toBe(false);
@@ -474,7 +474,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#4", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result?.hasConflicts).toBe(true);
     expect(result?.mergeable).toBe(false);
@@ -506,7 +506,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#5", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result?.isBehind).toBe(true);
     expect(result?.mergeable).toBe(false);
@@ -538,7 +538,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#6", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result?.isDraft).toBe(true);
     expect(result?.mergeable).toBe(false);
@@ -546,10 +546,10 @@ describe("PR Enrichment Data Extraction", () => {
   });
 
   it("should return null for invalid pull request data", () => {
-    expect(extractPREnrichment("test/repo#7", null)).toBeNull();
-    expect(extractPREnrichment("test/repo#8", undefined)).toBeNull();
-    expect(extractPREnrichment("test/repo#9", {})).toBeNull();
-    expect(extractPREnrichment("test/repo#10", { invalid: "data" })).toBeNull();
+    expect(extractPREnrichment(null)).toBeNull();
+    expect(extractPREnrichment(undefined)).toBeNull();
+    expect(extractPREnrichment({})).toBeNull();
+    expect(extractPREnrichment({ invalid: "data" })).toBeNull();
   });
 
   it("should handle merged PR state", () => {
@@ -577,7 +577,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#11", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result?.state).toBe("merged");
   });
@@ -607,7 +607,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#12", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result?.state).toBe("closed");
   });
@@ -637,7 +637,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#13", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result?.reviewDecision).toBe("none");
     expect(result?.mergeable).toBe(true); // "none" is treated as approved for merge readiness
@@ -668,7 +668,7 @@ describe("PR Enrichment Data Extraction", () => {
       },
     };
 
-    const result = extractPREnrichment("test/repo#14", pullRequest);
+    const result = extractPREnrichment(pullRequest);
 
     expect(result?.reviewDecision).toBe("pending");
     expect(result?.mergeable).toBe(false);
