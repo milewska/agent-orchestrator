@@ -50,10 +50,15 @@ const PR_FIELDS = `
           state
           contexts(first: 10) {
             nodes {
-              name
-              context
-              state
-              conclusion
+              ... on CheckRun {
+                name
+                conclusion
+                status
+              }
+              ... on StatusContext {
+                context
+                state
+              }
             }
           }
         }
@@ -87,8 +92,8 @@ export function generateBatchQuery(prs: PRInfo[]): {
     variables[`${alias}Number`] = pr.number;
   });
 
-  const variableDefs = Object.keys(variables)
-    .map((v) => `$${v}: String!`)
+  const variableDefs = Object.entries(variables)
+    .map(([key, value]) => `$${key}: ${typeof value === "number" ? "Int!" : "String!"}`)
     .join(", ");
 
   return {
@@ -144,32 +149,45 @@ function parseCIState(
   // Check individual contexts for detailed state - this takes precedence over
   // the top-level state because contexts provide more granular information
   const contexts = rollup["contexts"] as
-    | { nodes?: Array<{ state?: string; conclusion?: string }> }
+    | { nodes?: Array<{ state?: string; status?: string; conclusion?: string }> }
     | undefined;
   if (contexts?.nodes && contexts.nodes.length > 0) {
     const hasFailing = contexts.nodes.some(
-      (c) =>
-        c.conclusion === "FAILURE" ||
-        c.conclusion === "TIMED_OUT" ||
-        c.conclusion === "ACTION_REQUIRED" ||
-        c.conclusion === "CANCELLED" ||
-        c.conclusion === "ERROR" ||
-        c.state === "FAILURE",
+      (c) => {
+        const contextState = (c.state ?? c.status ?? "").toUpperCase();
+        const conclusion = (c.conclusion ?? "").toUpperCase();
+        return (
+          conclusion === "FAILURE" ||
+          conclusion === "TIMED_OUT" ||
+          conclusion === "ACTION_REQUIRED" ||
+          conclusion === "CANCELLED" ||
+          conclusion === "ERROR" ||
+          contextState === "FAILURE"
+        );
+      },
     );
     if (hasFailing) return "failing";
 
     const hasPending = contexts.nodes.some(
-      (c) =>
-        c.state === "PENDING" ||
-        c.state === "QUEUED" ||
-        c.state === "IN_PROGRESS" ||
-        c.state === "EXPECTED" ||
-        c.state === "WAITING",
+      (c) => {
+        const contextState = (c.state ?? c.status ?? "").toUpperCase();
+        return (
+          contextState === "PENDING" ||
+          contextState === "QUEUED" ||
+          contextState === "IN_PROGRESS" ||
+          contextState === "EXPECTED" ||
+          contextState === "WAITING"
+        );
+      },
     );
     if (hasPending) return "pending";
 
     const hasPassing = contexts.nodes.some(
-      (c) => c.conclusion === "SUCCESS" || c.state === "SUCCESS",
+      (c) => {
+        const contextState = (c.state ?? c.status ?? "").toUpperCase();
+        const conclusion = (c.conclusion ?? "").toUpperCase();
+        return conclusion === "SUCCESS" || contextState === "SUCCESS";
+      },
     );
     if (hasPassing) return "passing";
   }
@@ -270,7 +288,7 @@ function extractPREnrichment(
 
   // Determine if mergeable based on all conditions
   const mergeReady =
-    ciStatus === "passing" &&
+    (ciStatus === "passing" || ciStatus === "none") &&
     (reviewDecision === "approved" || reviewDecision === "none") &&
     !hasConflicts &&
     !isBehind &&
@@ -340,19 +358,8 @@ export async function enrichSessionsPRBatch(
           });
         }
       });
-    } catch (err) {
-      // Batch failed - mark all PRs in this batch with error data
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      batch.forEach((pr) => {
-        const prKey = `${pr.owner}/${pr.repo}#${pr.number}`;
-        result.set(prKey, {
-          state: "open",
-          ciStatus: "none",
-          reviewDecision: "none",
-          mergeable: false,
-          blockers: [`Batch query failed: ${errorMsg}`],
-        });
-      });
+    } catch {
+      // Batch failed - leave PRs uncached so caller can fall back to individual API calls.
     }
   }
 

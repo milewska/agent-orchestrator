@@ -2,7 +2,7 @@
  * Unit tests for GraphQL batch PR enrichment.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   generateBatchQuery,
   MAX_BATCH_SIZE,
@@ -29,7 +29,7 @@ describe("GraphQL Batch Query Generation", () => {
 
     const { query, variables } = generateBatchQuery(prs);
 
-    expect(query).toContain("query BatchPRs($pr0Owner: String!, $pr0Name: String!, $pr0Number: String!)");
+    expect(query).toContain("query BatchPRs($pr0Owner: String!, $pr0Name: String!, $pr0Number: Int!)");
     expect(query).toContain("pr0: repository(owner: $pr0Owner, name: $pr0Name)");
     expect(query).toContain("pullRequest(number: $pr0Number)");
     expect(variables).toEqual({
@@ -84,6 +84,9 @@ describe("GraphQL Batch Query Generation", () => {
     expect(query).toContain("$pr0Owner: String!");
     expect(query).toContain("$pr1Owner: String!");
     expect(query).toContain("$pr2Owner: String!");
+    expect(query).toContain("$pr0Number: Int!");
+    expect(query).toContain("$pr1Number: Int!");
+    expect(query).toContain("$pr2Number: Int!");
 
     // Check variables contain all PR data
     expect(variables.pr0Owner).toBe("octocat");
@@ -132,6 +135,8 @@ describe("GraphQL Batch Query Generation", () => {
     expect(query).toContain("reviews");
     expect(query).toContain("commits");
     expect(query).toContain("statusCheckRollup");
+    expect(query).toContain("... on CheckRun");
+    expect(query).toContain("... on StatusContext");
   });
 
   it("should use sequential numeric aliases", () => {
@@ -643,6 +648,55 @@ describe("PR Enrichment Data Extraction", () => {
     expect(result?.mergeable).toBe(true); // "none" is treated as approved for merge readiness
   });
 
+  it("should treat missing CI checks as mergeable when other conditions pass", () => {
+    const pullRequest = {
+      title: "No CI configured",
+      state: "OPEN",
+      additions: 12,
+      deletions: 4,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: { nodes: [] },
+    };
+
+    const result = extractPREnrichment("test/repo#15", pullRequest);
+
+    expect(result?.ciStatus).toBe("none");
+    expect(result?.reviewDecision).toBe("none");
+    expect(result?.mergeable).toBe(true);
+  });
+
+  it("treats PRs with no CI checks as mergeable when otherwise ready", () => {
+    const pullRequest = {
+      title: "No CI configured",
+      state: "OPEN",
+      additions: 12,
+      deletions: 3,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "APPROVED",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: null,
+            },
+          },
+        ],
+      },
+    };
+
+    const result = extractPREnrichment("test/repo#15", pullRequest);
+
+    expect(result?.ciStatus).toBe("none");
+    expect(result?.mergeable).toBe(true);
+  });
+
   it("should handle PR with pending reviews", () => {
     const pullRequest = {
       title: "Pending review",
@@ -679,5 +733,40 @@ describe("PR Enrichment Data Extraction", () => {
 describe("MAX_BATCH_SIZE constant", () => {
   it("should be defined as 25", () => {
     expect(MAX_BATCH_SIZE).toBe(25);
+  });
+});
+
+describe("Batch execution error handling", () => {
+  it("does not fabricate enrichment data when a batch query fails", async () => {
+    const ghMock = vi.fn().mockRejectedValue(new Error("GraphQL validation failed"));
+
+    vi.resetModules();
+    vi.doMock("node:child_process", () => {
+      const execFile = Object.assign(vi.fn(), {
+        [Symbol.for("nodejs.util.promisify.custom")]: ghMock,
+      });
+      return { execFile };
+    });
+
+    const { enrichSessionsPRBatch } = await import("../src/graphql-batch.js");
+
+    const result = await enrichSessionsPRBatch([
+      {
+        owner: "octocat",
+        repo: "hello-world",
+        number: 42,
+        url: "https://github.com/octocat/hello-world/pull/42",
+        title: "Test PR",
+        branch: "feature/test",
+        baseBranch: "main",
+        isDraft: false,
+      },
+    ]);
+
+    expect(result.size).toBe(0);
+    expect(result.has("octocat/hello-world#42")).toBe(false);
+
+    vi.doUnmock("node:child_process");
+    vi.resetModules();
   });
 });

@@ -6,7 +6,7 @@
  *   npm run test:integration
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { enrichSessionsPRBatch, generateBatchQuery } from "../src/graphql-batch.js";
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
@@ -166,7 +166,7 @@ describe("GraphQL Query Generation", () => {
     expect(query).toMatch(/^query BatchPRs\(/);
     expect(query).toContain("$pr0Owner: String!");
     expect(query).toContain("$pr0Name: String!");
-    expect(query).toContain("$pr0Number: String!");
+    expect(query).toContain("$pr0Number: Int!");
     expect(query).toContain("pr0: repository");
     expect(query).toContain("pullRequest");
 
@@ -235,5 +235,25 @@ describe("GraphQL Query Generation", () => {
     for (const field of requiredFields) {
       expect(query).toContain(field);
     }
+  });
+
+  it("should query status check union fields using inline fragments", () => {
+    const prs = [
+      {
+        owner: "test",
+        repo: "test",
+        number: 1,
+        url: "https://github.com/test/test/pull/1",
+        title: "Test",
+        branch: "test",
+        baseBranch: "main",
+        isDraft: false,
+      },
+    ];
+
+    const { query } = generateBatchQuery(prs);
+
+    expect(query).toContain("... on CheckRun");
+    expect(query).toContain("... on StatusContext");
   });
 });
