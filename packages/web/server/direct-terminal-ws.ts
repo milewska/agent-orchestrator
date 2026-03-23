@@ -3,7 +3,7 @@
  * Connects browser xterm.js directly to tmux sessions via WebSocket.
  *
  * This bypasses ttyd and gives us control over terminal initialization,
- * allowing us to implement the XDA (Extended Device Attributes) handler
+ * allowing us to implement XDA (Extended Device Attributes) handler
  * that tmux requires for clipboard support.
  */
 
@@ -14,15 +14,31 @@ import { homedir, userInfo } from "node:os";
 import { createCorrelationId } from "@composio/ao-core";
 
 // node-pty is an optionalDependency — it requires native compilation and may
-// not be available on all platforms. Load it dynamically so the rest of the
+// not be available on all platforms. Load it dynamically so that rest of
 // server can still start even if node-pty is missing.
-/* eslint-disable @typescript-eslint/consistent-type-imports -- node-pty is optional; static import would crash if missing */
-type IPty = import("node-pty").IPty;
-let ptySpawn: typeof import("node-pty").spawn | undefined;
-/* eslint-enable @typescript-eslint/consistent-type-imports */
+let ptySpawn:
+  | ((
+      file: string,
+      args: readonly string[],
+      options: {
+        name: string;
+        cols: number;
+        rows: number;
+        cwd: string;
+        env: Record<string, string>;
+      },
+    ) => {
+      onData: (data: string) => void;
+      write: (data: string) => void;
+      resize: (cols: number, rows: number) => void;
+      kill: () => void;
+      onExit: (cb: (data: { exitCode: number }) => void) => void;
+    })
+  | undefined = undefined;
+
 try {
   const nodePty = await import("node-pty");
-  ptySpawn = nodePty.spawn;
+  ptySpawn = nodePty.spawn as any;
 } catch {
   console.warn("[DirectTerminal] node-pty not available — direct terminal will be disabled.");
   console.warn("[DirectTerminal] Install it with: npm install node-pty");
@@ -32,7 +48,13 @@ import { createObserverContext, inferProjectId } from "./terminal-observability.
 
 interface TerminalSession {
   sessionId: string;
-  pty: IPty;
+  pty: {
+    onData: (data: string) => void;
+    write: (data: string) => void;
+    resize: (cols: number, rows: number) => void;
+    kill: () => void;
+    onExit: (cb: (data: { exitCode: number }) => void) => void;
+  };
   ws: WebSocket;
 }
 
@@ -56,7 +78,7 @@ export interface DirectTerminalServer {
 }
 
 /**
- * Create the direct terminal WebSocket server.
+ * Create direct terminal WebSocket server.
  * Separated from listen() so tests can control lifecycle.
  */
 export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalServer {
@@ -177,7 +199,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       console.error(`[DirectTerminal] Failed to set mouse mode for ${tmuxSessionId}:`, err.message);
     });
 
-    // Hide the green status bar for cleaner appearance
+    // Hide green status bar for cleaner appearance
     const statusProc = spawn(TMUX, ["set-option", "-t", tmuxSessionId, "status", "off"]);
     statusProc.on("error", (err) => {
       console.error(
@@ -199,7 +221,7 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
       TMPDIR: process.env.TMPDIR || "/tmp",
     };
 
-    let pty: IPty;
+    let pty: TerminalSession["pty"];
     try {
       console.log(`[DirectTerminal] Spawning PTY: tmux attach-session -t ${tmuxSessionId}`);
 
