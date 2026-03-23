@@ -335,6 +335,8 @@ function getAlerts(session: DashboardSession): Alert[] {
       label: "changes requested",
       className: "border-[rgba(239,68,68,0.3)] bg-[rgba(239,68,68,0.08)] text-[var(--color-status-error)]",
       url: pr.url,
+      actionLabel: "ask to address",
+      actionMessage: `Please address the requested changes on ${pr.url}`,
     });
   } else if (!pr.isDraft && (pr.reviewDecision === "pending" || pr.reviewDecision === "none")) {
     alerts.push({
