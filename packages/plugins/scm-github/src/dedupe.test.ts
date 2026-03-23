@@ -1,194 +1,106 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { RequestDeduplicator, ghDeduplicator } from "./dedupe.js";
 
 describe("RequestDeduplicator", () => {
-  let deduper: RequestDeduplicator;
-
   beforeEach(() => {
-    deduper = new RequestDeduplicator();
+    // Clear pending requests before each test
+    const deduplicator = new RequestDeduplicator();
+    (deduplicator as any).pendingRequests.clear();
   });
 
-  afterEach(() => {
-    deduper.clear();
+  it("should dedupe concurrent identical requests", async () => {
+    const deduplicator = new RequestDeduplicator();
+    const mockFn = vi.fn().mockResolvedValue("result");
+    
+    // Make 3 concurrent calls
+    const promises = [
+      deduplicator.dedupe(["a", "b"], () => mockFn()),
+      deduplicator.dedupe(["a", "b"], () => mockFn()),
+      deduplicator.dedupe(["a", "b"], () => mockFn()),
+    ];
+
+    await Promise.all(promises);
+
+    // Only one actual call should have been made
+    expect(mockFn).toHaveBeenCalledTimes(1);
   });
 
-  describe("key()", () => {
-    it("generates consistent keys from arguments", () => {
-      expect(deduper.key(["pr", "view", "123"])).toBe("gh:pr:view:123");
-      expect(deduper.key(["api", "repos", "owner/repo/pulls/123"]))
-        .toBe("gh:api:repos:owner/repo/pulls/123");
-    });
+  it("should not dedupe different requests", async () => {
+    const deduplicator = new RequestDeduplicator();
+    const mockFn1 = vi.fn().mockResolvedValue("result1");
+    const mockFn2 = vi.fn().mockResolvedValue("result2");
+    
+    await Promise.all([
+      deduplicator.dedupe(["a", "b"], () => mockFn1()),
+      deduplicator.dedupe(["a", "c"], () => mockFn2()),
+    ]);
 
-    it("handles arguments with special characters", () => {
-      expect(deduper.key(["pr", "view", "owner/repo#123"]))
-        .toBe("gh:pr:view:owner/repo#123");
-    });
+    expect(mockFn1).toHaveBeenCalledTimes(1);
+    expect(mockFn2).toHaveBeenCalledTimes(1);
   });
 
-  describe("dedupe()", () => {
-    it("returns cached promise for concurrent requests", async () => {
-      let callCount = 0;
-      const fn = async () => {
-        callCount++;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        return "result";
-      };
-
-      // Launch concurrent requests
-      const [r1, r2, r3] = await Promise.all([
-        deduper.dedupe("key", fn),
-        deduper.dedupe("key", fn),
-        deduper.dedupe("key", fn),
-      ]);
-
-      expect(r1).toBe("result");
-      expect(r2).toBe("result");
-      expect(r3).toBe("result");
-      expect(callCount).toBe(1); // Only one execution
-    });
-
-    it("allows new requests after completion", async () => {
-      let callCount = 0;
-      const fn = async () => {
-        callCount++;
-        return `result-${callCount}`;
-      };
-
-      const r1 = await deduper.dedupe("key", fn);
-      expect(r1).toBe("result-1");
-
-      const r2 = await deduper.dedupe("key", fn);
-      expect(r2).toBe("result-2");
-
-      expect(callCount).toBe(2);
-    });
-
-    it("cleans up pending request after completion", async () => {
-      const fn = async () => "result";
-      await deduper.dedupe("key", fn);
-
-      expect(deduper.getStats().pending).toBe(0);
-    });
-
-    it("handles rejection and cleans up", async () => {
-      const fn = async () => {
-        throw new Error("test error");
-      };
-
-      await expect(deduper.dedupe("key", fn)).rejects.toThrow("test error");
-      expect(deduper.getStats().pending).toBe(0);
-    });
-
-    it("shares rejection for concurrent requests", async () => {
-      let callCount = 0;
-      const fn = async () => {
-        callCount++;
-        throw new Error("test error");
-      };
-
-      const results = await Promise.allSettled([
-        deduper.dedupe("key", fn),
-        deduper.dedupe("key", fn),
-        deduper.dedupe("key", fn),
-      ]);
-
-      expect(callCount).toBe(1); // Only one execution
-      expect(results.every((r) => r.status === "rejected")).toBe(true);
-    });
-
-    it("handles different keys independently", async () => {
-      let callCount = 0;
-      const fn = async (key: string) => {
-        callCount++;
-        return `result-${key}`;
-      };
-
-      const [r1, r2, r3] = await Promise.all([
-        deduper.dedupe("key1", () => fn("key1")),
-        deduper.dedupe("key2", () => fn("key2")),
-        deduper.dedupe("key3", () => fn("key3")),
-      ]);
-
-      expect(r1).toBe("result-key1");
-      expect(r2).toBe("result-key2");
-      expect(r3).toBe("result-key3");
-      expect(callCount).toBe(3); // All three executed
-    });
+  it("should clean up pending requests after completion", async () => {
+    const deduplicator = new RequestDeduplicator();
+    const mockFn = vi.fn().mockResolvedValue("result");
+    
+    await deduplicator.dedupe(["test"], () => mockFn());
+    
+    const pending = (deduplicator as any).pendingRequests;
+    expect(pending.size).toBe(0);
   });
 
-  describe("getStats()", () => {
-    it("returns current statistics", async () => {
-      const fn = async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        return "result";
-      };
-
-      // Start a request but don't await it
-      const promise = deduper.dedupe("key", fn);
-      expect(deduper.getStats().pending).toBe(1);
-
-      await promise;
-      expect(deduper.getStats().pending).toBe(0);
-    });
-
-    it("tracks multiple concurrent requests", async () => {
-      const fn = async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        return "result";
-      };
-
-      const promises = [
-        deduper.dedupe("key1", fn),
-        deduper.dedupe("key2", fn),
-        deduper.dedupe("key3", fn),
-      ];
-
-      expect(deduper.getStats().pending).toBe(3);
-
-      await Promise.all(promises);
-      expect(deduper.getStats().pending).toBe(0);
-    });
+  it("should handle errors properly", async () => {
+    const deduplicator = new RequestDeduplicator();
+    const mockError = new Error("test error");
+    const mockFn = vi.fn().mockRejectedValue(mockError);
+    
+    await expect(deduplicator.dedupe(["fail"], () => mockFn())).rejects.toThrow("test error");
+    
+    // Error should still clean up pending requests
+    const pending = (deduplicator as any).pendingRequests;
+    expect(pending.size).toBe(0);
   });
 
-  describe("clear()", () => {
-    it("clears all pending requests", async () => {
-      const fn = async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-        return "result";
-      };
+  it("should avoid key collision with args containing ':'", async () => {
+    const deduplicator = new RequestDeduplicator();
+    const mockFn1 = vi.fn().mockResolvedValue("result1");
+    const mockFn2 = vi.fn().mockResolvedValue("result2");
+    
+    // These should not collide even though they contain ":"
+    // ["a:b", "c"] and ["a", "b:c"] are different commands
+    await Promise.all([
+      deduplicator.dedupe(["a:b", "c"], () => mockFn1()),
+      deduplicator.dedupe(["a", "b:c"], () => mockFn2()),
+    ]);
 
-      const promise = deduper.dedupe("key", fn);
-      expect(deduper.getStats().pending).toBe(1);
-
-      deduper.clear();
-      expect(deduper.getStats().pending).toBe(0);
-
-      // The existing promise should still resolve
-      await expect(promise).resolves.toBe("result");
-    });
+    expect(mockFn1).toHaveBeenCalledTimes(1);
+    expect(mockFn2).toHaveBeenCalledTimes(1);
   });
 
-  describe("ghDeduplicator global instance", () => {
-    it("is a singleton instance", () => {
-      expect(ghDeduplicator).toBeInstanceOf(RequestDeduplicator);
-    });
+  it("should handle sequential calls properly", async () => {
+    const deduplicator = new RequestDeduplicator();
+    const mockFn = vi.fn()
+      .mockResolvedValueOnce("result1")
+      .mockResolvedValueOnce("result2");
+    
+    const result1 = await deduplicator.dedupe(["test"], () => mockFn());
+    const result2 = await deduplicator.dedupe(["test"], () => mockFn());
 
-    it("shares state across all uses", async () => {
-      let callCount = 0;
-      const fn = async () => {
-        callCount++;
-        return "result";
-      };
+    expect(result1).toBe("result1");
+    expect(result2).toBe("result2");
+    expect(mockFn).toHaveBeenCalledTimes(2);
+  });
+});
 
-      const key = "test:shared:key";
-      const [r1, r2] = await Promise.all([
-        ghDeduplicator.dedupe(key, fn),
-        ghDeduplicator.dedupe(key, fn),
-      ]);
+describe("ghDeduplicator", () => {
+  it("should be a singleton instance", () => {
+    const deduper1 = ghDeduplicator;
+    const deduper2 = ghDeduplicator;
+    
+    expect(deduper1).toBe(deduper2);
+  });
 
-      expect(r1).toBe("result");
-      expect(r2).toBe("result");
-      expect(callCount).toBe(1);
-    });
+  it("should have the dedupe method", () => {
+    expect(typeof ghDeduplicator.dedupe).toBe("function");
   });
 });

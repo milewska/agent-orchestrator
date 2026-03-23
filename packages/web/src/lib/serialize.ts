@@ -168,12 +168,17 @@ export async function enrichSessionPR(
   const [summaryR, checksR, reviewR, mergeR, commentsR] = results;
 
   // Get CI summary from the checks we already fetched to avoid duplicate API call
+  // Wrap both branches in try/catch to handle potential errors from any SCM implementation
   let ciR: PromiseSettledResult<CIStatus>;
   if (checksR.status === "fulfilled") {
-    ciR = {
-      status: "fulfilled",
-      value: await scm.getCISummary(pr, checksR.value),
-    };
+    try {
+      ciR = {
+        status: "fulfilled",
+        value: await scm.getCISummary(pr, checksR.value),
+      };
+    } catch (err) {
+      ciR = { status: "rejected", reason: err };
+    }
   } else {
     // If getCIChecks failed, call getCISummary directly (it will try again)
     try {

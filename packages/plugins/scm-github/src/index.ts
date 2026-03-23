@@ -33,7 +33,7 @@ import {
   parseWebhookJsonObject,
   parseWebhookTimestamp,
 } from "@composio/ao-core/scm-webhook-utils";
-import { ghDeduplicator } from "./dedupe.js";
+import { dedupeGh } from "./dedupe.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -74,24 +74,6 @@ async function execCli(bin: ExecCommand, args: string[], cwd?: string): Promise<
 
 async function gh(args: string[]): Promise<string> {
   return execCli("gh", args);
-}
-
-/**
- * Wrapper that adds request deduplication to gh CLI calls.
- *
- * When multiple callers request the same command simultaneously,
- * only the first caller executes the CLI call. Subsequent callers
- * share the same Promise result.
- *
- * @param args - Arguments to pass to gh CLI
- * @returns CLI output (trimmed)
- */
-async function dedupeGh(args: string[]): Promise<string> {
-  const key = ghDeduplicator.key(args);
-
-  return ghDeduplicator.dedupe(key, async () => {
-    return gh(args);
-  });
 }
 
 async function ghInDir(args: string[], cwd: string): Promise<string> {
@@ -620,7 +602,7 @@ function createGitHubSCM(): SCM {
       if (!session.branch) return null;
       parseProjectRepo(project.repo);
       try {
-        const raw = await gh([
+        const raw = await dedupeGh([
           "pr",
           "list",
           "--repo",
@@ -651,7 +633,7 @@ function createGitHubSCM(): SCM {
     },
 
     async resolvePR(reference: string, project: ProjectConfig): Promise<PRInfo> {
-      const raw = await gh([
+      const raw = await dedupeGh([
         "pr",
         "view",
         reference,
@@ -693,7 +675,7 @@ function createGitHubSCM(): SCM {
     },
 
     async getPRState(pr: PRInfo): Promise<PRState> {
-      const raw = await gh([
+      const raw = await dedupeGh([
         "pr",
         "view",
         String(pr.number),
