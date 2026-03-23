@@ -61,10 +61,14 @@ export default function SessionPage() {
   const sessionProjectId = session?.projectId ?? null;
   const sessionIsOrchestrator = session ? isOrchestratorSession(session) : false;
 
-  // Update document title when session data loads (initial title set by layout.tsx metadata)
+  // Update document title when session data loads or route changes
   useEffect(() => {
-    if (session) document.title = buildSessionTitle(session);
-  }, [session]);
+    if (session) {
+      document.title = buildSessionTitle(session);
+    } else {
+      document.title = `${id} | Session Detail`;
+    }
+  }, [session, id]);
 
   // Fetch session data (memoized to avoid recreating on every render)
   const fetchSession = useCallback(async () => {
