@@ -52,6 +52,8 @@ export function DirectTerminal({
   const [reloadError, setReloadError] = useState<string | null>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme !== "light";
+  const isDarkRef = useRef(isDark);
+  isDarkRef.current = isDark;
   const terminalThemes = useMemo(() => ({
     dark: buildTerminalTheme(variant),
     light: buildTerminalThemeLight(variant),
@@ -133,13 +135,14 @@ export function DirectTerminal({
       .then(([Terminal, FitAddon, WebLinksAddon]) => {
         if (!mounted || !terminalRef.current) return;
 
-        const activeTheme = isDark ? terminalThemes.dark : terminalThemes.light;
+        const initIsDark = isDarkRef.current;
+        const activeTheme = initIsDark ? terminalThemes.dark : terminalThemes.light;
         const terminal = new Terminal({
           cursorBlink: true,
           fontSize: TERMINAL_FONT_SIZE,
           fontFamily: TERMINAL_FONT_FAMILY,
           theme: activeTheme,
-          minimumContrastRatio: isDark ? 1 : 7,
+          minimumContrastRatio: initIsDark ? 1 : 7,
           scrollback: TERMINAL_SCROLLBACK,
           allowProposedApi: true,
           fastScrollModifier: "alt",
