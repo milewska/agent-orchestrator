@@ -101,7 +101,7 @@ async function cachedGh(args: string[]): Promise<string> {
 
   // Check cache first
   const cached = ghCache.get<string>(cacheKey);
-  if (cached == null) {
+  if (cached !== null) {
     return cached;
   }
 
