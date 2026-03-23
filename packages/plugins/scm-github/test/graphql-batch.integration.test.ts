@@ -6,7 +6,7 @@
  *   npm run test:integration
  */
 
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { enrichSessionsPRBatch, generateBatchQuery } from "../src/graphql-batch.js";
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
@@ -25,12 +25,6 @@ describe.skipIf(SKIP_INTEGRATION_TESTS)("GraphQL Batch Enrichment Integration", 
       isDraft: false,
     },
   ];
-
-  beforeAll(() => {
-    if (!GITHUB_TOKEN) {
-      console.log("Skipping integration tests - GITHUB_TOKEN not set");
-    }
-  });
 
   it("should enrich a single real PR", async () => {
     const result = await enrichSessionsPRBatch(testPRs);
