@@ -136,25 +136,24 @@ CI fails → agent gets the logs and fixes it. Reviewer requests changes → age
 
 See [`agent-orchestrator.yaml.example`](agent-orchestrator.yaml.example) for the full reference, or run `ao config-help` for the complete schema.
 
-### GraphQL Batching Example
+### Agent Rules Example
 
-For projects that use GraphQL, you can configure the orchestrator to batch related queries and mutations for efficiency:
+For projects that require specific coding conventions, you can define agent rules to guide the AI's behavior:
 
 ```yaml
 # agent-orchestrator.yaml
 projects:
-  my-graphql-app:
-    repo: owner/my-graphql-app
-    path: ~/my-graphql-app
+  my-app:
+    repo: owner/my-app
+    path: ~/my-app
     defaultBranch: main
-    settings:
-      graphql:
-        batchQueries: true
-        maxBatchSize: 10
-        batchInterval: 100ms
+    agentRules: |
+      Always run tests before pushing changes.
+      Use conventional commits (feat:, fix:, chore:).
+      Add unit tests for new functionality.
 ```
 
-This configuration enables automatic batching of GraphQL requests when the agent interacts with your GraphQL API, reducing network overhead and improving performance.
+Inline rules are automatically included in every agent prompt for this project, ensuring consistent behavior across all sessions.
 
 ## Plugin Architecture
 
