@@ -45,7 +45,7 @@ export interface JsonRpcError {
 
 /** Base error class for all CodexAppServerClient errors */
 export class CodexClientError extends Error {
-  readonly code: string;
+  code: string;
   readonly retryable: boolean;
   readonly cause?: unknown;
 
