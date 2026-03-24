@@ -470,12 +470,11 @@ export async function enrichSessionsPRBatch(
           if (enrichment) {
             result.set(prKey, enrichment);
           }
+        } else {
+          // PR not found (deleted/closed/permission issue)
+          // Remove from cache so individual fallback handles it
+          result.delete(prKey);
         }
-        // PR not found (deleted/closed/permission issue)
-        // Mark for individual API fallback
-        // undefined signals "not cached, use fallback" (matches expected Map type)
-        result.delete(prKey);
-      });
 
       // Log observability metric for successful batch
       const prCountAfter = result.size;
