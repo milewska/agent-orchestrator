@@ -404,7 +404,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             return "changes_requested";
           if (cachedData.reviewDecision === "approved" || cachedData.reviewDecision === "none") {
             // Check merge readiness — treat "none" (no reviewers required)
-            // the same as "approved" so CI-green PRs reach "mergeable" status
+            // as "approved" so CI-green PRs reach "mergeable" status
             // and fire the merge.ready event / approved-and-green reaction.
             if (cachedData.mergeable) return "mergeable";
             if (cachedData.reviewDecision === "approved") return "approved";
@@ -437,7 +437,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         if (reviewDecision === "changes_requested") return "changes_requested";
         if (reviewDecision === "approved" || reviewDecision === "none") {
           // Check merge readiness — treat "none" (no reviewers required)
-          // the same as "approved" so CI-green PRs reach "mergeable" status
+          // as "approved" so CI-green PRs reach "mergeable" status
           // and fire the merge.ready event / approved-and-green reaction.
           const mergeReady = await scm.getMergeability(session.pr);
           if (mergeReady.mergeable) return "mergeable";

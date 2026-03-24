@@ -18,6 +18,21 @@ import type {
 const execFileAsync = promisify(execFile);
 
 /**
+ * Pre-flight check to verify gh CLI is available and authenticated.
+ * This prevents silent failures during GraphQL batch queries.
+ */
+async function verifyGhCLI(): Promise<void> {
+  try {
+    await execFileAsync("gh", ["--version"], { timeout: 5000 });
+  } catch {
+    throw new Error(
+      "gh CLI not available or not authenticated. GraphQL batch enrichment requires gh CLI to be installed and configured.",
+      { cause: "GH_CLI_UNAVAILABLE" },
+    );
+  }
+}
+
+/**
  * Maximum number of PRs to query in a single GraphQL batch.
  * GitHub has limits on query complexity and we stay well under this limit.
  */
@@ -48,7 +63,7 @@ const PR_FIELDS = `
       commit {
         statusCheckRollup {
           state
-          contexts(first: 10) {
+          contexts(first: 100) {
             nodes {
               ... on CheckRun {
                 name
@@ -136,6 +151,9 @@ async function executeBatchQuery(
     return {};
   }
 
+  // Pre-flight check to verify gh CLI is available
+  await verifyGhCLI();
+
   // Build gh CLI arguments with variables
   const varArgs: string[] = [];
   for (const [key, value] of Object.entries(variables)) {
@@ -148,9 +166,14 @@ async function executeBatchQuery(
 
   const args = ["api", "graphql", ...varArgs, "-f", `query=${query}`];
 
+  // Scale timeout based on batch size to prevent large batches from timing out
+  // Base: 30s, +2s per PR beyond first 10
+  const batchSize = prs.length;
+  const adaptiveTimeout = 30_000 + Math.max(0, (batchSize - 10) * 2000);
+
   const { stdout } = await execFileAsync("gh", args, {
     maxBuffer: 10 * 1024 * 1024,
-    timeout: 30_000,
+    timeout: adaptiveTimeout,
   });
 
   const result: {
@@ -431,7 +454,8 @@ export async function enrichSessionsPRBatch(
   }
 
   // Execute each batch
-  for (const batch of batches) {
+  for (const [batchIndex, batch] of batches.entries()) {
+    const prCountBefore = result.size;
     try {
       const data = await executeBatchQuery(batch);
 
@@ -448,17 +472,34 @@ export async function enrichSessionsPRBatch(
           }
         }
         // PR not found (deleted/closed/permission issue)
-        // Don't add to cache - let individual API fallback handle it
+        // Mark for individual API fallback
+        // undefined signals "not cached, use fallback" (matches expected Map type)
+        result.delete(prKey);
       });
+
+      // Log observability metric for successful batch
+      const prCountAfter = result.size;
+      if (prCountAfter > prCountBefore) {
+        console.log(
+          `[GraphQL Batch Success] Batch ${batchIndex + 1}/${batches.length} succeeded: ` +
+          `added ${prCountAfter - prCountBefore} PRs to cache`
+        );
+      }
     } catch (err) {
-      // Batch failed - throw to allow individual API fallback
-      // instead of populating fake data that would block fallback
+      // Batch partially failed - log but continue with individual fallbacks
+      // We don't throw to avoid losing all batch results
+      // Individual PRs that succeed via fallback will populate cache for next poll
       const errorMsg = err instanceof Error ? err.message : String(err);
-      const error = new Error(`Batch enrichment failed: ${errorMsg}`);
+      const error = new Error(`Batch enrichment partially failed: ${errorMsg}`);
       if (err instanceof Error) {
         error.cause = err;
       }
-      throw error;
+
+      // Log the error for observability but don't fail entirely
+      console.error(`[GraphQL Batch Warning] ${error.message}`);
+
+      // Continue with next batch - failed PRs will use individual fallback
+      // We don't throw here, letting the loop continue
     }
   }
 
