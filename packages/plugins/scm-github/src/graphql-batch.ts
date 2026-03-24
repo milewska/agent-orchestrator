@@ -52,13 +52,12 @@ const PR_FIELDS = `
             nodes {
               ... on CheckRun {
                 name
-                state
+                status
                 conclusion
               }
               ... on StatusContext {
                 context
                 state
-                conclusion
               }
             }
           }
@@ -184,32 +183,65 @@ function parseCIState(
   // Check individual contexts for detailed state - this takes precedence over
   // the top-level state because contexts provide more granular information
   const contexts = rollup["contexts"] as
-    | { nodes?: Array<{ state?: string; conclusion?: string }> }
+    | {
+        nodes?: Array<
+          | { status?: string; conclusion?: string } // CheckRun uses 'status'
+          | { state?: string } // StatusContext uses 'state'
+        >;
+      }
     | undefined;
   if (contexts?.nodes && contexts.nodes.length > 0) {
     const hasFailing = contexts.nodes.some(
-      (c) =>
-        c.conclusion === "FAILURE" ||
-        c.conclusion === "TIMED_OUT" ||
-        c.conclusion === "ACTION_REQUIRED" ||
-        c.conclusion === "CANCELLED" ||
-        c.conclusion === "ERROR" ||
-        c.state === "FAILURE",
+      (c) => {
+        // Handle CheckRun type (has 'status' and 'conclusion')
+        if ("status" in c) {
+          return (
+            c.conclusion === "FAILURE" ||
+            c.conclusion === "TIMED_OUT" ||
+            c.conclusion === "ACTION_REQUIRED" ||
+            c.conclusion === "CANCELLED" ||
+            c.conclusion === "ERROR"
+          );
+        }
+        // Handle StatusContext type (has 'state' only)
+        return c.state === "FAILURE";
+      },
     );
     if (hasFailing) return "failing";
 
     const hasPending = contexts.nodes.some(
-      (c) =>
-        c.state === "PENDING" ||
-        c.state === "QUEUED" ||
-        c.state === "IN_PROGRESS" ||
-        c.state === "EXPECTED" ||
-        c.state === "WAITING",
+      (c) => {
+        // Handle CheckRun type (has 'status')
+        if ("status" in c) {
+          return (
+            c.status === "PENDING" ||
+            c.status === "QUEUED" ||
+            c.status === "IN_PROGRESS" ||
+            c.status === "EXPECTED" ||
+            c.status === "WAITING"
+          );
+        }
+        // Handle StatusContext type (has 'state')
+        return (
+          c.state === "PENDING" ||
+          c.state === "QUEUED" ||
+          c.state === "IN_PROGRESS" ||
+          c.state === "EXPECTED" ||
+          c.state === "WAITING"
+        );
+      },
     );
     if (hasPending) return "pending";
 
     const hasPassing = contexts.nodes.some(
-      (c) => c.conclusion === "SUCCESS" || c.state === "SUCCESS",
+      (c) => {
+        // Handle CheckRun type (has 'status' and 'conclusion')
+        if ("status" in c) {
+          return c.conclusion === "SUCCESS";
+        }
+        // Handle StatusContext type (has 'state')
+        return c.state === "SUCCESS";
+      },
     );
     if (hasPassing) return "passing";
   }
