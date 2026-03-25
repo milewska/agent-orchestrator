@@ -57,6 +57,12 @@ CMD ["pnpm", "dev"]
 # ---- Build stage ----
 FROM base AS build
 
+# Next.js inlines NEXT_PUBLIC_* at build time into the client bundle
+ARG NEXT_PUBLIC_TERMINAL_PORT=14800
+ARG NEXT_PUBLIC_DIRECT_TERMINAL_PORT=14801
+ENV NEXT_PUBLIC_TERMINAL_PORT=$NEXT_PUBLIC_TERMINAL_PORT
+ENV NEXT_PUBLIC_DIRECT_TERMINAL_PORT=$NEXT_PUBLIC_DIRECT_TERMINAL_PORT
+
 RUN pnpm install --frozen-lockfile --filter @composio/ao-web...
 
 COPY packages/core/ packages/core/

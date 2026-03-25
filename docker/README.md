@@ -101,8 +101,14 @@ Configuration is done via `.env` (copy from `.env.docker`):
 To build production images:
 
 ```bash
-# Build production web image
+# Build production web image (default ports)
 docker build -f docker/web/Dockerfile --target prod -t ao-web:prod .
+
+# Build with custom WebSocket ports (baked into client bundle at build time)
+# docker build -f docker/web/Dockerfile --target prod \
+#   --build-arg NEXT_PUBLIC_TERMINAL_PORT=9100 \
+#   --build-arg NEXT_PUBLIC_DIRECT_TERMINAL_PORT=9101 \
+#   -t ao-web:prod .
 
 # Build production CLI image
 docker build -f docker/cli/Dockerfile --target prod -t ao-cli:prod .
