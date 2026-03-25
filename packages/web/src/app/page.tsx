@@ -8,8 +8,7 @@ export async function generateMetadata(props: {
   searchParams: Promise<{ project?: string }>;
 }): Promise<Metadata> {
   const searchParams = await props.searchParams;
-  const projectFilter = resolveDashboardProjectFilter(searchParams.project);
-  const pageData = await getDashboardPageData(projectFilter);
+  const pageData = await getDashboardPageData(searchParams.project);
   return { title: { absolute: `ao | ${pageData.projectName}` } };
 }
 
