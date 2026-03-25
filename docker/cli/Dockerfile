@@ -33,8 +33,8 @@ COPY packages/core/ packages/core/
 COPY packages/cli/ packages/cli/
 COPY packages/web/ packages/web/
 
-# Build dependencies first
-RUN pnpm --filter @composio/ao-core build
+# Build CLI and all workspace dependencies (including plugins)
+RUN pnpm --filter @composio/ao-cli... build
 
 # Non-root user
 RUN groupadd -r aouser && useradd -r -g aouser -m aouser \
@@ -60,10 +60,8 @@ COPY packages/core/ packages/core/
 COPY packages/cli/ packages/cli/
 COPY packages/web/ packages/web/
 
-# Build in dependency order
-RUN pnpm --filter @composio/ao-core build \
-    && pnpm --filter @composio/ao-web build \
-    && pnpm --filter @composio/ao-cli build
+# Build CLI and all workspace dependencies (including plugins)
+RUN pnpm --filter @composio/ao-cli... build
 
 # ---- Production stage ----
 FROM node:20-bookworm-slim AS prod

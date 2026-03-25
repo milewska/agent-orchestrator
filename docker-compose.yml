@@ -43,7 +43,7 @@ services:
       - ao-network
     restart: unless-stopped
 
-  # ---- CLI service (development mode with watch) ----
+  # ---- CLI service (kept alive for interactive exec) ----
   cli:
     build:
       context: .
@@ -63,6 +63,7 @@ services:
       - ao-network
     stdin_open: true
     tty: true
+    command: ["sleep", "infinity"]
     restart: unless-stopped
 
 networks:

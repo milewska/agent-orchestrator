@@ -29,9 +29,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install all dependencies (including devDependencies) for development
-RUN pnpm install --frozen-lockfile --filter @composio/ao-core...
-
 COPY packages/core/ packages/core/
 COPY tsconfig.base.json ./
 
