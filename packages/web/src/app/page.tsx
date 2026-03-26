@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 import { loadConfig, resolveProjectConfig } from "@composio/ao-core";
 import { PortfolioPage } from "@/components/PortfolioPage";
-import { getPortfolioServices, listPortfolioSessions } from "@/lib/portfolio-services";
+import { getPortfolioServices, getCachedPortfolioSessions } from "@/lib/portfolio-services";
 import { sessionToDashboard, enrichSessionPR } from "@/lib/serialize";
 import { getServices, getSCM } from "@/lib/services";
 import {
@@ -46,7 +46,7 @@ export default async function Home() {
     }
 
     // --- Multi-project: build portfolio data ---
-    const portfolioSessions = await listPortfolioSessions(portfolio);
+    const portfolioSessions = await getCachedPortfolioSessions();
 
     // Build action items
     for (const ps of portfolioSessions) {

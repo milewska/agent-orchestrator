@@ -1,15 +1,18 @@
 /**
  * Portfolio session service — lightweight cross-project session aggregation.
  *
- * Reads session metadata files directly without constructing SessionManagers,
- * providing fast portfolio-wide session listing and counts.
+ * Uses async I/O to avoid blocking the Node.js event loop in web server contexts.
+ * Reads session metadata files directly without constructing SessionManagers.
  */
 
+import { readdir, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import type { PortfolioProject, PortfolioSession, Session, SessionMetadata } from "./types.js";
 import { getSessionsDir } from "./paths.js";
-import { readMetadata, listMetadata } from "./metadata.js";
+import { parseKeyValueContent } from "./key-value.js";
 
 const DEFAULT_PER_PROJECT_TIMEOUT_MS = 3_000;
+const VALID_SESSION_ID = /^[a-zA-Z0-9_-]+$/;
 
 export async function listPortfolioSessions(
   portfolio: PortfolioProject[],
@@ -40,21 +43,63 @@ export async function listPortfolioSessions(
 async function loadProjectSessions(project: PortfolioProject): Promise<PortfolioSession[]> {
   const results: PortfolioSession[] = [];
   const sessionsDir = getSessionsDir(project.configPath, project.repoPath);
-  const sessionIds = listMetadata(sessionsDir);
 
-  for (const sessionId of sessionIds) {
-    const metadata = readMetadata(sessionsDir, sessionId);
-    if (!metadata) continue;
+  let entries: string[];
+  try {
+    entries = await readdir(sessionsDir);
+  } catch {
+    return results; // Dir doesn't exist
+  }
 
-    const session = metadataToSession(sessionId, project, metadata);
-    results.push({ session, project });
+  for (const name of entries) {
+    if (name === "archive" || name.startsWith(".")) continue;
+    if (!VALID_SESSION_ID.test(name)) continue;
+
+    try {
+      const filePath = join(sessionsDir, name);
+      const fileStat = await stat(filePath);
+      if (!fileStat.isFile()) continue;
+
+      const content = await readFile(filePath, "utf-8");
+      const raw = parseKeyValueContent(content);
+      const metadata = rawToMetadata(raw);
+
+      const session = metadataToSession(name, project, metadata);
+      results.push({ session, project });
+    } catch {
+      continue;
+    }
   }
 
   return results;
 }
 
+function rawToMetadata(raw: Record<string, string>): SessionMetadata {
+  return {
+    worktree: raw["worktree"] ?? "",
+    branch: raw["branch"] ?? "",
+    status: raw["status"] ?? "unknown",
+    tmuxName: raw["tmuxName"],
+    issue: raw["issue"],
+    pr: raw["pr"],
+    summary: raw["summary"],
+    project: raw["project"],
+    agent: raw["agent"],
+    createdAt: raw["createdAt"],
+    runtimeHandle: raw["runtimeHandle"],
+    restoredAt: raw["restoredAt"],
+    role: raw["role"],
+  };
+}
+
 /** Convert raw metadata to a Session object (lightweight, no plugin init) */
 function metadataToSession(sessionId: string, project: PortfolioProject, metadata: SessionMetadata): Session {
+  // Use the most recent timestamp available as lastActivityAt
+  const timestamps = [metadata.createdAt, metadata.restoredAt].filter(Boolean);
+  const lastActivity = timestamps.length > 0
+    ? new Date(Math.max(...timestamps.map(t => new Date(t!).getTime())))
+    : new Date();
+
   return {
     id: sessionId,
     projectId: project.configProjectKey,
@@ -67,13 +112,7 @@ function metadataToSession(sessionId: string, project: PortfolioProject, metadat
     runtimeHandle: metadata.runtimeHandle ? { id: metadata.runtimeHandle, runtimeName: "tmux", data: {} } : null,
     agentInfo: metadata.summary ? { summary: metadata.summary, agentSessionId: null } : null,
     createdAt: metadata.createdAt ? new Date(metadata.createdAt) : new Date(),
-    // Use the most recent timestamp available as lastActivityAt
-    lastActivityAt: (() => {
-      const timestamps = [metadata.createdAt, metadata.restoredAt].filter(Boolean);
-      return timestamps.length > 0
-        ? new Date(Math.max(...timestamps.map(t => new Date(t!).getTime())))
-        : new Date();
-    })(),
+    lastActivityAt: lastActivity,
     restoredAt: metadata.restoredAt ? new Date(metadata.restoredAt) : undefined,
     metadata: {} as Record<string, string>,
   };
@@ -91,15 +130,36 @@ export async function getPortfolioSessionCounts(portfolio: PortfolioProject[]): 
 
     try {
       const sessionsDir = getSessionsDir(project.configPath, project.repoPath);
-      const sessionIds = listMetadata(sessionsDir);
-      let active = 0;
-
-      for (const sessionId of sessionIds) {
-        const metadata = readMetadata(sessionsDir, sessionId);
-        if (metadata && !TERMINAL.has(metadata.status)) active++;
+      let entries: string[];
+      try {
+        entries = await readdir(sessionsDir);
+      } catch {
+        counts[project.id] = { total: 0, active: 0 };
+        continue;
       }
 
-      counts[project.id] = { total: sessionIds.length, active };
+      let total = 0;
+      let active = 0;
+
+      for (const name of entries) {
+        if (name === "archive" || name.startsWith(".")) continue;
+        if (!VALID_SESSION_ID.test(name)) continue;
+
+        try {
+          const filePath = join(sessionsDir, name);
+          const fileStat = await stat(filePath);
+          if (!fileStat.isFile()) continue;
+
+          total++;
+          const content = await readFile(filePath, "utf-8");
+          const raw = parseKeyValueContent(content);
+          if (!TERMINAL.has(raw["status"] ?? "")) active++;
+        } catch {
+          continue;
+        }
+      }
+
+      counts[project.id] = { total, active };
     } catch {
       counts[project.id] = { total: 0, active: 0 };
     }

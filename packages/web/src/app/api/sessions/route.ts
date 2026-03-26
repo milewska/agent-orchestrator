@@ -1,6 +1,6 @@
 import { ACTIVITY_STATE, isOrchestratorSession, resolveProjectConfig } from "@composio/ao-core";
 import { getServices, getSCM } from "@/lib/services";
-import { getPortfolioServices, listPortfolioSessions } from "@/lib/portfolio-services";
+import { getPortfolioServices, getCachedPortfolioSessions } from "@/lib/portfolio-services";
 import {
   sessionToDashboard,
   resolveProject,
@@ -37,7 +37,7 @@ async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Prom
 /** Handle scope=portfolio: aggregate sessions across all portfolio projects */
 async function handlePortfolioScope(correlationId: string, startedAt: number) {
   const { portfolio } = getPortfolioServices();
-  const portfolioSessions = await listPortfolioSessions(portfolio);
+  const portfolioSessions = await getCachedPortfolioSessions();
 
   const dashboardSessions: DashboardSession[] = [];
   const actionItems: PortfolioActionItem[] = [];
