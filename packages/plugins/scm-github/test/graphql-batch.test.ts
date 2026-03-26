@@ -7,7 +7,7 @@
  * providing the same semantic information for CI status determination.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import {
   generateBatchQuery,
   MAX_BATCH_SIZE,

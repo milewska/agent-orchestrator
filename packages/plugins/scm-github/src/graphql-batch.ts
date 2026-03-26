@@ -112,10 +112,10 @@ const prMetadataCache = new Map<
 function updatePRMetadataCache(
   prKey: string,
   enrichment: PREnrichmentData,
-  headSha?: string,
+  headSha: string | null,
 ): void {
   prMetadataCache.set(prKey, {
-    headSha: headSha ?? null,
+    headSha,
     ciStatus: enrichment.ciStatus,
   });
 }
@@ -156,7 +156,10 @@ export async function shouldRefreshPREnrichment(
     if (!repos.has(repoKey)) {
       repos.set(repoKey, []);
     }
-    repos.get(repoKey)!.push(pr);
+    const repoPrs = repos.get(repoKey);
+    if (repoPrs) {
+      repoPrs.push(pr);
+    }
 
     // Collect PRs with pending CI for Guard 2
     const prKey = `${repoKey}#${pr.number}`;
@@ -178,11 +181,11 @@ export async function shouldRefreshPREnrichment(
 
   // Guard 2: Check commit status ETag for PRs with pending CI
   // We need to fetch head SHA for these PRs - use a lightweight REST call
-  for (const { pr, key } of pendingCIPRs) {
-    const [owner, repo, number] = key.split("/");
+  for (const { key: prKey } of pendingCIPRs) {
+    const [owner, repo, number] = prKey.split("/");
 
     // Get head SHA from PR metadata cache or fetch via REST
-    const cached = prMetadataCache.get(key);
+    const cached = prMetadataCache.get(prKey);
     const headSha = cached?.headSha;
 
     if (!headSha) {
