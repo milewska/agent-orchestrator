@@ -183,6 +183,26 @@ export function expandHome(filepath: string): string {
   return filepath;
 }
 
+/** Get the base AO directory (~/.agent-orchestrator/) */
+export function getAoBaseDir(): string {
+  return expandHome("~/.agent-orchestrator");
+}
+
+/** Get the portfolio directory (~/.agent-orchestrator/portfolio/) */
+export function getPortfolioDir(): string {
+  return join(getAoBaseDir(), "portfolio");
+}
+
+/** Get the portfolio preferences file path */
+export function getPreferencesPath(): string {
+  return join(getPortfolioDir(), "preferences.json");
+}
+
+/** Get the portfolio registered projects file path */
+export function getRegisteredPath(): string {
+  return join(getPortfolioDir(), "registered.json");
+}
+
 /**
  * Validate and store the .origin file for a project.
  * Throws if a hash collision is detected (different config, same hash).

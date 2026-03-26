@@ -1,139 +1,142 @@
 import type { Metadata } from "next";
-
 export const dynamic = "force-dynamic";
-import { Dashboard } from "@/components/Dashboard";
-import type { DashboardSession } from "@/lib/types";
+
+import { redirect } from "next/navigation";
+import { loadConfig, resolveProjectConfig } from "@composio/ao-core";
+import { PortfolioPage } from "@/components/PortfolioPage";
+import { getPortfolioServices, listPortfolioSessions } from "@/lib/portfolio-services";
+import { sessionToDashboard, enrichSessionPR } from "@/lib/serialize";
 import { getServices, getSCM } from "@/lib/services";
 import {
-  sessionToDashboard,
-  resolveProject,
-  enrichSessionPR,
-  enrichSessionsMetadata,
-  listDashboardOrchestrators,
-} from "@/lib/serialize";
-import { prCache, prCacheKey } from "@/lib/cache";
-import { getPrimaryProjectId, getProjectName, getAllProjects } from "@/lib/project-name";
-import { filterProjectSessions, filterWorkerSessions } from "@/lib/project-utils";
-import { resolveGlobalPause, type GlobalPauseState } from "@/lib/global-pause";
+  getAttentionLevel,
+  getTriageRank,
+  type PortfolioActionItem,
+  type PortfolioProjectSummary,
+  type AttentionLevel,
+} from "@/lib/types";
 
-function getSelectedProjectName(projectFilter: string | undefined): string {
-  if (projectFilter === "all") return "All Projects";
-  const projects = getAllProjects();
-  if (projectFilter) {
-    const selectedProject = projects.find((project) => project.id === projectFilter);
-    if (selectedProject) return selectedProject.name;
-  }
-  return getProjectName();
-}
+export const metadata: Metadata = {
+  title: { absolute: "ao | Portfolio" },
+};
 
-export async function generateMetadata(props: {
-  searchParams: Promise<{ project?: string }>;
-}): Promise<Metadata> {
-  const searchParams = await props.searchParams;
-  const projectFilter = searchParams.project ?? getPrimaryProjectId();
-  const projectName = getSelectedProjectName(projectFilter);
-  return { title: { absolute: `ao | ${projectName}` } };
-}
+export default async function Home() {
+  let actionItems: PortfolioActionItem[] = [];
+  let projectSummaries: PortfolioProjectSummary[] = [];
 
-export default async function Home(props: { searchParams: Promise<{ project?: string }> }) {
-  const searchParams = await props.searchParams;
-  const projectFilter = searchParams.project ?? getPrimaryProjectId();
-  const pageData: {
-    sessions: DashboardSession[];
-    globalPause: GlobalPauseState | null;
-    orchestrators: Array<{ id: string; projectId: string; projectName: string }>;
-  } = {
-    sessions: [],
-    globalPause: null,
-    orchestrators: [],
-  };
-
+  // --- Single-project redirect (runs before the heavy portfolio build) ---
   try {
-    const { config, registry, sessionManager } = await getServices();
-    const allSessions = await sessionManager.list();
+    const { portfolio } = getPortfolioServices();
 
-    pageData.globalPause = resolveGlobalPause(allSessions);
+    // Single-project optimization: skip portfolio view, go straight to project dashboard
+    if (portfolio.length === 1) {
+      redirect(`/projects/${encodeURIComponent(portfolio[0].id)}`);
+    }
 
-    const visibleSessions = filterProjectSessions(allSessions, projectFilter, config.projects);
-
-    pageData.orchestrators = listDashboardOrchestrators(visibleSessions, config.projects);
-
-    const coreSessions = filterWorkerSessions(allSessions, projectFilter, config.projects);
-    pageData.sessions = coreSessions.map(sessionToDashboard);
-
-    const metaTimeout = new Promise<void>((resolve) => setTimeout(resolve, 3_000));
-    await Promise.race([
-      enrichSessionsMetadata(coreSessions, pageData.sessions, config, registry),
-      metaTimeout,
-    ]);
-
-    const terminalStatuses = new Set(["merged", "killed", "cleanup", "done", "terminated"]);
-    const enrichPromises = coreSessions.map((core, i) => {
-      if (!core.pr) return Promise.resolve();
-
-      const cacheKey = prCacheKey(core.pr.owner, core.pr.repo, core.pr.number);
-      const cached = prCache.get(cacheKey);
-
-      if (cached) {
-        if (pageData.sessions[i].pr) {
-          pageData.sessions[i].pr.state = cached.state;
-          pageData.sessions[i].pr.title = cached.title;
-          pageData.sessions[i].pr.additions = cached.additions;
-          pageData.sessions[i].pr.deletions = cached.deletions;
-          pageData.sessions[i].pr.ciStatus = cached.ciStatus as
-            | "none"
-            | "pending"
-            | "passing"
-            | "failing";
-          pageData.sessions[i].pr.reviewDecision = cached.reviewDecision as
-            | "none"
-            | "pending"
-            | "approved"
-            | "changes_requested";
-          pageData.sessions[i].pr.ciChecks = cached.ciChecks.map((c) => ({
-            name: c.name,
-            status: c.status as "pending" | "running" | "passed" | "failed" | "skipped",
-            url: c.url,
-          }));
-          pageData.sessions[i].pr.mergeability = cached.mergeability;
-          pageData.sessions[i].pr.unresolvedThreads = cached.unresolvedThreads;
-          pageData.sessions[i].pr.unresolvedComments = cached.unresolvedComments;
+    // If portfolio is empty, try loading config directly and redirect to first project
+    if (portfolio.length === 0) {
+      try {
+        const config = loadConfig();
+        const firstKey = Object.keys(config.projects)[0];
+        if (firstKey) {
+          redirect(`/projects/${encodeURIComponent(firstKey)}`);
         }
+      } catch {
+        // No config available — fall through to empty portfolio
+      }
+    }
 
-        if (
-          terminalStatuses.has(core.status) ||
-          cached.state === "merged" ||
-          cached.state === "closed"
-        ) {
-          return Promise.resolve();
-        }
+    // --- Multi-project: build portfolio data ---
+    const portfolioSessions = await listPortfolioSessions(portfolio);
+
+    // Build action items
+    for (const ps of portfolioSessions) {
+      const dashSession = sessionToDashboard(ps.session);
+      const level = getAttentionLevel(dashSession);
+      actionItems.push({
+        session: dashSession,
+        projectId: ps.project.id,
+        projectName: ps.project.name,
+        attentionLevel: level,
+        triageRank: getTriageRank(level),
+      });
+    }
+
+    // Sort by triage rank, then recency
+    actionItems.sort((a, b) => {
+      if (a.triageRank !== b.triageRank) return a.triageRank - b.triageRank;
+      return new Date(b.session.lastActivityAt).getTime() - new Date(a.session.lastActivityAt).getTime();
+    });
+
+    // Enrich PR data for portfolio sessions (needed for accurate attention levels)
+    const { registry } = await getServices().catch(() => ({ registry: null }));
+    if (registry) {
+      const enrichPromises: Promise<void>[] = [];
+      for (const item of actionItems) {
+        const ps = portfolioSessions.find(s => s.session.id === item.session.id);
+        if (!ps || !ps.session.pr) continue;
+
+        const resolved = resolveProjectConfig(ps.project);
+        if (!resolved) continue;
+
+        const scm = getSCM(registry, resolved.project);
+        if (!scm) continue;
+
+        enrichPromises.push(
+          enrichSessionPR(item.session, scm, ps.session.pr).then(() => {}),
+        );
       }
 
-      const project = resolveProject(core, config.projects);
-      const scm = getSCM(registry, project);
-      if (!scm) return Promise.resolve();
-      return enrichSessionPR(pageData.sessions[i], scm, core.pr);
-    });
-    const enrichTimeout = new Promise<void>((resolve) => setTimeout(resolve, 4_000));
-    await Promise.race([Promise.allSettled(enrichPromises), enrichTimeout]);
-  } catch {
-    pageData.sessions = [];
-    pageData.globalPause = null;
-    pageData.orchestrators = [];
+      const enrichTimeout = new Promise<void>((resolve) => setTimeout(resolve, 4_000));
+      await Promise.race([Promise.allSettled(enrichPromises), enrichTimeout]);
+
+      // Recompute attention levels after enrichment
+      for (const item of actionItems) {
+        item.attentionLevel = getAttentionLevel(item.session);
+        item.triageRank = getTriageRank(item.attentionLevel);
+      }
+
+      // Re-sort after recomputed levels
+      actionItems.sort((a, b) => {
+        if (a.triageRank !== b.triageRank) return a.triageRank - b.triageRank;
+        return new Date(b.session.lastActivityAt).getTime() - new Date(a.session.lastActivityAt).getTime();
+      });
+    }
+
+    // Build project summaries
+    const attentionLevels: AttentionLevel[] = ["merge", "respond", "review", "pending", "working", "done"];
+    for (const project of portfolio) {
+      const projectItems = actionItems.filter(item => item.projectId === project.id);
+      const counts = {} as Record<AttentionLevel, number>;
+      for (const level of attentionLevels) counts[level] = 0;
+      for (const item of projectItems) counts[item.attentionLevel]++;
+
+      projectSummaries.push({
+        id: project.id,
+        name: project.name,
+        sessionCount: projectItems.length,
+        activeCount: projectItems.filter(i => i.attentionLevel !== "done").length,
+        attentionCounts: counts,
+        degraded: project.degraded,
+      });
+    }
+  } catch (err: unknown) {
+    // Re-throw Next.js redirect — redirect() works by throwing a sentinel error
+    if (
+      err != null &&
+      typeof err === "object" &&
+      "digest" in err &&
+      typeof (err as Record<string, unknown>).digest === "string" &&
+      ((err as Record<string, unknown>).digest as string).startsWith("NEXT_REDIRECT")
+    ) {
+      throw err;
+    }
+    // Portfolio services unavailable — render empty state
   }
 
-  const projectName = getSelectedProjectName(projectFilter);
-  const projects = getAllProjects();
-  const selectedProjectId = projectFilter === "all" ? undefined : projectFilter;
-
   return (
-    <Dashboard
-      initialSessions={pageData.sessions}
-      projectId={selectedProjectId}
-      projectName={projectName}
-      projects={projects}
-      initialGlobalPause={pageData.globalPause}
-      orchestrators={pageData.orchestrators}
+    <PortfolioPage
+      actionItems={actionItems}
+      projectSummaries={projectSummaries}
     />
   );
 }

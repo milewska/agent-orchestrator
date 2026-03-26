@@ -769,6 +769,20 @@ export function registerStart(program: Command): void {
             ({ projectId, project } = resolveProject(config, projectArg));
           }
 
+          // Auto-register in portfolio (best-effort, never blocks startup)
+          try {
+            const { registerProject: portfolioRegister, refreshProject: portfolioRefresh, getPortfolio: getPortfolioList } = await import("@composio/ao-core");
+            const portfolio = getPortfolioList();
+            const existing = portfolio.find(p => p.configProjectKey === projectId && p.configPath === config.configPath);
+            if (existing) {
+              portfolioRefresh(existing.id, config.configPath);
+            } else {
+              portfolioRegister(project.path, projectId);
+            }
+          } catch {
+            // Portfolio registration is best-effort
+          }
+
           // ── Already-running detection (Step 9) ──
           const running = await isAlreadyRunning();
           if (running) {
