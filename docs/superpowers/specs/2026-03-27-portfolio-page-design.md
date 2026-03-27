@@ -10,15 +10,15 @@ The portfolio page is the home surface (`/`) of Agent Orchestrator. It shows all
 
 ### Routing
 
-- **Route:** `/` — the home page, replaces the current direct-to-Dashboard behavior
-- **Project route:** `/projects/[id]` — per-project dashboard (re-added, wraps `Dashboard` in `DashboardShell`)
+- **Route:** `/` — the home page. Currently renders `Dashboard` directly; this spec changes it to render `DashboardShell > PortfolioPage`.
+- **Project route:** `/projects/[id]` — already exists. Modified to wrap `Dashboard` in `DashboardShell` so the sidebar persists.
 - **Server component:** `app/page.tsx` loads portfolio data, renders `DashboardShell > PortfolioPage`
 - **Client component:** `<PortfolioPage>` receives project summaries as props
 - **No SSE/real-time:** Server-rendered snapshot. Refresh by navigating.
 
 ### Layout shell
 
-All pages share the `DashboardShell` layout:
+`DashboardShell` + `UnifiedSidebar` is the shared layout shell for the entire app. Both the portfolio home and per-project dashboards render inside it. There is no secondary shell — `ProjectSidebar` and `MobileBottomNav` from main are replaced by this architecture.
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -37,7 +37,7 @@ All pages share the `DashboardShell` layout:
 
 ### Data loading
 
-New file: `lib/portfolio-page-data.ts`
+New file: `lib/portfolio-page-data.ts` — a parallel to the existing `dashboard-page-data.ts`, not a replacement. The dashboard helper loads sessions for a single project; the portfolio helper aggregates project-level summaries across all projects. Same pattern (React `cache()`, `getServices()` pipeline), different shape.
 
 Leverages the existing `portfolio-services.ts` cache layer (which already handles portfolio discovery, session listing, and background refresh):
 
@@ -70,12 +70,10 @@ interface PortfolioProjectSummary {
 ### Desktop (>767px)
 
 - Renders inside `DashboardShell` — `UnifiedSidebar` on the left, portfolio content on the right
-- Content area: max-width 960px, left-aligned within the main panel (not centered — the sidebar already offsets things)
-- Header row:
-  - Left: "Portfolio" title (IBM Plex Sans 700, 17px) + "N workspaces" subtitle
-  - Right: "New project" button
-- Project cards in responsive CSS grid: 3 columns wide, 2 columns narrower
-- Action cards ("Clone from URL", "Quick start", "Add local project") in the same grid
+- Content area: padded within the main panel (`px-6 py-10`), max-width 760px
+- Header section: "Portfolio" title (IBM Plex Sans 700, 17px) + "N workspaces" subtitle
+- Project cards in a responsive grid: `grid-cols-3` on wide panels, `grid-cols-2` on narrower
+- Action cards ("Clone from URL", "Quick start", "Add local project") in the same grid, visually distinct
 - Design system tokens throughout — see Styling section
 
 ### Mobile (≤767px)
@@ -144,7 +142,7 @@ interface PortfolioProjectSummary {
 Reuse existing WIP modal components (`CloneFromUrlModal`, `QuickStartModal`, `AddProjectModal`).
 
 - **Desktop:** Centered modal via `Modal.tsx` with backdrop, `border-radius: var(--radius-lg)`, `var(--color-bg-elevated)` background
-- **Mobile:** Same `Modal.tsx` component renders as a full-width bottom-anchored sheet with drag handle. The modal component itself handles the responsive split via `useMediaQuery(MOBILE_BREAKPOINT)`.
+- **Mobile:** Same `Modal.tsx` component renders as a full-width bottom-anchored sheet with drag handle. `Modal.tsx` must be updated to accept an `isMobile` prop (or use `useMediaQuery` internally) and switch between centered overlay and bottom-sheet presentation. This is a concrete implementation change — see modified files table.
 
 On successful project creation, navigate to `/projects/<newId>`.
 
@@ -176,7 +174,7 @@ All styling follows DESIGN.md:
 
 - **Typography:** IBM Plex Sans for text, IBM Plex Mono (10px uppercase, +0.06em tracking) for section labels
 - **Colors:** CSS variable tokens throughout — `var(--color-bg-*)`, `var(--color-text-*)`, `var(--color-border-*)`, `var(--color-accent-*)`
-- **Swatches:** Project swatch palette defined as `--swatch-1` through `--swatch-6` custom properties in `globals.css`, with both light and dark mode values. Components reference `var(--swatch-N)` — no hardcoded hex in component code.
+- **Swatches:** Project swatch palette defined as `--swatch-1` through `--swatch-6` custom properties in `globals.css`, with both light and dark mode values. Components reference `var(--swatch-N)`.
 - **Dark mode:** Automatic via CSS variables.
 - **Border radius:** `0` for project cards (utilitarian), `var(--radius-sm)` for pills/swatches, `var(--radius-lg)` for modals
 - **Spacing:** 4px base unit, comfortable density
@@ -189,12 +187,10 @@ All styling follows DESIGN.md:
 
 | File | Purpose |
 |------|---------|
-| `app/portfolio/page.tsx` | Redirects to `/` (if someone bookmarks old route) |
-| `app/projects/[id]/page.tsx` | Server component — per-project dashboard wrapped in DashboardShell |
 | `components/PortfolioPage.tsx` | Client component — portfolio page UI |
 | `components/PortfolioProjectCard.tsx` | Project card component |
 | `components/PortfolioActionCard.tsx` | Action card component |
-| `lib/portfolio-page-data.ts` | Server data aggregation (uses existing `portfolio-services.ts` cache) |
+| `lib/portfolio-page-data.ts` | Server data aggregation — parallel to `dashboard-page-data.ts`, uses `portfolio-services.ts` cache |
 | `app/api/projects/register/route.ts` | POST — register a local project directory |
 | `app/api/projects/clone/route.ts` | POST — clone a git repo and register it |
 | `app/api/projects/quick-start/route.ts` | POST — scaffold a new project from template |
@@ -203,20 +199,22 @@ All styling follows DESIGN.md:
 
 | File | Change |
 |------|--------|
-| `app/page.tsx` | Render `DashboardShell > PortfolioPage` instead of direct Dashboard |
+| `app/page.tsx` | Render `DashboardShell > PortfolioPage` instead of direct `Dashboard` |
+| `app/projects/[projectId]/page.tsx` | Wrap existing `Dashboard` in `DashboardShell` so sidebar persists |
 | `lib/types.ts` | Add `PortfolioProjectSummary` type |
-| `app/globals.css` | Portfolio page styles, swatch tokens, mobile breakpoints |
+| `app/globals.css` | Portfolio page styles, `--swatch-*` tokens, mobile breakpoints |
 | `components/DashboardShell.tsx` | Wire to portfolio data, pass projects to UnifiedSidebar |
-| `components/UnifiedSidebar.tsx` | Already built — may need minor adjustments for active state on `/` |
+| `components/UnifiedSidebar.tsx` | Minor: active state highlighting when on `/` |
+| `components/Modal.tsx` | Add responsive split: centered overlay on desktop, bottom-anchored sheet with drag handle on mobile (via `useMediaQuery`) |
+| `components/Dashboard.tsx` | Remove `ProjectSidebar` usage — sidebar is now provided by `DashboardShell` parent |
 
 ### Reused WIP files (cleanup needed)
 
 | File | Status |
 |------|--------|
-| `components/CloneFromUrlModal.tsx` | Exists as untracked WIP — clean up, add mobile sheet mode |
+| `components/CloneFromUrlModal.tsx` | Exists as untracked WIP — clean up |
 | `components/QuickStartModal.tsx` | Same |
 | `components/AddProjectModal.tsx` | Same |
-| `components/Modal.tsx` | Base modal — add responsive desktop/mobile split |
 | `hooks/useModal.ts` | Modal state hook — ready to use |
 
 ## Out of scope
@@ -225,4 +223,3 @@ All styling follows DESIGN.md:
 - Cross-project attention triage / action queue
 - Project reordering, pinning, or grouping
 - Settings page for portfolio preferences
-- Replacing main's ProjectSidebar/MobileBottomNav (they coexist on project dashboard pages for now)
