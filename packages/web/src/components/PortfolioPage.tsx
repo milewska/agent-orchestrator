@@ -9,6 +9,7 @@ import {
   type PortfolioProjectSummary,
 } from "@/lib/types";
 import { ProjectRail } from "./ProjectRail";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface PortfolioPageProps {
   actionItems: PortfolioActionItem[];
@@ -272,22 +273,25 @@ export function PortfolioPage({
                 </p>
               </div>
 
-              <button
-                type="button"
-                className="inline-flex shrink-0 items-center gap-2 rounded-full border border-[var(--color-border-default)] px-3 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] lg:hidden"
-                onClick={() => setMobileRailOpen(true)}
-              >
-                <svg
-                  className="h-4 w-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  viewBox="0 0 24 24"
+              <div className="flex shrink-0 items-center gap-2">
+                <ThemeToggle />
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border-default)] px-3 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] lg:hidden"
+                  onClick={() => setMobileRailOpen(true)}
                 >
-                  <path d="M4 7h16M4 12h16M4 17h16" />
-                </svg>
-                Projects
-              </button>
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M4 7h16M4 12h16M4 17h16" />
+                  </svg>
+                  Projects
+                </button>
+              </div>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2.5">
