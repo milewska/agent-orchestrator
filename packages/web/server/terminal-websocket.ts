@@ -186,10 +186,11 @@ function getOrSpawnTtyd(sessionId: string, tmuxSessionName: string): TtydInstanc
   metrics.totalSpawns += 1;
   metrics.lastSpawnAt = new Date().toISOString();
 
-  // Enable mouse mode for scrollback support
-  const mouseProc = spawn(TMUX, ["set-option", "-t", tmuxSessionName, "mouse", "on"]);
+  // Disable tmux mouse mode to prevent cursor from moving during scrollback.
+  // ttyd/xterm.js handles scrollback natively with scrollback: 10000.
+  const mouseProc = spawn(TMUX, ["set-option", "-t", tmuxSessionName, "mouse", "off"]);
   mouseProc.on("error", (err) => {
-    console.error(`[Terminal] Failed to set mouse mode for ${tmuxSessionName}:`, err.message);
+    console.error(`[Terminal] Failed to disable mouse mode for ${tmuxSessionName}:`, err.message);
   });
 
   // Hide the green status bar for cleaner appearance

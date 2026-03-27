@@ -171,10 +171,11 @@ export function createDirectTerminalServer(tmuxPath?: string): DirectTerminalSer
 
     console.log(`[DirectTerminal] New connection for session: ${tmuxSessionId}`);
 
-    // Enable mouse mode for scrollback support
-    const mouseProc = spawn(TMUX, ["set-option", "-t", tmuxSessionId, "mouse", "on"]);
+    // Disable tmux mouse mode to prevent cursor from moving during scrollback.
+    // xterm.js handles scrollback natively with scrollback: 10000.
+    const mouseProc = spawn(TMUX, ["set-option", "-t", tmuxSessionId, "mouse", "off"]);
     mouseProc.on("error", (err) => {
-      console.error(`[DirectTerminal] Failed to set mouse mode for ${tmuxSessionId}:`, err.message);
+      console.error(`[DirectTerminal] Failed to disable mouse mode for ${tmuxSessionId}:`, err.message);
     });
 
     // Hide the green status bar for cleaner appearance
