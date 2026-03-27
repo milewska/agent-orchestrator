@@ -47,7 +47,7 @@ Balanced — indigo (#5e6ad2) as the interactive accent, standard semantic statu
 | `--color-bg-subtle` | `#f2f2f2` | Subtle backgrounds, chip fills |
 | `--color-text-primary` | `#1b1b1f` | Headings, primary content |
 | `--color-text-secondary` | `#5e5e66` | Descriptions, body text |
-| `--color-text-tertiary` | `#8b8b93` | Captions, timestamps, muted labels |
+| `--color-text-tertiary` | `#737380` | Captions, timestamps, muted labels |
 | `--color-border-subtle` | `#e8e8ec` | Section dividers, card borders |
 | `--color-border-default` | `#d9d9de` | Input borders, stronger dividers |
 | `--color-border-strong` | `#c1c1c6` | Emphasis borders |
@@ -212,3 +212,5 @@ Insights from competitive research and external design reviews (Codex + independ
 | 2026-03-27 | Keep dual mono families (Plex Mono + JetBrains) | Semantic distinction: Plex Mono = UI chrome (session IDs, stats), JetBrains Mono = agent output (terminal, code). Flagged as potential consolidation target. |
 | 2026-03-27 | Keep blue-tinted graphite dark mode | Both external reviewers called this the strongest part of the system. The blue bias makes the interface feel computational and live. |
 | 2026-03-27 | Keep `border-radius: 0` on cards | Deliberate utilitarian stance. Both reviewers flagged this as both a strength (distinctive) and a risk (visual monotony). Keeping for now. |
+| 2026-03-27 | Darken tertiary text to #737380 | /design-review found #8b8b93 fails WCAG AA (3.38:1). New value passes at 4.67:1. |
+| 2026-03-27 | Add prefers-reduced-motion | /design-review: all animations disabled for users who prefer reduced motion. |
