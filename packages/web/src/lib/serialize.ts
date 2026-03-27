@@ -46,9 +46,23 @@ export function resolveProject(
 }
 
 /** Convert a core Session to a DashboardSession (without PR/issue enrichment). */
-export function sessionToDashboard(session: Session): DashboardSession {
+export function sessionToDashboard(
+  session: Session,
+  config?: { dashboardBaseUrl?: string; port?: number },
+): DashboardSession {
   const agentSummary = session.agentInfo?.summary;
   const summary = agentSummary ?? session.metadata["summary"] ?? null;
+
+  // Construct dashboard URL if base URL is configured
+  let dashboardUrl: string | undefined;
+  if (config?.dashboardBaseUrl) {
+    // Remove trailing slash from base URL and prepend
+    const baseUrl = config.dashboardBaseUrl.replace(/\/$/, "");
+    dashboardUrl = `${baseUrl}/sessions/${session.id}`;
+  } else if (config?.port) {
+    // Fallback: use port from config (localhost only)
+    dashboardUrl = `http://localhost:${config.port}/sessions/${session.id}`;
+  }
 
   return {
     id: session.id,
@@ -66,6 +80,7 @@ export function sessionToDashboard(session: Session): DashboardSession {
     lastActivityAt: session.lastActivityAt.toISOString(),
     pr: session.pr ? basicPRToDashboard(session.pr) : null,
     metadata: session.metadata,
+    dashboardUrl,
   };
 }
 

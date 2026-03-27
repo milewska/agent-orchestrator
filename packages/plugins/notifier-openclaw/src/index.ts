@@ -47,6 +47,8 @@ interface OpenClawWebhookPayload {
   sessionKey?: string;
   wakeMode?: WakeMode;
   deliver?: boolean;
+  /** Dashboard URL for viewing this session's details page */
+  dashboardUrl?: string;
 }
 
 async function postWithRetry(
@@ -182,6 +184,12 @@ export function create(config?: Record<string, unknown>): Notifier {
   const wakeMode: WakeMode = config?.wakeMode === "next-heartbeat" ? "next-heartbeat" : "now";
   const deliver = typeof config?.deliver === "boolean" ? config.deliver : true;
 
+  // Dashboard configuration for constructing dashboard URLs
+  const dashboardBaseUrl =
+    typeof config?.dashboardBaseUrl === "string" ? config.dashboardBaseUrl : undefined;
+  const dashboardPort =
+    typeof config?.dashboardPort === "number" ? config.dashboardPort : undefined;
+
   const { retries, retryDelayMs } = normalizeRetryConfig(config);
 
   validateUrl(url, "notifier-openclaw");
@@ -192,6 +200,23 @@ export function create(config?: Record<string, unknown>): Notifier {
         "  Set OPENCLAW_HOOKS_TOKEN env var, or add token to your notifier config.\n" +
         "  Run: ao setup openclaw",
     );
+  }
+
+  /**
+   * Construct the dashboard URL for a session.
+   * Uses dashboardBaseUrl if configured, otherwise falls back to localhost:port.
+   */
+  function buildDashboardUrl(sessionId: string): string | undefined {
+    if (dashboardBaseUrl) {
+      // Remove trailing slash from base URL
+      const baseUrl = dashboardBaseUrl.replace(/\/$/, "");
+      return `${baseUrl}/sessions/${sanitizeSessionId(sessionId)}`;
+    }
+    if (dashboardPort) {
+      // Fallback: use port from config (localhost only)
+      return `http://localhost:${dashboardPort}/sessions/${sanitizeSessionId(sessionId)}`;
+    }
+    return undefined;
   }
 
   async function sendPayload(payload: OpenClawWebhookPayload): Promise<void> {
@@ -216,6 +241,7 @@ export function create(config?: Record<string, unknown>): Notifier {
         sessionKey,
         wakeMode,
         deliver,
+        dashboardUrl: buildDashboardUrl(event.sessionId),
       });
     },
 
@@ -230,6 +256,7 @@ export function create(config?: Record<string, unknown>): Notifier {
         sessionKey,
         wakeMode,
         deliver,
+        dashboardUrl: buildDashboardUrl(event.sessionId),
       });
     },
 
@@ -243,6 +270,7 @@ export function create(config?: Record<string, unknown>): Notifier {
         sessionKey,
         wakeMode,
         deliver,
+        dashboardUrl: context?.sessionId ? buildDashboardUrl(context.sessionId) : undefined,
       });
 
       return null;

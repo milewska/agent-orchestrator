@@ -70,6 +70,13 @@ function extractPluginConfig(
       const matches = hasExplicitPlugin ? configuredPlugin === name : notifierName === name;
       if (matches) {
         const { plugin: _plugin, ...rest } = notifierConfig as Record<string, unknown>;
+        // Include dashboard configuration for notifiers that need to construct dashboard URLs
+        if (config.dashboardBaseUrl) {
+          (rest as Record<string, unknown>).dashboardBaseUrl = config.dashboardBaseUrl;
+        }
+        if (config.port) {
+          (rest as Record<string, unknown>).dashboardPort = config.port;
+        }
         return rest;
       }
     }

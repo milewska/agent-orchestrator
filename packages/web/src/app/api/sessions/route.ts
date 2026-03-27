@@ -78,7 +78,12 @@ export async function GET(request: Request) {
     let workerSessions = visibleSessions.filter((session) => !isOrchestratorSession(session));
 
     // Convert to dashboard format
-    let dashboardSessions = workerSessions.map(sessionToDashboard);
+    let dashboardSessions = workerSessions.map((session) =>
+      sessionToDashboard(session, {
+        dashboardBaseUrl: config.dashboardBaseUrl,
+        port: config.port,
+      }),
+    );
 
     if (activeOnly) {
       const activeIndices = dashboardSessions

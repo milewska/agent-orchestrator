@@ -46,7 +46,12 @@ export async function POST(request: NextRequest) {
     });
 
     return jsonWithCorrelation(
-      { session: sessionToDashboard(session) },
+      {
+        session: sessionToDashboard(session, {
+          dashboardBaseUrl: config.dashboardBaseUrl,
+          port: config.port,
+        }),
+      },
       { status: 201 },
       correlationId,
     );

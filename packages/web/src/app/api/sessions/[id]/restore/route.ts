@@ -45,7 +45,10 @@ export async function POST(_request: NextRequest, { params }: { params: Promise<
       {
         ok: true,
         sessionId: id,
-        session: sessionToDashboard(restored),
+        session: sessionToDashboard(restored, {
+          dashboardBaseUrl: config.dashboardBaseUrl,
+          port: config.port,
+        }),
       },
       { status: 200 },
       correlationId,
