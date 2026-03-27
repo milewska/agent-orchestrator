@@ -218,7 +218,7 @@ export function PortfolioPage({
     return (
       <div className="min-h-screen bg-[var(--color-bg-base)] text-[var(--color-text-primary)]">
         <div className="mx-auto flex min-h-screen w-full max-w-[880px] items-center px-5 py-10">
-          <section className="w-full rounded-[28px] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-8 shadow-[0_24px_70px_rgba(0,0,0,0.18)]">
+          <section className="w-full rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-8 shadow-[0_24px_70px_rgba(0,0,0,0.18)]">
             <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
               Portfolio
             </div>
@@ -258,7 +258,7 @@ export function PortfolioPage({
 
       <main className="min-w-0 flex-1">
         <div className="mx-auto flex min-h-screen w-full max-w-[1180px] flex-col px-4 pb-10 pt-4 sm:px-5 lg:px-8 lg:pt-7">
-          <header className="rounded-[30px] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-5 py-5 shadow-[0_24px_70px_rgba(0,0,0,0.16)] sm:px-6">
+          <header className="rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-5 py-5 shadow-[0_24px_70px_rgba(0,0,0,0.16)] sm:px-6">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[var(--color-text-tertiary)]">
@@ -298,7 +298,7 @@ export function PortfolioPage({
           </header>
 
           {isQuiet ? (
-            <section className="mt-5 rounded-[26px] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-5 py-4 sm:px-6">
+            <section className="mt-5 rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-5 py-4 sm:px-6">
               <p className="text-[14px] font-medium text-[var(--color-text-primary)]">
                 Nothing currently needs human judgment.
               </p>
@@ -348,7 +348,7 @@ function ProjectPanel({ panel }: { panel: ProjectPanelData }) {
   return (
     <a
       href={href}
-      className="group block rounded-[28px] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.16)] transition-transform duration-150 hover:-translate-y-[1px] hover:no-underline"
+      className="group block rounded-xl border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.16)] transition-transform duration-150 hover:-translate-y-[1px] hover:no-underline"
       aria-label={`Open ${summary.name} board`}
     >
       <div className="flex items-start justify-between gap-4">
@@ -377,7 +377,7 @@ function ProjectPanel({ panel }: { panel: ProjectPanelData }) {
       </div>
 
       {summary.degraded ? (
-        <div className="mt-5 rounded-[20px] border border-[color-mix(in_srgb,var(--color-status-error)_20%,transparent)] bg-[var(--color-tint-red)] px-4 py-3">
+        <div className="mt-5 rounded-lg border border-[color-mix(in_srgb,var(--color-status-error)_20%,transparent)] bg-[var(--color-tint-red)] px-4 py-3">
           <p className="text-[12px] font-semibold text-[var(--color-status-error)]">
             Repair this project
           </p>
@@ -431,7 +431,7 @@ function CountTile({
   tone: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-3">
+    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-3">
       <div className="text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-tertiary)]">
         {label}
       </div>
