@@ -209,7 +209,8 @@ export function create(config?: Record<string, unknown>): Notifier {
     if (dashboardBaseUrl) {
       // Remove trailing slash from base URL
       const baseUrl = dashboardBaseUrl.replace(/\/$/, "");
-      return `${baseUrl}/sessions/${sanitizeSessionId(sessionId)}`;
+      // Use raw session ID - web routes expect unsanitized ID
+      return `${baseUrl}/sessions/${sessionId}`;
     }
     return undefined;
   }
