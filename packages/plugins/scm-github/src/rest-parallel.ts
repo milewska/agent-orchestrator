@@ -51,11 +51,11 @@ class LRUCache<K, V> {
 
   get(key: K): V | null {
     if (!this.cache.has(key)) return null;
-    const value = this.cache.get(key);
+    const value = this.cache.get(key) as V;
     // Move to end (most recently used)
     this.cache.delete(key);
     this.cache.set(key, value);
-    return value ?? null;
+    return value;
   }
 
   set(key: K, value: V): void {
