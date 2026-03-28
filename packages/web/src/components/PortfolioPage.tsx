@@ -27,9 +27,8 @@ export function PortfolioPage({
     <main className="flex min-h-screen items-center justify-center bg-[var(--color-bg-base)] px-6 py-16 text-[var(--color-text-primary)]">
       <div className="flex w-full max-w-[760px] flex-col items-center">
         <div className="mt-10 text-center">
-          <h1 className="text-[52px] font-semibold tracking-[-0.08em] text-[var(--color-text-primary)] sm:text-[72px] sm:leading-[0.94]">
-            <span className="block">Agent</span>
-            <span className="block">Orchestrator</span>
+          <h1 className="text-[28px] font-bold tracking-[-0.025em] text-[var(--color-text-primary)] sm:text-[36px] sm:leading-[1.1]">
+            Agent Orchestrator
           </h1>
           <p className="mx-auto mt-5 max-w-[38ch] text-[14px] leading-7 text-[var(--color-text-secondary)] sm:text-[15px]">
             Open a workspace, clone a repo, or start a fresh project from the same portfolio home.
