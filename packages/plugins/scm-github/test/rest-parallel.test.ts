@@ -9,7 +9,6 @@ import {
   BatchObserverImpl,
   fetchPRData,
   fetchCIData,
-  shouldRefreshPREnrichment,
   enrichSessionsPRBatch,
   PARALLEL_CONCURRENCY,
   PR_METADATA_CACHE_SIZE,
@@ -18,10 +17,10 @@ import {
 
 // Mock the gh function
 vi.mock("../src/rest-parallel.js", async (importOriginal) => {
-  const mod = (await importOriginal()) as typeof import("../src/rest-parallel.js");
+  const mod = await importOriginal();
 
-  // Create a mock fetch function
-  const mockFetch = async (args: string[]): Promise<string> => {
+  // Create a mock fetch function (not used, kept for test structure)
+  const _mockFetch = async (args: string[]): Promise<string> => {
     const url = args[args.indexOf("api") + 1];
     if (url?.includes("/pulls?")) {
       // PR list ETag check
@@ -61,7 +60,7 @@ vi.mock("../src/rest-parallel.js", async (importOriginal) => {
 
   return {
     ...mod,
-    shouldRefreshPREnrichment: mod.shouldRefreshPREnrichment,
+    shouldRefreshPREnrichment: (mod as { shouldRefreshPREnrichment?: typeof import("../src/rest-parallel.js")["shouldRefreshPREnrichment"] }).shouldRefreshPREnrichment,
     enrichSessionsPRBatch: mod.enrichSessionsPRBatch,
   };
 });
@@ -243,17 +242,6 @@ describe("Batch Observer", () => {
 describe("PR Data Fetching", () => {
   it("should parse PR state correctly", () => {
     // Test parsePRState through fetchPRData
-    const pr = {
-      number: 1,
-      owner: "test",
-      repo: "test-repo",
-      branch: "feature",
-      baseBranch: "main",
-      isDraft: false,
-      title: "Test PR",
-      url: "https://github.com/test/test-repo/pull/1",
-    };
-
     // This would call the mocked gh function which returns a response
     // In a real test, we'd mock execFileAsync
     // For now, just verify the interface exists
