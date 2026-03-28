@@ -154,6 +154,7 @@ export class BatchObserverImpl implements BatchObserver {
     const detailsStr = details ? ` ${JSON.stringify(details)}` : "";
     const logMsg = `[OK] ${operation} (${durationMs}ms)${detailsStr}`;
     this.logs.push(logMsg);
+    // eslint-disable-next-line no-console -- intentional logging via BatchObserver
     console.log(logMsg);
   }
 
@@ -161,6 +162,7 @@ export class BatchObserverImpl implements BatchObserver {
     const detailsStr = details ? ` ${JSON.stringify(details)}` : "";
     const logMsg = `[ERR] ${operation} failed: ${error.message} (${durationMs}ms)${detailsStr}`;
     this.logs.push(logMsg);
+    // eslint-disable-next-line no-console -- intentional error logging via BatchObserver
     console.error(logMsg);
   }
 
@@ -168,6 +170,7 @@ export class BatchObserverImpl implements BatchObserver {
     const detailsStr = details ? ` ${JSON.stringify(details)}` : "";
     const logMsg = `[${this.prefix}] ${message}${detailsStr}`;
     this.logs.push(logMsg);
+    // eslint-disable-next-line no-console -- intentional logging via BatchObserver
     console.log(logMsg);
   }
 
