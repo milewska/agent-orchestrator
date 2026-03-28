@@ -110,6 +110,15 @@ export async function newSession(opts: NewSessionOptions): Promise<void> {
 
   await tmux(...args);
 
+  // Set scrollback history limit at session creation time.
+  // This must be set after the session is created because history-limit
+  // only takes effect when a new pane is created. Setting it here ensures
+  // the initial pane created by new-session uses this limit.
+  // This is particularly important for web terminal sessions where xterm.js
+  // scrollback is disabled (scrollback: 0) to fix the cursor moving
+  // with viewport issue (#738). Users rely on tmux's scrollback buffer.
+  await tmux("set-option", "-t", opts.name, "history-limit", "10000");
+
   // Send the initial command if provided
   if (opts.command) {
     await sendKeys(opts.name, opts.command);
