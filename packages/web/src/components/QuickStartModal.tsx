@@ -172,10 +172,10 @@ export function QuickStartModal({
                       {option.badge}
                     </span>
                   ) : null}
-                  <div className="flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)]">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border-subtle)] text-[var(--color-text-secondary)]">
                     {option.id === "nextjs" ? <NextIcon /> : <EmptyIcon />}
                   </div>
-                  <div className="mt-8 text-[22px] font-medium tracking-[-0.04em] text-[var(--color-text-primary)]">
+                  <div className="mt-8 text-[var(--font-size-xl)] font-medium tracking-[-0.025em] text-[var(--color-text-primary)]">
                     {option.title}
                   </div>
                   <div className="mt-1 text-[13px] text-[var(--color-text-secondary)]">
