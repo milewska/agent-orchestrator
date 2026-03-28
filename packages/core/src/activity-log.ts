@@ -66,9 +66,10 @@ export async function readLastActivityEntry(
       // Read last 1KB — more than enough for a single JSON line
       const tailSize = Math.min(fileStat.size, 1024);
       const offset = Math.max(0, fileStat.size - tailSize);
-      const buffer = Buffer.allocUnsafe(tailSize);
-      await handle.read(buffer, 0, tailSize, offset);
-      const content = buffer.toString("utf-8");
+      const buffer = Buffer.alloc(tailSize);
+      const { bytesRead } = await handle.read(buffer, 0, tailSize, offset);
+      if (bytesRead === 0) return null;
+      const content = buffer.subarray(0, bytesRead).toString("utf-8");
 
       // Find the last non-empty line
       const lines = content.split("\n").filter((l) => l.trim());
