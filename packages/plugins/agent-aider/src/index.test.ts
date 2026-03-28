@@ -492,11 +492,10 @@ describe("getActivityState with activity JSONL", () => {
     });
 
     // Non-critical "active" from AO JSONL is ignored — falls through to
-    // git/chat fallbacks. With no git commits or chat history, returns idle
-    // from the stale activity entry.
+    // git/chat fallbacks. With no git commits or chat history, returns null.
     const result = await agent.getActivityState(
       makeSession({ runtimeHandle: makeTmuxHandle() }),
     );
-    expect(result?.state).toBe("idle");
+    expect(result).toBeNull();
   });
 });

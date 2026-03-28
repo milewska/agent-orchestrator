@@ -201,8 +201,6 @@ function createAiderAgent(): Agent {
       // 3. Fallback: check chat history file modification time
       const chatMtime = await getChatHistoryMtime(session.workspacePath);
       if (!chatMtime) {
-        // If we had an activity log entry but it's stale, return idle
-        if (activityResult) return { state: "idle", timestamp: activityResult.modifiedAt };
         return null;
       }
 

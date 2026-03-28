@@ -234,9 +234,11 @@ if [[ \$exit_code -eq 0 ]]; then
       ;;
     checkout/*|switch/*)
       # Existing branch switch — only track feature-looking branches (contain / or -)
-      # Skip HEAD, tags, commit hashes, and simple names like "main"
+      # Skip flags (e.g. -B), HEAD, tags, commit hashes, and simple names like "main"
       branch="\$2"
-      if [[ -n "\$branch" && "\$branch" != "HEAD" && "\$branch" == *[/-]* ]]; then
+      # If $2 is a flag, the actual branch name is in $3
+      if [[ "\$branch" == -* ]]; then branch="\$3"; fi
+      if [[ -n "\$branch" && "\$branch" != "HEAD" && "\$branch" != -* && "\$branch" == *[/-]* ]]; then
         update_ao_metadata branch "\$branch"
       fi
       ;;
