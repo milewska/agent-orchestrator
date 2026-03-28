@@ -228,6 +228,10 @@ export interface SessionSpawnConfig {
   issueId?: string;
   branch?: string;
   prompt?: string;
+  /** Override the runtime plugin for this session (e.g. "docker", "tmux") */
+  runtime?: string;
+  /** Runtime-specific config merged on top of the project's runtimeConfig */
+  runtimeConfig?: Record<string, unknown>;
   /** Override the agent plugin for this session (e.g. "codex", "claude-code") */
   agent?: string;
   /** Override the OpenCode subagent for this session (e.g. "sisyphus", "oracle") */
@@ -242,6 +246,10 @@ export interface SessionSpawnConfig {
 export interface OrchestratorSpawnConfig {
   projectId: string;
   systemPrompt?: string;
+  /** Override the runtime plugin for this orchestrator session */
+  runtime?: string;
+  /** Runtime-specific config merged on top of the project's runtimeConfig */
+  runtimeConfig?: Record<string, unknown>;
 }
 
 // =============================================================================
@@ -282,6 +290,7 @@ export interface RuntimeCreateConfig {
   workspacePath: string;
   launchCommand: string;
   environment: Record<string, string>;
+  runtimeConfig?: Record<string, unknown>;
 }
 
 /** Opaque handle returned by runtime.create() */
@@ -307,6 +316,12 @@ export interface AttachInfo {
   target: string;
   /** Optional: command to run to attach */
   command?: string;
+  /** Structured program to exec for attach, preferred over parsing command */
+  program?: string;
+  /** Structured args to exec for attach */
+  args?: string[];
+  /** Whether the attach command expects a TTY/PTY */
+  requiresPty?: boolean;
 }
 
 // =============================================================================
@@ -1139,6 +1154,9 @@ export interface ProjectConfig {
   /** Override default runtime */
   runtime?: string;
 
+  /** Runtime-specific configuration (e.g. docker image, limits) */
+  runtimeConfig?: Record<string, unknown>;
+
   /** Override default agent */
   agent?: string;
 
@@ -1381,6 +1399,8 @@ export interface SessionMetadata {
   project?: string;
   agent?: string; // Agent plugin name (e.g. "codex", "claude-code") — persisted for lifecycle
   createdAt?: string;
+  runtime?: string;
+  runtimeConfig?: string;
   runtimeHandle?: string;
   restoredAt?: string;
   role?: string; // "orchestrator" for orchestrator sessions
@@ -1402,6 +1422,7 @@ export interface SessionManager {
   restore(sessionId: SessionId): Promise<Session>;
   list(projectId?: string): Promise<Session[]>;
   get(sessionId: SessionId): Promise<Session | null>;
+  getAttachInfo(sessionId: SessionId): Promise<AttachInfo | null>;
   kill(sessionId: SessionId, options?: { purgeOpenCode?: boolean }): Promise<void>;
   cleanup(
     projectId?: string,

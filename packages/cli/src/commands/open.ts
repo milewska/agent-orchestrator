@@ -1,9 +1,9 @@
 import chalk from "chalk";
 import type { Command } from "commander";
 import { loadConfig } from "@composio/ao-core";
-import { exec, getTmuxSessions } from "../lib/shell.js";
-import { matchesPrefix, stripHashPrefix } from "../lib/session-utils.js";
-import { DEFAULT_PORT } from "../lib/constants.js";
+import { exec } from "../lib/shell.js";
+import { getSessionManager } from "../lib/create-session-manager.js";
+import { formatAttachCommand } from "../lib/attach.js";
 
 async function openInTerminal(sessionName: string, newWindow?: boolean): Promise<boolean> {
   try {
@@ -24,25 +24,17 @@ export function registerOpen(program: Command): void {
     .option("-w, --new-window", "Open in a new terminal window")
     .action(async (target: string | undefined, opts: { newWindow?: boolean }) => {
       const config = loadConfig();
-      const allTmux = await getTmuxSessions();
+      const sm = await getSessionManager(config);
+      const allSessions = await sm.list();
 
-      let sessionsToOpen: string[] = [];
+      let sessionsToOpen = allSessions;
 
       if (!target || target === "all") {
-        // Open all sessions across all projects
-        for (const [projectId, project] of Object.entries(config.projects)) {
-          const prefix = project.sessionPrefix || projectId;
-          const matching = allTmux.filter((s) => matchesPrefix(s, prefix));
-          sessionsToOpen.push(...matching);
-        }
+        sessionsToOpen = allSessions;
       } else if (config.projects[target]) {
-        // Open all sessions for a specific project
-        const project = config.projects[target];
-        const prefix = project.sessionPrefix || target;
-        sessionsToOpen = allTmux.filter((s) => matchesPrefix(s, prefix));
-      } else if (allTmux.includes(target)) {
-        // Open a specific session
-        sessionsToOpen = [target];
+        sessionsToOpen = allSessions.filter((session) => session.projectId === target);
+      } else if (allSessions.some((session) => session.id === target)) {
+        sessionsToOpen = allSessions.filter((session) => session.id === target);
       } else {
         console.error(
           chalk.red(`Unknown target: ${target}\nSpecify a session name, project ID, or "all".`),
@@ -57,19 +49,22 @@ export function registerOpen(program: Command): void {
 
       console.log(
         chalk.bold(
-          `Opening ${sessionsToOpen.length} session${sessionsToOpen.length > 1 ? "s" : ""}...\n`,
+          `Opening ${sessionsToOpen.length} session${sessionsToOpen.length !== 1 ? "s" : ""}...\n`,
         ),
       );
 
-      const port = config.port ?? DEFAULT_PORT;
       for (const session of sessionsToOpen.sort()) {
-        const opened = await openInTerminal(session, opts.newWindow);
+        const runtimeName = session.runtimeHandle?.runtimeName ?? config.defaults.runtime;
+        const targetName = session.runtimeHandle?.id ?? session.id;
+        const attachInfo = await sm.getAttachInfo(session.id).catch(() => null);
+        const attachCommand = formatAttachCommand(attachInfo, `tmux attach -t ${targetName}`);
+        const opened =
+          runtimeName === "tmux" ? await openInTerminal(targetName, opts.newWindow) : false;
         if (opened) {
-          console.log(chalk.green(`  Opened: ${session}`));
+          console.log(chalk.green(`  Opened: ${session.id}`));
         } else {
-          const sessionId = stripHashPrefix(session);
           console.log(
-            `  ${chalk.yellow(session)} — view at: ${chalk.dim(`http://localhost:${port}/sessions/${sessionId}`)}`,
+            `  ${chalk.yellow(session.id)} — attach with: ${chalk.dim(attachCommand)}`,
           );
         }
       }
