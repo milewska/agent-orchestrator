@@ -32,7 +32,6 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-
 // =============================================================================
 // Plugin Manifest
 // =============================================================================
@@ -48,7 +47,6 @@ export const manifest = {
 // =============================================================================
 // Workspace Setup (delegates to shared PATH-wrapper hooks from @composio/ao-core)
 // =============================================================================
-
 // =============================================================================
 // Codex Session JSONL Parsing (for getSessionInfo)
 // =============================================================================
@@ -124,10 +122,7 @@ async function collectJsonlFiles(dir: string, depth = 0): Promise<string[]> {
  * entry matching the given workspace path. Reads only the first 4 KB
  * to avoid loading large rollout files into memory.
  */
-async function sessionFileMatchesCwd(
-  filePath: string,
-  workspacePath: string,
-): Promise<boolean> {
+async function sessionFileMatchesCwd(filePath: string, workspacePath: string): Promise<boolean> {
   try {
     // Read only the first 4 KB — session_meta is always in the first few lines.
     // Avoids loading large rollout files (100 MB+) into memory.
@@ -333,7 +328,10 @@ async function findCodexSessionFileCached(workspacePath: string): Promise<string
     return cached.path;
   }
   const result = await findCodexSessionFile(workspacePath);
-  sessionFileCache.set(workspacePath, { path: result, expiry: Date.now() + SESSION_FILE_CACHE_TTL_MS });
+  sessionFileCache.set(workspacePath, {
+    path: result,
+    expiry: Date.now() + SESSION_FILE_CACHE_TTL_MS,
+  });
   return result;
 }
 
@@ -410,7 +408,10 @@ function createCodexAgent(): Agent {
       return "active";
     },
 
-    async getActivityState(session: Session, readyThresholdMs?: number): Promise<ActivityDetection | null> {
+    async getActivityState(
+      session: Session,
+      readyThresholdMs?: number,
+    ): Promise<ActivityDetection | null> {
       const threshold = readyThresholdMs ?? DEFAULT_READY_THRESHOLD_MS;
 
       // Check if process is running first
@@ -500,6 +501,32 @@ function createCodexAgent(): Agent {
 
     async isProcessRunning(handle: RuntimeHandle): Promise<boolean> {
       try {
+        if (handle.runtimeName === "docker" && handle.id) {
+          const containerName =
+            typeof handle.data["containerName"] === "string"
+              ? handle.data["containerName"]
+              : handle.id;
+          const tmuxSessionName =
+            typeof handle.data["tmuxSessionName"] === "string"
+              ? handle.data["tmuxSessionName"]
+              : handle.id;
+          const { stdout } = await execFileAsync(
+            "docker",
+            [
+              "exec",
+              containerName,
+              "tmux",
+              "display-message",
+              "-p",
+              "-t",
+              tmuxSessionName,
+              "#{pane_current_command}",
+            ],
+            { timeout: 30_000 },
+          );
+          return stdout.trim() === "codex";
+        }
+
         if (handle.runtimeName === "tmux" && handle.id) {
           const { stdout: ttyOut } = await execFileAsync(
             "tmux",
