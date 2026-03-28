@@ -78,10 +78,10 @@ export default async function SettingsRoute() {
             <div className="font-[family-name:var(--font-ibm-plex-mono)] text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
               Settings
             </div>
-            <h1 className="mt-3 text-[34px] font-semibold tracking-[-0.06em] text-[var(--color-text-primary)]">
+            <h1 className="mt-3 text-[var(--font-size-xl)] font-bold tracking-[-0.025em] text-[var(--color-text-primary)]">
               Configure your portfolio
             </h1>
-            <p className="mt-3 max-w-[62ch] text-[14px] leading-7 text-[var(--color-text-secondary)]">
+            <p className="mt-3 max-w-[62ch] text-[var(--font-size-base)] leading-relaxed text-[var(--color-text-secondary)]">
               Manage project visibility, ordering, default workspace behavior, and the external services Agent Orchestrator depends on.
             </p>
           </header>
