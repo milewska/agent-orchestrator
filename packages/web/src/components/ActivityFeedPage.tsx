@@ -60,14 +60,14 @@ export function ActivityFeedPage({
     <main className="min-h-screen bg-[var(--color-bg-base)] text-[var(--color-text-primary)]">
       <div className="mx-auto flex w-full max-w-[1360px] flex-col px-5 pb-10 pt-4 sm:px-7 lg:px-9">
         <div className="sticky top-0 z-[5] border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-base)]/90 py-3 backdrop-blur">
-          <label className="flex h-12 items-center gap-3 rounded-[14px] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-4 text-[var(--color-text-secondary)] shadow-[0_8px_24px_rgba(0,0,0,0.04)]">
+          <label className="flex h-12 items-center gap-3 rounded-[var(--radius-sm)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] px-4 text-[var(--color-text-secondary)] shadow-[var(--card-shadow)]">
             <SearchIcon />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Filter workspaces..."
               aria-label="Filter workspaces"
-              className="w-full bg-transparent text-[14px] outline-none placeholder:text-[var(--color-text-tertiary)]"
+              className="w-full bg-transparent text-[var(--font-size-base)] outline-none placeholder:text-[var(--color-text-tertiary)]"
             />
           </label>
         </div>
