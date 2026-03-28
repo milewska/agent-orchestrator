@@ -30,7 +30,7 @@ export function PortfolioPage({
           <h1 className="text-[28px] font-bold tracking-[-0.025em] text-[var(--color-text-primary)] sm:text-[36px] sm:leading-[1.1]">
             Agent Orchestrator
           </h1>
-          <p className="mx-auto mt-5 max-w-[38ch] text-[14px] leading-7 text-[var(--color-text-secondary)] sm:text-[15px]">
+          <p className="mx-auto mt-5 max-w-[38ch] text-[var(--font-size-base)] leading-relaxed text-[var(--color-text-secondary)] sm:text-[var(--font-size-lg)]">
             Open a workspace, clone a repo, or start a fresh project from the same portfolio home.
           </p>
         </div>
