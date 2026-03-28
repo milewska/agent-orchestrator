@@ -256,7 +256,7 @@ async function checkPRListETag(
 
   const args = ["api", "--method", "HEAD", "--include", `repos/${owner}/${repo}/pulls?state=open&per_page=1`];
   if (currentEtag) {
-    args.push("-H", `If-None-Match: "${currentEtag}"`);
+    args.push("-H", `If-None-Match: ${currentEtag}`);
   }
 
   try {
@@ -264,6 +264,18 @@ async function checkPRListETag(
       maxBuffer: 10 * 1024,
       timeout: 30_000,
     });
+
+    // Fallback: if no headers in stdout (gh CLI bug), treat as changed
+    if (!stdout.includes("HTTP/")) {
+      observer?.log(`No HTTP headers in HEAD response for ${pr.owner}/${pr.repo}/commits/${ref}, treating as changed`);
+      return true;
+    }
+
+    // Fallback: if no headers in stdout (gh CLI bug), treat as changed
+    if (!stdout.includes("HTTP/")) {
+      observer?.log(`No HTTP headers in HEAD response for ${owner}/${repo}, treating as changed`);
+      return true;
+    }
 
     // Parse ETag from response headers (includes full HTTP headers with --include)
     // Handles both strong ETags: "abc123" and weak ETags: W/"abc123"
@@ -310,7 +322,7 @@ async function checkCommitStatusETag(pr: PRInfo, etagCache: ETagCache): Promise<
     `repos/${pr.owner}/${pr.repo}/commits/${ref}/status`,
   ];
   if (currentEtag) {
-    args.push("-H", `If-None-Match: "${currentEtag}"`);
+    args.push("-H", `If-None-Match: ${currentEtag}`);
   }
 
   try {
@@ -318,6 +330,18 @@ async function checkCommitStatusETag(pr: PRInfo, etagCache: ETagCache): Promise<
       maxBuffer: 10 * 1024,
       timeout: 30_000,
     });
+
+    // Fallback: if no headers in stdout (gh CLI bug), treat as changed
+    if (!stdout.includes("HTTP/")) {
+      observer?.log(`No HTTP headers in HEAD response for ${pr.owner}/${pr.repo}/commits/${ref}, treating as changed`);
+      return true;
+    }
+
+    // Fallback: if no headers in stdout (gh CLI bug), treat as changed
+    if (!stdout.includes("HTTP/")) {
+      observer?.log(`No HTTP headers in HEAD response for ${owner}/${repo}, treating as changed`);
+      return true;
+    }
 
     // Parse ETag from response headers (includes full HTTP headers with --include)
     // Handles both strong ETags: "abc123" and weak ETags: W/"abc123"
