@@ -291,7 +291,6 @@ function createOpenCodeAgent(): Agent {
       // Check the last few lines for permission/confirmation prompts
       const tail = lines.slice(-5).join("\n");
       if (/\(Y\)es.*\(N\)o/i.test(tail)) return "waiting_input";
-      if (/\(y\)es.*\(n\)o/i.test(tail)) return "waiting_input";
       if (/approval required/i.test(tail)) return "waiting_input";
       if (/Do you want to proceed\?/i.test(tail)) return "waiting_input";
       if (/Allow .+\?/i.test(tail)) return "waiting_input";
