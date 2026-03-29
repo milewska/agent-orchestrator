@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, notFound } from "next/navigation";
 import { isOrchestratorSession } from "@composio/ao-core/types";
 import { SessionDetail } from "@/components/SessionDetail";
 import { type DashboardSession, getAttentionLevel, type AttentionLevel } from "@/lib/types";
@@ -55,6 +55,7 @@ export default function SessionPage() {
   const [zoneCounts, setZoneCounts] = useState<ZoneCounts | null>(null);
   const [projectOrchestratorId, setProjectOrchestratorId] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [is404, setIs404] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionProjectId = session?.projectId ?? null;
   const sessionIsOrchestrator = session ? isOrchestratorSession(session) : false;
@@ -84,7 +85,7 @@ export default function SessionPage() {
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
       if (res.status === 404) {
-        setError("Session not found");
+        setIs404(true);
         setLoading(false);
         return;
       }
@@ -167,6 +168,11 @@ export default function SessionPage() {
     return () => clearInterval(interval);
   }, [fetchSession, fetchProjectSessions]);
 
+  // Delegate 404 to Next.js not-found boundary
+  if (is404) {
+    notFound();
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-base)]">
@@ -175,17 +181,13 @@ export default function SessionPage() {
     );
   }
 
-  if (error || !session) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[var(--color-bg-base)]">
-        <div className="text-[13px] text-[var(--color-status-error)]">
-          {error ?? "Session not found"}
-        </div>
-        <a href="/" className="text-[12px] text-[var(--color-accent)] hover:underline">
-          ← Back to dashboard
-        </a>
-      </div>
-    );
+  // Throw during render so the error boundary catches it
+  if (error) {
+    throw new Error(error);
+  }
+
+  if (!session) {
+    throw new Error("Session data unavailable");
   }
 
   return (
