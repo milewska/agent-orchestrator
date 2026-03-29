@@ -104,57 +104,7 @@ export async function isAgentProcessRunning(
   handle: RuntimeHandle,
   processName: string,
 ): Promise<boolean> {
-  try {
-    // CASE 1: tmux runtime — resolve pane TTYs, scan ps output
-    if (handle.runtimeName === "tmux" && handle.id) {
-      const { stdout: ttyOut } = await execFileAsync(
-        "tmux",
-        ["list-panes", "-t", handle.id, "-F", "#{pane_tty}"],
-        { timeout: 5_000 },
-      );
-      const ttys = ttyOut
-        .trim()
-        .split("\n")
-        .map((t) => t.trim())
-        .filter(Boolean);
-      if (ttys.length === 0) return false;
-
-      const psOut = await getCachedProcessList();
-      if (!psOut) return false;
-
-      const ttySet = new Set(ttys.map((t) => t.replace(/^\/dev\//, "")));
-      const processRe = new RegExp(`(?:^|\\/)${escapeRegExp(processName)}(?:\\s|$)`);
-      for (const line of psOut.split("\n")) {
-        const cols = line.trimStart().split(/\s+/);
-        if (cols.length < 3 || !ttySet.has(cols[1] ?? "")) continue;
-        const args = cols.slice(2).join(" ");
-        if (processRe.test(args)) {
-          return true;
-        }
-      }
-      return false;
-    }
-
-    // CASE 2: process runtime — check if stored PID is still alive
-    const rawPid = handle.data["pid"];
-    const pid = typeof rawPid === "number" ? rawPid : Number(rawPid);
-    if (Number.isFinite(pid) && pid > 0) {
-      try {
-        process.kill(pid, 0); // Signal 0 = existence check
-        return true;
-      } catch (err: unknown) {
-        // EPERM means the process exists but we lack permission to signal it
-        if (err instanceof Error && "code" in err && err.code === "EPERM") {
-          return true;
-        }
-        return false;
-      }
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
+  return (await findAgentProcess(handle, processName)) !== null;
 }
 
 /**
