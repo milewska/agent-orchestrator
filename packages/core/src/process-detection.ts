@@ -42,6 +42,11 @@ export function setPsCacheTtlMs(ttl: number | undefined): void {
   psCacheTtlMs = ttl ?? DEFAULT_PS_CACHE_TTL_MS;
 }
 
+/** Escape special regex metacharacters in a literal string. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function getCachedProcessList(): Promise<string> {
   const now = Date.now();
   if (psCache && now - psCache.timestamp < psCacheTtlMs) {
@@ -118,7 +123,7 @@ export async function isAgentProcessRunning(
       if (!psOut) return false;
 
       const ttySet = new Set(ttys.map((t) => t.replace(/^\/dev\//, "")));
-      const processRe = new RegExp(`(?:^|\\/)${processName}(?:\\s|$)`);
+      const processRe = new RegExp(`(?:^|\\/)${escapeRegExp(processName)}(?:\\s|$)`);
       for (const line of psOut.split("\n")) {
         const cols = line.trimStart().split(/\s+/);
         if (cols.length < 3 || !ttySet.has(cols[1] ?? "")) continue;
@@ -184,7 +189,7 @@ export async function findAgentProcess(
       if (!psOut) return null;
 
       const ttySet = new Set(ttys.map((t) => t.replace(/^\/dev\//, "")));
-      const processRe = new RegExp(`(?:^|\\/)${processName}(?:\\s|$)`);
+      const processRe = new RegExp(`(?:^|\\/)${escapeRegExp(processName)}(?:\\s|$)`);
       for (const line of psOut.split("\n")) {
         const cols = line.trimStart().split(/\s+/);
         if (cols.length < 3 || !ttySet.has(cols[1] ?? "")) continue;

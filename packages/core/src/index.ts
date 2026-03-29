@@ -110,7 +110,6 @@ export {
   isAgentProcessRunning,
   findAgentProcess,
   resetPsCache,
-  setPsCacheTtlMs,
 } from "./process-detection.js";
 export { normalizeOrchestratorSessionStrategy } from "./orchestrator-session-strategy.js";
 export type { NormalizedOrchestratorSessionStrategy } from "./orchestrator-session-strategy.js";

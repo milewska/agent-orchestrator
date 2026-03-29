@@ -2,7 +2,6 @@ import {
   shellEscape,
   readLastJsonlEntry,
   DEFAULT_READY_THRESHOLD_MS,
-  findAgentProcess,
   isAgentProcessRunning,
   resetPsCache as resetPsCacheShared,
   normalizeAgentPermissionMode,
