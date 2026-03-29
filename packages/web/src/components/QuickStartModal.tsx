@@ -96,7 +96,7 @@ export function QuickStartModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-[10px] border border-[var(--color-border-default)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)]"
+              className="rounded-[4px] border border-[var(--color-border-default)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)]"
               style={{ minHeight: 44 }}
             >
               Cancel
@@ -105,7 +105,7 @@ export function QuickStartModal({
               type="button"
               onClick={handleCreate}
               disabled={disabled}
-              className="rounded-[10px] bg-[var(--color-accent)] px-4 py-2 text-[12px] font-semibold text-[var(--color-text-inverse)] disabled:opacity-50"
+              className="rounded-[4px] bg-[var(--color-accent)] px-4 py-2 text-[12px] font-semibold text-[var(--color-text-inverse)] disabled:opacity-50"
               style={{ minHeight: 44 }}
             >
               {creating ? "Creating..." : "Create project"}
@@ -144,7 +144,7 @@ export function QuickStartModal({
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-base)] px-3 py-2 text-[14px] text-[var(--color-text-primary)] focus:border-[var(--color-accent)] focus:outline-none"
-            style={{ minHeight: 44, fontFamily: "var(--font-ibm-plex-mono)" }}
+            style={{ minHeight: 44, fontFamily: "var(--font-mono)" }}
           />
         </div>
 
@@ -160,7 +160,7 @@ export function QuickStartModal({
                   key={option.id}
                   type="button"
                   onClick={() => setTemplate(option.id)}
-                  className="relative rounded-none border px-4 py-4 text-left transition-colors"
+                  className="relative rounded-[2px] border px-4 py-4 text-left transition-colors"
                   style={{
                     minHeight: 136,
                     borderColor: active ? "var(--color-accent)" : "var(--color-border-subtle)",

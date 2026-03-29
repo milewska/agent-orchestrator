@@ -137,7 +137,7 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
             {selectedPath ? (
               <span
                 className="block truncate text-[11px] text-[var(--color-text-tertiary)]"
-                style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+                style={{ fontFamily: "var(--font-mono)" }}
               >
                 {selectedPath}
               </span>
@@ -152,7 +152,7 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
               type="button"
               onClick={onClose}
               className="border border-[var(--color-border-default)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated-hover)]"
-              style={{ borderRadius: 0, minHeight: 40 }}
+              style={{ borderRadius: "2px", minHeight: 40 }}
             >
               Cancel
             </button>
@@ -161,7 +161,7 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
               onClick={handleSubmit}
               disabled={submitting || !selectedPath.trim()}
               className="bg-[var(--color-accent)] px-4 py-2 text-[12px] font-semibold text-[var(--color-text-inverse)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-              style={{ borderRadius: 0, minHeight: 40 }}
+              style={{ borderRadius: "2px", minHeight: 40 }}
             >
               {submitting ? "Adding..." : "Open"}
             </button>
@@ -187,13 +187,13 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
             }}
             placeholder="/path/to/directory"
             className="min-w-0 flex-1 border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)] focus:outline-none"
-            style={{ fontFamily: "var(--font-ibm-plex-mono)", borderRadius: 0 }}
+            style={{ fontFamily: "var(--font-mono)", borderRadius: "2px" }}
           />
           <button
             type="button"
             onClick={() => pathInput.trim() && browse(pathInput.trim())}
             className="shrink-0 border border-[var(--color-border-default)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated-hover)]"
-            style={{ borderRadius: 0 }}
+            style={{ borderRadius: "2px" }}
           >
             Go
           </button>
@@ -203,7 +203,7 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
         <div
           ref={scrollRef}
           className="h-[300px] overflow-y-auto border border-[var(--color-border-default)] bg-[var(--color-bg-surface)]"
-          style={{ borderRadius: 0 }}
+          style={{ borderRadius: "2px" }}
         >
           {browsing && !browseResult ? (
             <div className="flex h-full items-center justify-center text-[12px] text-[var(--color-text-tertiary)]">
@@ -223,7 +223,7 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
                   className="flex w-full items-center gap-2 border-b border-[var(--color-border-subtle)] px-3 py-2 text-left text-[12px] text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated-hover)]"
                 >
                   <ParentDirIcon />
-                  <span style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>..</span>
+                  <span style={{ fontFamily: "var(--font-mono)" }}>..</span>
                 </button>
               )}
 
@@ -238,7 +238,7 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
                 }`}
               >
                 <CurrentDirIcon selected={selectedPath === browseResult.path} />
-                <span className="flex-1 font-medium" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                <span className="flex-1 font-medium" style={{ fontFamily: "var(--font-mono)" }}>
                   . <span className="font-normal text-[var(--color-text-tertiary)]">(this directory)</span>
                 </span>
                 <div className="flex shrink-0 items-center gap-1.5">
@@ -282,7 +282,7 @@ export function AddProjectModal({ open, onClose, onProjectAdded }: AddProjectMod
               }}
               placeholder="my-project"
               className="w-full border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-3 py-1.5 text-[12px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)] focus:outline-none"
-              style={{ borderRadius: 0 }}
+              style={{ borderRadius: "2px" }}
             />
           </div>
         )}
@@ -320,7 +320,7 @@ function DirectoryRow({
         <FolderIcon selected={isSelected} />
         <span
           className={`truncate ${isSelected ? "font-medium text-[var(--color-accent)]" : "text-[var(--color-text-primary)]"}`}
-          style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+          style={{ fontFamily: "var(--font-mono)" }}
         >
           {entry.name}
         </span>

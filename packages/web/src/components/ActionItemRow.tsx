@@ -109,7 +109,7 @@ export function ActionItemRow({ item, onSend, onKill, onMerge }: ActionItemRowPr
         <a
           href={`/projects/${encodeURIComponent(projectId)}?session=${encodeURIComponent(session.id)}`}
           className="shrink-0 text-[12px] text-[var(--color-accent)] hover:underline"
-          style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+          style={{ fontFamily: "var(--font-mono)" }}
         >
           {session.id.slice(0, 8)}
         </a>
@@ -133,7 +133,7 @@ export function ActionItemRow({ item, onSend, onKill, onMerge }: ActionItemRowPr
         {/* Time ago */}
         <span
           className="shrink-0 text-[11px] tabular-nums text-[var(--color-text-tertiary)]"
-          style={{ fontFamily: "var(--font-ibm-plex-mono)" }}
+          style={{ fontFamily: "var(--font-mono)" }}
         >
           {timeAgo(session.lastActivityAt)}
         </span>
@@ -146,7 +146,7 @@ export function ActionItemRow({ item, onSend, onKill, onMerge }: ActionItemRowPr
               onClick={handleMergeClick}
               disabled={busy}
               className="border border-[var(--color-border-tint-green)] bg-[var(--color-tint-green)] px-2.5 py-1 text-[11px] font-semibold text-[var(--color-status-ready)] transition-colors hover:bg-[var(--color-border-tint-green-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ minHeight: 44, borderRadius: 0 }}
+              style={{ minHeight: 44, borderRadius: "2px" }}
             >
               {loadingAction === "merge" ? "Merging\u2026" : "Merge"}
             </button>
@@ -158,7 +158,7 @@ export function ActionItemRow({ item, onSend, onKill, onMerge }: ActionItemRowPr
               onClick={() => setShowInput((prev) => !prev)}
               disabled={busy}
               className="border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] px-2.5 py-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated-hover)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ minHeight: 44, borderRadius: 0 }}
+              style={{ minHeight: 44, borderRadius: "2px" }}
             >
               Send
             </button>
@@ -170,7 +170,7 @@ export function ActionItemRow({ item, onSend, onKill, onMerge }: ActionItemRowPr
               onClick={handleKillClick}
               disabled={busy}
               className="border border-transparent px-2.5 py-1 text-[11px] font-medium text-[var(--color-status-error)] opacity-0 transition-all hover:border-[var(--color-border-tint-red)] hover:bg-[var(--color-tint-red)] group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ minHeight: 44, borderRadius: 0 }}
+              style={{ minHeight: 44, borderRadius: "2px" }}
             >
               {loadingAction === "kill" ? "Killing\u2026" : "Kill"}
             </button>

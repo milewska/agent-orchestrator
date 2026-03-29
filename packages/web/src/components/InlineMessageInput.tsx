@@ -66,9 +66,9 @@ export function InlineMessageInput({
         disabled={sending}
         className="w-full resize-none border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-3 py-2 text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)] focus:outline-none disabled:opacity-50"
         style={{
-          fontFamily: "var(--font-ibm-plex-mono)",
+          fontFamily: "var(--font-mono)",
           minHeight: 44,
-          borderRadius: 0,
+          borderRadius: "2px",
         }}
       />
       {error && (
@@ -80,7 +80,7 @@ export function InlineMessageInput({
           onClick={onCancel}
           disabled={sending}
           className="px-3 py-1.5 text-[12px] font-medium text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)] disabled:opacity-50"
-          style={{ minHeight: 44, borderRadius: 0 }}
+          style={{ minHeight: 44, borderRadius: "2px" }}
         >
           Cancel
         </button>
@@ -89,7 +89,7 @@ export function InlineMessageInput({
           onClick={handleSend}
           disabled={!message.trim() || sending}
           className="border border-[var(--color-accent)] bg-[var(--color-accent)] px-4 py-1.5 text-[12px] font-semibold text-[var(--color-text-inverse)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ minHeight: 44, borderRadius: 0 }}
+          style={{ minHeight: 44, borderRadius: "2px" }}
         >
           {sending ? "Sending\u2026" : "Send"}
         </button>

@@ -217,7 +217,7 @@ export function WorkspaceResourcesModal({
               type="button"
               onClick={() => void handleCreate("thread")}
               disabled={submitting !== null || !project}
-              className="rounded-[10px] border border-[var(--color-border-default)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] disabled:opacity-50"
+              className="rounded-[4px] border border-[var(--color-border-default)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] disabled:opacity-50"
             >
               {submitting === "thread" ? "Creating..." : "New thread"}
             </button>
@@ -225,7 +225,7 @@ export function WorkspaceResourcesModal({
               type="button"
               onClick={() => void handleCreate("agent")}
               disabled={submitting !== null || !project}
-              className="rounded-[10px] bg-[var(--color-accent)] px-4 py-2 text-[12px] font-semibold text-[var(--color-text-inverse)] disabled:opacity-50"
+              className="rounded-[4px] bg-[var(--color-accent)] px-4 py-2 text-[12px] font-semibold text-[var(--color-text-inverse)] disabled:opacity-50"
             >
               {submitting === "agent" ? "Spawning..." : "Spawn agent"}
             </button>
@@ -257,7 +257,7 @@ export function WorkspaceResourcesModal({
                   key={value}
                   type="button"
                   onClick={() => setTab(value as ResourceTab)}
-                  className={active ? "rounded-[10px] bg-[var(--color-bg-surface)] px-3 py-2 text-[13px] font-medium text-[var(--color-text-primary)]" : "rounded-[10px] px-3 py-2 text-[13px] text-[var(--color-text-secondary)]"}
+                  className={active ? "rounded-[4px] bg-[var(--color-bg-surface)] px-3 py-2 text-[13px] font-medium text-[var(--color-text-primary)]" : "rounded-[4px] px-3 py-2 text-[13px] text-[var(--color-text-secondary)]"}
                 >
                   {label}
                 </button>
@@ -272,7 +272,7 @@ export function WorkspaceResourcesModal({
         {error ? <div className="text-[12px] text-[var(--color-status-error)]">{error}</div> : null}
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_240px]">
-          <div className="max-h-[420px] overflow-y-auto rounded-none border border-[var(--color-border-subtle)] bg-[var(--color-bg-base)]">
+          <div className="max-h-[420px] overflow-y-auto rounded-[2px] border border-[var(--color-border-subtle)] bg-[var(--color-bg-base)]">
             {loading ? (
               <div className="px-4 py-6 text-[13px] text-[var(--color-text-tertiary)]">
                 Loading resources...
@@ -320,7 +320,7 @@ export function WorkspaceResourcesModal({
             )}
           </div>
 
-          <div className="rounded-none border border-[var(--color-border-subtle)] bg-[var(--color-bg-base)] px-4 py-4">
+          <div className="rounded-[2px] border border-[var(--color-border-subtle)] bg-[var(--color-bg-base)] px-4 py-4">
             {selected ? (
               <div className="space-y-3">
                 <div className="text-[12px] uppercase tracking-[0.14em] text-[var(--color-text-tertiary)]">

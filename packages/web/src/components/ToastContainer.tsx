@@ -21,7 +21,7 @@ export function ToastContainer({ toasts, onDismiss }: ToastContainerProps) {
           role="alert"
           className="flex items-center gap-3 border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] px-4 py-3 shadow-[var(--box-shadow-lg)] motion-safe:animate-[modal-slide-up_0.18s_ease-out]"
           style={{
-            borderRadius: 0,
+            borderRadius: "2px",
             borderLeftWidth: 3,
             borderLeftColor:
               toast.type === "error"

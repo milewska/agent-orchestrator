@@ -66,7 +66,7 @@ export function IntegrationSettings() {
               )}
               {!integration.connected && (
                 <p className="mt-2 text-[11px] text-[var(--color-text-tertiary)]">
-                  Configure via CLI: <code className="bg-[var(--color-bg-subtle)] px-1 py-0.5 text-[11px]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                  Configure via CLI: <code className="bg-[var(--color-bg-subtle)] px-1 py-0.5 text-[11px]" style={{ fontFamily: "var(--font-mono)" }}>
                     {integration.name === "GitHub" ? "gh auth login" : "export LINEAR_API_KEY=..."}
                   </code>
                 </p>

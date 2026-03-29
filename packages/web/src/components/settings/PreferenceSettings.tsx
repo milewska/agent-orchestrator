@@ -77,7 +77,7 @@ export function PreferenceSettings({
             <div
               key={id}
               className="flex items-center gap-2 border border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-2"
-              style={{ borderRadius: 0 }}
+              style={{ borderRadius: "2px" }}
             >
               <span className="flex-1 text-[13px] text-[var(--color-text-primary)]">
                 {projectNameMap.get(id) ?? id}
@@ -119,7 +119,7 @@ export function PreferenceSettings({
           value={defaultProject}
           onChange={(e) => { setDefaultProject(e.target.value); setSaved(false); }}
           className="mt-3 w-full appearance-none border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-3 py-2 text-[13px] text-[var(--color-text-primary)] focus:border-[var(--color-accent)] focus:outline-none"
-          style={{ height: 44, borderRadius: 0 }}
+          style={{ height: 44, borderRadius: "2px" }}
         >
           <option value="">None</option>
           {projects.map((p) => (
@@ -135,7 +135,7 @@ export function PreferenceSettings({
           onClick={handleSave}
           disabled={saving}
           className="bg-[var(--color-accent)] px-4 py-2 text-[12px] font-semibold text-[var(--color-text-inverse)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-          style={{ borderRadius: 0, minHeight: 44 }}
+          style={{ borderRadius: "2px", minHeight: 44 }}
         >
           {saving ? "Saving..." : "Save Preferences"}
         </button>

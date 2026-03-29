@@ -67,7 +67,7 @@ export function ProjectSettings({ projects: initialProjects }: ProjectSettingsPr
           type="button"
           onClick={addModal.open}
           className="bg-[var(--color-accent)] px-4 py-2 text-[12px] font-semibold text-[var(--color-text-inverse)] transition-colors hover:bg-[var(--color-accent-hover)]"
-          style={{ borderRadius: 0, minHeight: 44 }}
+          style={{ borderRadius: "2px", minHeight: 44 }}
         >
           + Add Project
         </button>
@@ -96,7 +96,7 @@ export function ProjectSettings({ projects: initialProjects }: ProjectSettingsPr
                     )}
                   </div>
                   {project.repoPath && (
-                    <p className="mt-1 truncate text-[12px] text-[var(--color-text-tertiary)]" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>
+                    <p className="mt-1 truncate text-[12px] text-[var(--color-text-tertiary)]" style={{ fontFamily: "var(--font-mono)" }}>
                       {project.repoPath}
                     </p>
                   )}
@@ -111,7 +111,7 @@ export function ProjectSettings({ projects: initialProjects }: ProjectSettingsPr
                     type="button"
                     onClick={() => handleTogglePin(project.id, !project.pinned)}
                     className="border border-[var(--color-border-default)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated-hover)]"
-                    style={{ borderRadius: 0 }}
+                    style={{ borderRadius: "2px" }}
                   >
                     {project.pinned ? "Unpin" : "Pin"}
                   </button>
@@ -119,7 +119,7 @@ export function ProjectSettings({ projects: initialProjects }: ProjectSettingsPr
                     type="button"
                     onClick={() => handleToggleEnabled(project.id, !project.enabled)}
                     className="border border-[var(--color-border-default)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated-hover)]"
-                    style={{ borderRadius: 0 }}
+                    style={{ borderRadius: "2px" }}
                   >
                     {project.enabled ? "Disable" : "Enable"}
                   </button>
@@ -127,7 +127,7 @@ export function ProjectSettings({ projects: initialProjects }: ProjectSettingsPr
                     type="button"
                     onClick={() => handleRemove(project.id, project.name)}
                     className="border border-[color-mix(in_srgb,var(--color-status-error)_25%,transparent)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-status-error)] transition-colors hover:bg-[var(--color-tint-red)]"
-                    style={{ borderRadius: 0 }}
+                    style={{ borderRadius: "2px" }}
                   >
                     Remove
                   </button>

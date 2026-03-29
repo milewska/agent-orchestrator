@@ -73,7 +73,7 @@ export function SubmitWorkModal({ open, onClose, projects, onSessionSpawned }: S
             type="button"
             onClick={onClose}
             className="border border-[var(--color-border-default)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated-hover)]"
-            style={{ borderRadius: 0, minHeight: 44 }}
+            style={{ borderRadius: "2px", minHeight: 44 }}
           >
             Cancel
           </button>
@@ -82,7 +82,7 @@ export function SubmitWorkModal({ open, onClose, projects, onSessionSpawned }: S
             onClick={handleSubmit}
             disabled={submitting || !projectId}
             className="bg-[var(--color-accent)] px-4 py-2 text-[12px] font-semibold text-[var(--color-text-inverse)] transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-            style={{ borderRadius: 0, minHeight: 44 }}
+            style={{ borderRadius: "2px", minHeight: 44 }}
           >
             {submitting ? "Spawning..." : "Spawn Session"}
           </button>
@@ -102,7 +102,7 @@ export function SubmitWorkModal({ open, onClose, projects, onSessionSpawned }: S
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
             className="w-full appearance-none border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-3 py-2 text-[13px] text-[var(--color-text-primary)] focus:border-[var(--color-accent)] focus:outline-none"
-            style={{ height: 44, borderRadius: 0 }}
+            style={{ height: 44, borderRadius: "2px" }}
           >
             <option value="">Select a project...</option>
             {projects.map((p) => (
@@ -124,9 +124,9 @@ export function SubmitWorkModal({ open, onClose, projects, onSessionSpawned }: S
             placeholder="INT-1234 or https://github.com/.../issues/42"
             className="w-full border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-3 py-2 text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] focus:border-[var(--color-accent)] focus:outline-none"
             style={{
-              fontFamily: "var(--font-ibm-plex-mono)",
+              fontFamily: "var(--font-mono)",
               height: 44,
-              borderRadius: 0,
+              borderRadius: "2px",
             }}
           />
           <p className="mt-1.5 text-[11px] text-[var(--color-text-tertiary)]">

@@ -39,7 +39,7 @@ export function AgentSettings({
       </div>
 
       <p className="mt-6 text-[12px] text-[var(--color-text-tertiary)]">
-        To change these defaults, edit the <code className="bg-[var(--color-bg-subtle)] px-1 py-0.5" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>agent</code> section in your project&apos;s <code className="bg-[var(--color-bg-subtle)] px-1 py-0.5" style={{ fontFamily: "var(--font-ibm-plex-mono)" }}>ao.yaml</code> config file.
+        To change these defaults, edit the <code className="bg-[var(--color-bg-subtle)] px-1 py-0.5" style={{ fontFamily: "var(--font-mono)" }}>agent</code> section in your project&apos;s <code className="bg-[var(--color-bg-subtle)] px-1 py-0.5" style={{ fontFamily: "var(--font-mono)" }}>ao.yaml</code> config file.
       </p>
     </div>
   );
@@ -52,7 +52,7 @@ function SettingCard({ label, value, description }: { label: string; value: stri
         <span className="text-[14px] font-semibold text-[var(--color-text-primary)]">{label}</span>
         <span
           className="border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] px-2.5 py-1 text-[12px] font-medium text-[var(--color-text-primary)]"
-          style={{ fontFamily: "var(--font-ibm-plex-mono)", borderRadius: 0 }}
+          style={{ fontFamily: "var(--font-mono)", borderRadius: "2px" }}
         >
           {value}
         </span>

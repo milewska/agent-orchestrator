@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { getAttentionLevel, type AttentionLevel, type DashboardSession, type PortfolioProjectSummary } from "@/lib/types";
 import { getProjectSessionHref } from "@/lib/project-utils";
 import { getSessionTitle } from "@/lib/format";
+import { Modal } from "./Modal";
 import { ThemeToggle } from "./ThemeToggle";
 import { WorkspaceResourcesModal } from "./WorkspaceResourcesModal";
 
@@ -76,8 +77,12 @@ function SidebarContent({
   const [showAddMenu, setShowAddMenu] = useState(false);
   const [openFilter, setOpenFilter] = useState<null | "groupBy" | "repo" | "status">(null);
   const [resourceProject, setResourceProject] = useState<PortfolioProjectSummary | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [spawnMenuProjectId, setSpawnMenuProjectId] = useState<string | null>(null);
   const filterMenuRef = useRef<HTMLDivElement>(null);
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const spawnMenuRef = useRef<HTMLDivElement>(null);
 
   const sortedProjects = useMemo(
     () => [...projects].sort((a, b) => a.name.localeCompare(b.name)),
@@ -141,12 +146,42 @@ function SidebarContent({
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [showAddMenu]);
 
-  async function handleSpawnAgent(projectId: string) {
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      if (!spawnMenuRef.current?.contains(event.target as Node)) {
+        setSpawnMenuProjectId(null);
+      }
+    }
+
+    if (!spawnMenuProjectId) return;
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [spawnMenuProjectId]);
+
+  function handleRemoveProject(projectId: string, projectName: string) {
+    setRemoveTarget({ id: projectId, name: projectName });
+  }
+
+  async function executeRemoveProject() {
+    if (!removeTarget) return;
+    setRemoving(true);
+    try {
+      await fetch(`/api/projects/${encodeURIComponent(removeTarget.id)}`, { method: "DELETE" });
+      setRemoveTarget(null);
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  async function handleSpawnAgent(projectId: string, agent?: string) {
     try {
       const res = await fetch("/api/orchestrators", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ projectId, ...(agent ? { agent } : {}) }),
       });
       const body = (await res.json().catch(() => null)) as
         | { error?: string; orchestrator?: { id: string } }
@@ -180,7 +215,7 @@ function SidebarContent({
 
       {/* Workspaces header */}
       <div className="flex items-center justify-between px-4 pb-3 pt-4">
-        <span className="font-[family-name:var(--font-ibm-plex-mono)] text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--color-text-tertiary)]">
+        <span className="font-[family-name:var(--font-mono)] text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--color-text-tertiary)]">
           Workspaces
         </span>
         <div className="flex items-center gap-1 text-[var(--color-text-tertiary)]">
@@ -426,13 +461,51 @@ function SidebarContent({
                     >
                       <LinkIcon />
                     </SidebarIconButton>
+                    <div className="relative" ref={spawnMenuProjectId === project.id ? spawnMenuRef : undefined}>
+                      <SidebarIconButton
+                        label="Spawn a new agent"
+                        onClick={() => {
+                          setSpawnMenuProjectId(
+                            spawnMenuProjectId === project.id ? null : project.id,
+                          );
+                        }}
+                      >
+                        <PlusIcon />
+                      </SidebarIconButton>
+                      {spawnMenuProjectId === project.id ? (
+                        <div className="absolute right-0 top-8 z-20 min-w-[164px] rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-1 shadow-[var(--box-shadow-lg,0_14px_40px_rgba(0,0,0,0.18))]">
+                          <SidebarMenuButton
+                            icon={<AgentOpenCodeIcon />}
+                            label="Open Code"
+                            onClick={() => {
+                              setSpawnMenuProjectId(null);
+                              void handleSpawnAgent(project.id, "opencode");
+                            }}
+                          />
+                          <SidebarMenuButton
+                            icon={<AgentClaudeCodeIcon />}
+                            label="Claude Code"
+                            onClick={() => {
+                              setSpawnMenuProjectId(null);
+                              void handleSpawnAgent(project.id, "claude-code");
+                            }}
+                          />
+                          <SidebarMenuButton
+                            icon={<AgentCodexIcon />}
+                            label="Codex"
+                            onClick={() => {
+                              setSpawnMenuProjectId(null);
+                              void handleSpawnAgent(project.id, "codex");
+                            }}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
                     <SidebarIconButton
-                      label="Spawn a new agent"
-                      onClick={() => {
-                        void handleSpawnAgent(project.id);
-                      }}
+                      label="Remove workspace"
+                      onClick={() => handleRemoveProject(project.id, project.name)}
                     >
-                      <PlusIcon />
+                      <TrashIcon />
                     </SidebarIconButton>
                   </div>
                 </Link>
@@ -446,7 +519,7 @@ function SidebarContent({
       {activeAgents.length > 0 && (
         <div className="border-t border-[var(--color-border-subtle)]">
           <div className="flex items-center justify-between px-4 pb-2 pt-3">
-            <span className="font-[family-name:var(--font-ibm-plex-mono)] text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--color-text-tertiary)]">
+            <span className="font-[family-name:var(--font-mono)] text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--color-text-tertiary)]">
               Agents
               <span className="ml-1.5 text-[var(--color-text-quaternary)]">{activeAgents.length}</span>
             </span>
@@ -517,6 +590,46 @@ function SidebarContent({
             : null
         }
       />
+
+      <Modal
+        open={removeTarget !== null}
+        onClose={() => setRemoveTarget(null)}
+        title="Remove Workspace"
+        size="sm"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setRemoveTarget(null)}
+              disabled={removing}
+              className="border border-[var(--color-border-default)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated-hover)] disabled:opacity-50"
+              style={{ borderRadius: "2px", minHeight: 40 }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => { void executeRemoveProject(); }}
+              disabled={removing}
+              className="bg-[var(--color-status-error)] px-4 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ borderRadius: "2px", minHeight: 40 }}
+            >
+              {removing ? "Removing..." : "Remove"}
+            </button>
+          </div>
+        }
+      >
+        <p className="text-[13px] leading-relaxed text-[var(--color-text-secondary)]">
+          Remove{" "}
+          <span
+            className="font-medium text-[var(--color-text-primary)]"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            {removeTarget?.name}
+          </span>{" "}
+          from your workspaces? The directory won&apos;t be deleted from disk.
+        </p>
+      </Modal>
     </div>
   );
 }
@@ -541,7 +654,7 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
       {visible && coords
         ? createPortal(
             <span
-              className="pointer-events-none fixed z-[9999] -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-sm)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-2 py-1 font-[family-name:var(--font-ibm-plex-sans)] text-[11px] font-medium text-[var(--color-text-primary)] shadow-[0_4px_12px_rgba(0,0,0,0.15)]"
+              className="pointer-events-none fixed z-[9999] -translate-x-1/2 whitespace-nowrap rounded-[var(--radius-sm)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-2 py-1 font-[family-name:var(--font-sans)] text-[11px] font-medium text-[var(--color-text-primary)] shadow-[0_4px_12px_rgba(0,0,0,0.15)]"
               style={{ top: coords.top, left: coords.left }}
             >
               {label}
@@ -671,7 +784,7 @@ export function UnifiedSidebar({
   return (
     <>
       {/* Desktop sidebar */}
-      <div className="relative hidden shrink-0 lg:block" style={{ width: collapsed ? 16 : width }}>
+      <div className="relative hidden shrink-0 sticky top-0 self-start lg:block" style={{ width: collapsed ? 16 : width }}>
         <aside
           className={cn(
             "h-screen overflow-hidden border-r border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] transition-[width] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] lg:flex lg:flex-col",
@@ -725,7 +838,7 @@ export function UnifiedSidebar({
           />
           <div className="absolute inset-y-0 left-0 flex w-[86vw] max-w-[280px] flex-col overflow-hidden border-r border-[var(--color-border-subtle)] bg-[var(--color-bg-surface)] shadow-[0_18px_60px_rgba(0,0,0,0.28)]">
             <div className="flex items-center justify-between border-b border-[var(--color-border-subtle)] px-4 py-3">
-              <span className="font-[family-name:var(--font-ibm-plex-mono)] text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--color-text-tertiary)]">
+              <span className="font-[family-name:var(--font-mono)] text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--color-text-tertiary)]">
                 Workspaces
               </span>
               <button
@@ -805,7 +918,7 @@ function PopoverField({
 
   return (
     <div ref={fieldRef} className="relative grid grid-cols-[60px_minmax(0,1fr)] items-center gap-2">
-      <label className="font-[family-name:var(--font-ibm-plex-mono)] text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--color-text-tertiary)]">
+      <label className="font-[family-name:var(--font-mono)] text-[10px] font-medium uppercase tracking-[0.06em] text-[var(--color-text-tertiary)]">
         {label}
       </label>
       <button
@@ -929,7 +1042,7 @@ function WorkspaceGlyph({
   if (degraded) {
     return (
       <span className="grid h-6 w-6 shrink-0 place-items-center rounded-[var(--radius-sm)] bg-[var(--color-tint-red)] text-[var(--color-accent-red)]">
-        <span className="font-[family-name:var(--font-ibm-plex-mono)] text-[11px] font-medium">!</span>
+        <span className="font-[family-name:var(--font-mono)] text-[11px] font-medium">!</span>
       </span>
     );
   }
@@ -957,7 +1070,7 @@ function WorkspaceGlyph({
           <CodeBracketIcon />
         </span>
       ) : (
-        <span className="font-[family-name:var(--font-ibm-plex-sans)] text-[11px] font-semibold text-white/90">
+        <span className="font-[family-name:var(--font-sans)] text-[11px] font-semibold text-white/90">
           {initial}
         </span>
       )}
@@ -1083,6 +1196,38 @@ function ZapIcon() {
   return (
     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
       <path d="M13 2 4.094 12.688c-.35.418-.525.627-.523.804a.5.5 0 0 0 .185.397c.138.111.41.111.955.111H12l-1 8 8.906-10.688c.35-.418.525-.627.523-.804a.5.5 0 0 0-.185-.397c-.138-.111-.41-.111-.955-.111H12l1-8Z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />
+    </svg>
+  );
+}
+
+function AgentOpenCodeIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 17l6-6-6-6M12 19h8" />
+    </svg>
+  );
+}
+
+function AgentClaudeCodeIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM8 12h.01M12 12h.01M16 12h.01" />
+    </svg>
+  );
+}
+
+function AgentCodexIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m7 8-4 4 4 4M17 8l4 4-4 4M14 4l-4 16" />
     </svg>
   );
 }

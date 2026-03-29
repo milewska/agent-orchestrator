@@ -6,7 +6,6 @@ import { loadConfig } from "@composio/ao-core";
 import { DashboardShell } from "@/components/DashboardShell";
 import { AgentSettings } from "@/components/settings/AgentSettings";
 import { IntegrationSettings } from "@/components/settings/IntegrationSettings";
-import { PreferenceSettings } from "@/components/settings/PreferenceSettings";
 import { ProjectSettings } from "@/components/settings/ProjectSettings";
 import { getPortfolioServices } from "@/lib/portfolio-services";
 import type { AttentionLevel, PortfolioProjectSummary } from "@/lib/types";
@@ -42,7 +41,7 @@ function getAgentDefaults() {
 }
 
 export default async function SettingsRoute() {
-  const { portfolio, preferences } = getPortfolioServices();
+  const { portfolio } = getPortfolioServices();
   const projectSummaries: PortfolioProjectSummary[] = portfolio
     .map((project) => ({
       id: project.id,
@@ -55,27 +54,14 @@ export default async function SettingsRoute() {
       degradedReason: project.degradedReason,
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
-  const projectOptions = portfolio.map((project) => ({
-    id: project.id,
-    name: project.name,
-  }));
-  const initialOrder =
-    preferences.projectOrder && preferences.projectOrder.length > 0
-      ? [
-          ...preferences.projectOrder.filter((id) => projectOptions.some((project) => project.id === id)),
-          ...projectOptions
-            .map((project) => project.id)
-            .filter((id) => !preferences.projectOrder?.includes(id)),
-        ]
-      : projectOptions.map((project) => project.id);
   const agentDefaults = getAgentDefaults();
 
   return (
     <DashboardShell projects={projectSummaries} defaultLocation={homedir()}>
       <main className="min-h-screen bg-[var(--color-bg-base)] px-5 py-8 text-[var(--color-text-primary)] sm:px-6 lg:px-10">
         <div className="mx-auto max-w-[1120px]">
-          <header className="rounded-none border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">
-            <div className="font-[family-name:var(--font-ibm-plex-mono)] text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
+          <header className="rounded-[2px] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">
+            <div className="font-[family-name:var(--font-mono)] text-[10px] uppercase tracking-[0.18em] text-[var(--color-text-tertiary)]">
               Settings
             </div>
             <h1 className="mt-3 text-[var(--font-size-xl)] font-bold tracking-[-0.025em] text-[var(--color-text-primary)]">
@@ -88,15 +74,7 @@ export default async function SettingsRoute() {
 
           <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
             <div className="space-y-6">
-              <section id="preferences" className="rounded-none border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">
-                <PreferenceSettings
-                  projects={projectOptions}
-                  initialOrder={initialOrder}
-                  initialDefaultProject={preferences.defaultProjectId ?? ""}
-                />
-              </section>
-
-              <section id="projects" className="rounded-none border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">
+              <section id="projects" className="rounded-[2px] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">
                 <ProjectSettings
                   projects={portfolio.map((project) => ({
                     id: project.id,
@@ -114,14 +92,14 @@ export default async function SettingsRoute() {
             </div>
 
             <div className="space-y-6">
-              <section id="agents" className="rounded-none border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">
+              <section id="agents" className="rounded-[2px] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">
                 <AgentSettings
                   defaultAgent={agentDefaults.agent}
                   workspaceStrategy={agentDefaults.workspace}
                 />
               </section>
 
-              <section id="integrations" className="rounded-none border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">
+              <section id="integrations" className="rounded-[2px] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">
                 <IntegrationSettings />
               </section>
             </div>

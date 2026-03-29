@@ -92,7 +92,7 @@ export function ActivityFeedPage({
                         key={`${item.projectId}:${item.session.id}`}
                         href={href}
                         className={cn(
-                          "grid min-h-[46px] grid-cols-[minmax(0,160px)_16px_minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] px-3 py-2 text-[13px] transition-colors hover:bg-[var(--color-bg-elevated-hover)] hover:no-underline",
+                          "grid min-h-[46px] grid-cols-[minmax(0,160px)_16px_minmax(0,1fr)_auto] items-center gap-3 rounded-[4px] px-3 py-2 text-[13px] transition-colors hover:bg-[var(--color-bg-elevated-hover)] hover:no-underline",
                           isSelected && "bg-[var(--color-accent-subtle)]",
                           isMuted && "opacity-70",
                         )}
