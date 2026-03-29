@@ -783,7 +783,7 @@ export async function enrichSessionsPRBatch(
   if (!guardResult.shouldRefresh) {
     // No changes detected - try to return cached data
     // If any PRs are missing from cache, we need to fetch them via GraphQL
-    let missingPRs: PRInfo[] = [];
+    const missingPRs: PRInfo[] = [];
 
     for (const pr of prs) {
       const prKey = `${pr.owner}/${pr.repo}#${pr.number}`;
