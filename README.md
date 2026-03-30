@@ -166,6 +166,16 @@ ao spawn 123 --runtime docker --runtime-image ghcr.io/composio/ao:latest
 ao spawn 123 --runtime docker --runtime-memory 4g --runtime-cpus 2 --runtime-read-only
 ```
 
+Or persist runtime selection in config:
+
+```bash
+ao runtime show
+ao runtime set docker my-app --image ghcr.io/composio/ao:latest --memory 4g --cpus 2 --read-only
+ao runtime clear my-app
+```
+
+`ao runtime set <name>` without a project updates `defaults.runtime`. For Docker, the project form is usually the right choice because `runtimeConfig.image` is stored per project.
+
 Your Docker image must include the basics AO expects to drive an interactive agent session:
 
 - `/bin/sh` (or the shell you set in `runtimeConfig.shell`)
