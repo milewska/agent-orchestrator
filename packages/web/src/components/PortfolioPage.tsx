@@ -33,13 +33,13 @@ function classifySession(session: {
   if (status === "merged" || status === "killed" || status === "done" || status === "terminated" || status === "cleanup") {
     return "done";
   }
-  if (status === "needs_input" || status === "stuck" || status === "changes_requested" || status === "errored") {
+  if (status === "needs_input" || status === "stuck" || status === "errored") {
     return "respond";
   }
   if (status === "mergeable" || status === "approved") {
     return "ready";
   }
-  if (status === "review_pending" || status === "ci_failed") {
+  if (status === "review_pending" || status === "ci_failed" || status === "changes_requested") {
     return "review";
   }
   if (status === "pr_open") {

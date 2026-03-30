@@ -477,6 +477,15 @@ export function loadConfig(configPath?: string): OrchestratorConfig {
     return loadConfigFromFile(configPath);
   }
 
+  // 1b. AO_CONFIG_PATH env var takes precedence over global config
+  // (preserves existing behavior for CI, tests, and scripts)
+  if (process.env["AO_CONFIG_PATH"]) {
+    const envPath = resolve(process.env["AO_CONFIG_PATH"]);
+    if (existsSync(envPath)) {
+      return loadConfigFromFile(envPath);
+    }
+  }
+
   // 2. Try global config (multi-project mode)
   const globalConfig = loadGlobalConfig();
   if (globalConfig && Object.keys(globalConfig.projects).length > 0) {
@@ -511,7 +520,16 @@ export function loadConfigWithPath(configPath?: string): {
   config: OrchestratorConfig;
   path: string;
 } {
-  // Try global config first (multi-project mode)
+  // AO_CONFIG_PATH env var takes precedence over global config
+  if (!configPath && process.env["AO_CONFIG_PATH"]) {
+    const envPath = resolve(process.env["AO_CONFIG_PATH"]);
+    if (existsSync(envPath)) {
+      const config = loadConfigFromFile(envPath);
+      return { config, path: envPath };
+    }
+  }
+
+  // Try global config (multi-project mode)
   if (!configPath) {
     const globalConfig = loadGlobalConfig();
     if (globalConfig && Object.keys(globalConfig.projects).length > 0) {
