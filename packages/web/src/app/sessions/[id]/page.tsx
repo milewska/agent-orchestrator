@@ -18,7 +18,7 @@ export default async function LegacySessionPage(props: {
   }
 
   const projectFromPrefix = portfolio.find(
-    (project) => project.sessionPrefix && params.id.startsWith(project.sessionPrefix),
+    (project) => project.sessionPrefix && params.id.startsWith(project.sessionPrefix + "-"),
   );
 
   if (projectFromPrefix) {

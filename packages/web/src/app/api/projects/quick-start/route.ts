@@ -3,7 +3,7 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { NextResponse } from "next/server";
-import { configToYaml, generateSessionPrefix } from "@composio/ao-core";
+import { configToYaml, generateSessionPrefix, sanitizeProjectId } from "@composio/ao-core";
 import { QuickStartProjectSchema } from "@/lib/api-schemas";
 import { registerAndResolveProject } from "@/lib/project-registration";
 
@@ -26,15 +26,6 @@ async function ensureMissingOrEmptyDirectory(path: string): Promise<void> {
     }
     throw error;
   }
-}
-
-function sanitizeProjectId(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function buildAoConfig(projectName: string, projectId: string, targetDir: string) {
