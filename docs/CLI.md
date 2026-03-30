@@ -12,6 +12,8 @@ ao stop                                # Stop everything (dashboard, orchestrato
 ao status                              # Overview of all sessions
 ao status --watch                      # Live-updating terminal status view
 ao dashboard                           # Open web dashboard in browser
+ao runtime show                        # Show default runtime and project overrides
+ao runtime set docker my-app --image ghcr.io/composio/ao:latest
 ```
 
 ## Commands the orchestrator agent uses
@@ -42,6 +44,27 @@ ao config-help                         # Show full config schema reference
 
 `ao update` fast-forwards the local install on `main`, reinstalls dependencies, clean-rebuilds core packages, refreshes the launcher, and runs smoke tests. Use `ao update --skip-smoke` to stop after rebuild, or `ao update --smoke-only` to rerun just the smoke checks.
 
+## Runtime config commands
+
+Use `ao runtime` when you want to persist runtime selection into `agent-orchestrator.yaml` instead of applying a one-off flag.
+
+```bash
+ao runtime show
+ao runtime show my-app
+ao runtime set process                 # updates defaults.runtime
+ao runtime set docker my-app --image ghcr.io/composio/ao:latest
+ao runtime set docker my-app --image ghcr.io/composio/ao:latest --memory 4g --cpus 2 --read-only
+ao runtime clear my-app
+```
+
+Runtime config rules:
+
+- `ao runtime set <name>` without a project updates `defaults.runtime`.
+- `ao runtime set <name> <project>` writes a per-project runtime override.
+- Docker config flags such as `--image`, `--memory`, `--cpus`, `--cap-drop`, and `--tmpfs` are project-only.
+- `ao runtime clear <project>` removes that project's explicit `runtime` and `runtimeConfig`, so it falls back to the default runtime.
+- `ao runtime set docker` at the defaults level changes selection only; each Docker-backed project still needs its own `runtimeConfig.image`.
+
 ## Runtime override examples
 
 ```bash
@@ -55,6 +78,7 @@ ao spawn 123 --runtime docker --runtime-config '{"limits":{"memory":"4g"}}'
 Runtime override rules:
 
 - Command-line runtime overrides merge on top of the project's configured `runtimeConfig`.
+- Runtime override flags are one-off; they do not rewrite `agent-orchestrator.yaml`.
 - `--runtime-config` is merged first, then explicit flags such as `--runtime-memory` or `--runtime-read-only` win for the same keys.
 - `--runtime-cap-drop` and `--runtime-tmpfs` are repeatable.
 - Runtime-aware attach surfaces (`ao session attach`, `ao open`, and the web dashboard terminal) use `docker exec ... tmux attach` for Docker sessions.
