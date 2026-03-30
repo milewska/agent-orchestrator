@@ -232,6 +232,21 @@ Supported Docker runtime keys in this branch:
 - `network`: sets `--network`
 - `tmpfs`: repeated `--tmpfs`
 
+You can also persist runtime selection from the CLI:
+
+```bash
+ao runtime show
+ao runtime set docker my-app --image ghcr.io/composio/ao:latest --memory 4g --cpus 2 --read-only
+ao runtime clear my-app
+```
+
+Notes on `ao runtime`:
+
+- `ao runtime set <name>` updates `defaults.runtime`.
+- `ao runtime set <name> <project>` writes a project override.
+- Docker config flags are project-only because `runtimeConfig` lives under each project.
+- `ao runtime clear <project>` removes both the project `runtime` and its `runtimeConfig`, so the project falls back to the default runtime.
+
 Notes:
 
 - Your image must include `/bin/sh` (or the configured `shell`), `tmux`, `git`, and the agent CLI you want AO to launch.
