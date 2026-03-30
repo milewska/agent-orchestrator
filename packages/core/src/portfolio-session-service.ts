@@ -25,11 +25,14 @@ export async function listPortfolioSessions(
     if (!project.enabled || project.degraded) continue;
 
     try {
+      let timerId: ReturnType<typeof setTimeout> | undefined;
       const projectResults = await Promise.race([
-        loadProjectSessions(project),
-        new Promise<PortfolioSession[]>((resolve) =>
-          setTimeout(() => resolve([]), timeout),
-        ),
+        loadProjectSessions(project).finally(() => {
+          if (timerId !== undefined) clearTimeout(timerId);
+        }),
+        new Promise<PortfolioSession[]>((resolve) => {
+          timerId = setTimeout(() => resolve([]), timeout);
+        }),
       ]);
       results.push(...projectResults);
     } catch {
