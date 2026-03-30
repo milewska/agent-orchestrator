@@ -369,7 +369,8 @@ export function unregisterProject(
   projectId: string,
 ): GlobalConfig {
   const updated = structuredClone(globalConfig);
-  delete updated.projects[projectId];
+  const { [projectId]: _, ...remainingProjects } = updated.projects;
+  updated.projects = remainingProjects;
   if (updated.projectOrder) {
     updated.projectOrder = updated.projectOrder.filter((id) => id !== projectId);
   }

@@ -13,6 +13,18 @@ import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import type {
+  OrchestratorConfig,
+  ProjectConfig,
+  TrackerConfig,
+  SCMConfig,
+  AgentSpecificConfig,
+  RoleAgentConfig,
+  ReactionConfig,
+  DefaultPlugins,
+  NotifierConfig,
+  EventPriority,
+} from "./types.js";
 import {
   type GlobalConfig,
   type GlobalProjectEntry,
@@ -22,6 +34,9 @@ import {
   isOldConfigFormat,
   isSecretField,
   filterSecrets,
+  detectConfigMode,
+  findLocalConfigPath,
+  loadLocalProjectConfig,
 } from "./global-config.js";
 import {
   generateConfigHash,
@@ -29,11 +44,6 @@ import {
   expandHome,
   generateProjectId,
 } from "./paths.js";
-import {
-  detectConfigMode,
-  findLocalConfigPath,
-  loadLocalProjectConfig,
-} from "./global-config.js";
 
 // =============================================================================
 // TYPES
@@ -313,10 +323,8 @@ function readdirSyncSafe(dir: string): string[] {
 export function buildEffectiveConfig(
   globalConfig: GlobalConfig,
   globalConfigPath: string,
-): import("./types.js").OrchestratorConfig {
-  // Uses imports from top of file
-
-  const projects: Record<string, import("./types.js").ProjectConfig> = {};
+): OrchestratorConfig {
+  const projects: Record<string, ProjectConfig> = {};
 
   for (const [projectId, entry] of Object.entries(globalConfig.projects)) {
     const projectPath = expandHome(entry.path);
@@ -361,20 +369,20 @@ export function buildEffectiveConfig(
       runtime: behaviorFields["runtime"] as string | undefined,
       agent: behaviorFields["agent"] as string | undefined,
       workspace: behaviorFields["workspace"] as string | undefined,
-      tracker: behaviorFields["tracker"] as import("./types.js").TrackerConfig | undefined,
-      scm: behaviorFields["scm"] as import("./types.js").SCMConfig | undefined,
+      tracker: behaviorFields["tracker"] as TrackerConfig | undefined,
+      scm: behaviorFields["scm"] as SCMConfig | undefined,
       symlinks: behaviorFields["symlinks"] as string[] | undefined,
       postCreate: behaviorFields["postCreate"] as string[] | undefined,
-      agentConfig: behaviorFields["agentConfig"] as import("./types.js").AgentSpecificConfig | undefined,
-      orchestrator: behaviorFields["orchestrator"] as import("./types.js").RoleAgentConfig | undefined,
-      worker: behaviorFields["worker"] as import("./types.js").RoleAgentConfig | undefined,
-      reactions: behaviorFields["reactions"] as Record<string, Partial<import("./types.js").ReactionConfig>> | undefined,
+      agentConfig: behaviorFields["agentConfig"] as AgentSpecificConfig | undefined,
+      orchestrator: behaviorFields["orchestrator"] as RoleAgentConfig | undefined,
+      worker: behaviorFields["worker"] as RoleAgentConfig | undefined,
+      reactions: behaviorFields["reactions"] as Record<string, Partial<ReactionConfig>> | undefined,
       agentRules: behaviorFields["agentRules"] as string | undefined,
       agentRulesFile: behaviorFields["agentRulesFile"] as string | undefined,
       orchestratorRules: behaviorFields["orchestratorRules"] as string | undefined,
-      orchestratorSessionStrategy: behaviorFields["orchestratorSessionStrategy"] as import("./types.js").ProjectConfig["orchestratorSessionStrategy"],
-      opencodeIssueSessionStrategy: behaviorFields["opencodeIssueSessionStrategy"] as import("./types.js").ProjectConfig["opencodeIssueSessionStrategy"],
-      decomposer: behaviorFields["decomposer"] as import("./types.js").ProjectConfig["decomposer"],
+      orchestratorSessionStrategy: behaviorFields["orchestratorSessionStrategy"] as ProjectConfig["orchestratorSessionStrategy"],
+      opencodeIssueSessionStrategy: behaviorFields["opencodeIssueSessionStrategy"] as ProjectConfig["opencodeIssueSessionStrategy"],
+      decomposer: behaviorFields["decomposer"] as ProjectConfig["decomposer"],
     };
   }
 
@@ -385,12 +393,12 @@ export function buildEffectiveConfig(
     terminalPort: globalConfig.terminalPort,
     directTerminalPort: globalConfig.directTerminalPort,
     readyThresholdMs: globalConfig.readyThresholdMs,
-    defaults: globalConfig.defaults as import("./types.js").DefaultPlugins,
+    defaults: globalConfig.defaults as DefaultPlugins,
     projects,
     projectOrder: globalConfig.projectOrder,
-    notifiers: globalConfig.notifiers as Record<string, import("./types.js").NotifierConfig>,
-    notificationRouting: globalConfig.notificationRouting as Record<import("./types.js").EventPriority, string[]>,
-    reactions: globalConfig.reactions as Record<string, import("./types.js").ReactionConfig>,
+    notifiers: globalConfig.notifiers as Record<string, NotifierConfig>,
+    notificationRouting: globalConfig.notificationRouting as Record<EventPriority, string[]>,
+    reactions: globalConfig.reactions as Record<string, ReactionConfig>,
   };
 }
 
