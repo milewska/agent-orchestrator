@@ -1,4 +1,5 @@
 import type { ObservabilityLevel } from "./observability.js";
+import type { ConfigMode } from "./global-config.js";
 
 /**
  * Agent Orchestrator — Core Type Definitions
@@ -946,9 +947,6 @@ export interface ReactionResult {
 // =============================================================================
 // CONFIGURATION
 // =============================================================================
-
-/** Config ownership mode per project */
-export type ConfigMode = "hybrid" | "global-only";
 
 /** Top-level orchestrator configuration (from agent-orchestrator.yaml) */
 export interface OrchestratorConfig {

@@ -478,18 +478,14 @@ export function loadConfig(configPath?: string): OrchestratorConfig {
   }
 
   // 2. Try global config (multi-project mode)
-  try {
-    const globalConfig = loadGlobalConfig();
-    if (globalConfig && Object.keys(globalConfig.projects).length > 0) {
-      const globalPath = findGlobalConfigPath();
-      const config = buildEffectiveConfig(globalConfig, globalPath);
-      // Apply defaults and reactions that the old path normally applies
-      let effective = applyProjectDefaults(config);
-      effective = applyDefaultReactions(effective);
-      return effective;
-    }
-  } catch {
-    // Global config not found or invalid — fall through to local config
+  const globalConfig = loadGlobalConfig();
+  if (globalConfig && Object.keys(globalConfig.projects).length > 0) {
+    const globalPath = findGlobalConfigPath();
+    const config = buildEffectiveConfig(globalConfig, globalPath);
+    // Apply defaults and reactions that the old path normally applies
+    let effective = applyProjectDefaults(config);
+    effective = applyDefaultReactions(effective);
+    return effective;
   }
 
   // 3. Fall back to local config search
@@ -517,17 +513,13 @@ export function loadConfigWithPath(configPath?: string): {
 } {
   // Try global config first (multi-project mode)
   if (!configPath) {
-    try {
-      const globalConfig = loadGlobalConfig();
-      if (globalConfig && Object.keys(globalConfig.projects).length > 0) {
-        const globalPath = findGlobalConfigPath();
-        let config = buildEffectiveConfig(globalConfig, globalPath);
-        config = applyProjectDefaults(config);
-        config = applyDefaultReactions(config);
-        return { config, path: globalPath };
-      }
-    } catch {
-      // Fall through
+    const globalConfig = loadGlobalConfig();
+    if (globalConfig && Object.keys(globalConfig.projects).length > 0) {
+      const globalPath = findGlobalConfigPath();
+      let config = buildEffectiveConfig(globalConfig, globalPath);
+      config = applyProjectDefaults(config);
+      config = applyDefaultReactions(config);
+      return { config, path: globalPath };
     }
   }
 

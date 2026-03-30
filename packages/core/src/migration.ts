@@ -8,7 +8,7 @@
  * This is a one-way migration. The old format is not supported after migration.
  */
 
-import { readFileSync, writeFileSync, existsSync, symlinkSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, symlinkSync, readdirSync, renameSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -233,6 +233,19 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
   saveGlobalConfig(globalConfig);
   const globalConfigPath = findGlobalConfigPath();
 
+  // Rename the original old-format config to prevent re-migration.
+  // The file is kept as .bak so the user can recover if needed.
+  const backupPath = configPath + ".pre-multiproject.bak";
+  try {
+    if (existsSync(configPath) && !existsSync(backupPath)) {
+      renameSync(configPath, backupPath);
+    }
+  } catch {
+    warnings.push(
+      `Could not rename old config at ${configPath} — re-migration may occur on next start.`,
+    );
+  }
+
   return {
     migrated: true,
     globalConfigPath,
@@ -298,7 +311,9 @@ export function buildEffectiveConfig(
       behaviorFields = extractBehaviorFromShadow(entry);
     }
 
-    const sessionPrefix = generateSessionPrefix(projectId);
+    // The project ID (map key) is already the session prefix — do not
+    // re-apply generateSessionPrefix, which would double-abbreviate it.
+    const sessionPrefix = projectId;
 
     // Infer SCM if not set
     const repo = String(behaviorFields["repo"] ?? "");
