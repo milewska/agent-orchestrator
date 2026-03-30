@@ -947,6 +947,9 @@ export interface ReactionResult {
 // CONFIGURATION
 // =============================================================================
 
+/** Config ownership mode per project */
+export type ConfigMode = "hybrid" | "global-only";
+
 /** Top-level orchestrator configuration (from agent-orchestrator.yaml) */
 export interface OrchestratorConfig {
   /**
@@ -955,6 +958,12 @@ export interface OrchestratorConfig {
    * All paths are auto-derived from this location.
    */
   configPath: string;
+
+  /**
+   * Path to the global config file (multi-project mode).
+   * Set when loaded via global config. Undefined in legacy single-file mode.
+   */
+  globalConfigPath?: string;
 
   /** Web dashboard port (defaults to 3000) */
   port?: number;
@@ -973,6 +982,9 @@ export interface OrchestratorConfig {
 
   /** Project configurations */
   projects: Record<string, ProjectConfig>;
+
+  /** Display order for projects in sidebar/portfolio */
+  projectOrder?: string[];
 
   /** Notification channel configs */
   notifiers: Record<string, NotifierConfig>;
@@ -1017,6 +1029,9 @@ export interface ProjectConfig {
 
   /** Session name prefix (e.g. "app" → "app-1", "app-2") */
   sessionPrefix: string;
+
+  /** Config ownership mode (set at runtime, not persisted) */
+  configMode?: ConfigMode;
 
   /** Override default runtime */
   runtime?: string;

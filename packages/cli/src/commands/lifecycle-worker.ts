@@ -16,13 +16,13 @@ function parseInterval(value: string): number {
 export function registerLifecycleWorker(program: Command): void {
   program
     .command("lifecycle-worker")
-    .description("Internal lifecycle polling worker")
-    .argument("<project>", "Project ID from config")
+    .description("Internal lifecycle polling worker (omit project to poll all)")
+    .argument("[project]", "Project ID from config (omit for all projects)")
     .option("--interval-ms <ms>", "Polling interval in milliseconds", "30000")
-    .action(async (projectId: string, opts: { intervalMs?: string }) => {
+    .action(async (projectId: string | undefined, opts: { intervalMs?: string }) => {
       const config = loadConfig();
       const observer = createProjectObserver(config, "lifecycle-worker");
-      if (!config.projects[projectId]) {
+      if (projectId && !config.projects[projectId]) {
         observer.setHealth({
           surface: "lifecycle.worker",
           status: "error",
@@ -35,19 +35,21 @@ export function registerLifecycleWorker(program: Command): void {
         process.exit(1);
       }
 
-      const existing = getLifecycleWorkerStatus(config, projectId);
-      if (existing.running && existing.pid !== process.pid) {
-        // Another lifecycle worker is already running for this project — exit
-        // silently to avoid duplicate polling loops.
-        observer.setHealth({
-          surface: "lifecycle.worker",
-          status: "warn",
-          projectId,
-          correlationId: createCorrelationId("lifecycle-worker"),
-          reason: `Worker already running with pid ${existing.pid}`,
-          details: { projectId, pid: existing.pid },
-        });
-        return;
+      if (projectId) {
+        const existing = getLifecycleWorkerStatus(config, projectId);
+        if (existing.running && existing.pid !== process.pid) {
+          // Another lifecycle worker is already running for this project — exit
+          // silently to avoid duplicate polling loops.
+          observer.setHealth({
+            surface: "lifecycle.worker",
+            status: "warn",
+            projectId,
+            correlationId: createCorrelationId("lifecycle-worker"),
+            reason: `Worker already running with pid ${existing.pid}`,
+            details: { projectId, pid: existing.pid },
+          });
+          return;
+        }
       }
 
       const lifecycle = await getLifecycleManager(config, projectId);
@@ -60,7 +62,7 @@ export function registerLifecycleWorker(program: Command): void {
         shuttingDown = true;
         if (heartbeat) clearInterval(heartbeat);
         lifecycle.stop();
-        clearLifecycleWorkerPid(config, projectId, process.pid);
+        if (projectId) clearLifecycleWorkerPid(config, projectId, process.pid);
         observer.setHealth({
           surface: "lifecycle.worker",
           status: code === 0 ? "warn" : "error",
@@ -113,7 +115,7 @@ export function registerLifecycleWorker(program: Command): void {
         shutdown(1);
       });
 
-      writeLifecycleWorkerPid(config, projectId, process.pid);
+      if (projectId) writeLifecycleWorkerPid(config, projectId, process.pid);
       observer.setHealth({
         surface: "lifecycle.worker",
         status: "ok",

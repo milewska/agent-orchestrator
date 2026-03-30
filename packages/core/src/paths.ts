@@ -16,11 +16,25 @@ import { realpathSync, existsSync, writeFileSync, readFileSync, mkdirSync } from
 /**
  * Generate a 12-character hash from a config directory path.
  * Always resolves symlinks before hashing to ensure consistency.
+ *
+ * @deprecated Use generateProjectPathHash() for new code.
+ * This function is kept for backwards compatibility with existing storage directories.
  */
 export function generateConfigHash(configPath: string): string {
   const resolved = realpathSync(configPath);
   const configDir = dirname(resolved);
   const hash = createHash("sha256").update(configDir).digest("hex");
+  return hash.slice(0, 12);
+}
+
+/**
+ * Generate a 12-character hash from a project path.
+ * Used in multi-project mode where hash is derived from project.path
+ * instead of the config file location.
+ */
+export function generateProjectPathHash(projectPath: string): string {
+  const resolved = existsSync(projectPath) ? realpathSync(projectPath) : projectPath;
+  const hash = createHash("sha256").update(resolved).digest("hex");
   return hash.slice(0, 12);
 }
 
@@ -181,6 +195,43 @@ export function expandHome(filepath: string): string {
     return join(homedir(), filepath.slice(2));
   }
   return filepath;
+}
+
+// =============================================================================
+// MULTI-PROJECT PATH UTILITIES (project.path-based hashing)
+// =============================================================================
+
+/**
+ * Get the project base directory using project.path-based hashing.
+ * Format: {dataDir}/{hash}-{projectId}
+ */
+export function getProjectBaseDirByPath(dataDir: string, projectPath: string): string {
+  const hash = generateProjectPathHash(projectPath);
+  const projectId = generateProjectId(projectPath);
+  return join(dataDir, `${hash}-${projectId}`);
+}
+
+/**
+ * Get the sessions directory using project.path-based hashing.
+ */
+export function getSessionsDirByPath(dataDir: string, projectPath: string): string {
+  return join(getProjectBaseDirByPath(dataDir, projectPath), "sessions");
+}
+
+/**
+ * Get the worktrees directory using project.path-based hashing.
+ */
+export function getWorktreesDirByPath(dataDir: string, projectPath: string): string {
+  return join(getProjectBaseDirByPath(dataDir, projectPath), "worktrees");
+}
+
+/**
+ * Generate tmux name using project.path-based hashing.
+ * Format: {hash}-{prefix}-{num}
+ */
+export function generateTmuxNameByPath(projectPath: string, prefix: string, num: number): string {
+  const hash = generateProjectPathHash(projectPath);
+  return `${hash}-${prefix}-${num}`;
 }
 
 /**
