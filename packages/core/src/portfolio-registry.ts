@@ -91,12 +91,13 @@ export function discoverProjects(): PortfolioProject[] {
       }
     } catch {
       // .origin may point to a flat local config (post-migration to hybrid model).
-      // Fall back to the global config for project metadata while keeping the
-      // original configPath so the session-directory hash remains stable.
+      // Fall back to the global config for project metadata and update configPath
+      // so PortfolioProject.configPath is resolvable by downstream callers.
       try {
         const globalPath = getGlobalConfigPath();
         if (existsSync(globalPath) && globalPath !== configPath) {
           config = loadConfig(globalPath);
+          configPath = globalPath;
           projectConfig = config.projects[projectId];
           if (!projectConfig) {
             for (const [_key, pc] of Object.entries(config.projects)) {
@@ -278,7 +279,15 @@ export function getPortfolio(): PortfolioProject[] {
     try {
       config = loadConfig(configPath);
     } catch {
-      continue;
+      // configPath may be a flat local config (post-migration). Try global config.
+      try {
+        const globalPath = getGlobalConfigPath();
+        if (!existsSync(globalPath)) continue;
+        config = loadConfig(globalPath);
+        configPath = globalPath;
+      } catch {
+        continue;
+      }
     }
 
     // Determine which project key to use
