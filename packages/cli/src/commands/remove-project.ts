@@ -14,6 +14,7 @@ import {
   loadConfig,
 } from "@composio/ao-core";
 import { getSessionManager } from "../lib/create-session-manager.js";
+import { stopLifecycleWorker } from "../lib/lifecycle-service.js";
 import { promptConfirm } from "../lib/prompts.js";
 import { isHumanCaller } from "../lib/caller-context.js";
 
@@ -66,6 +67,14 @@ export function registerRemoveProject(program: Command): void {
             console.log(chalk.dim("Cancelled."));
             return;
           }
+        }
+
+        // Stop lifecycle worker for this project
+        try {
+          const config = loadConfig();
+          await stopLifecycleWorker(config, projectId);
+        } catch {
+          // Not critical — worker may not be running
         }
 
         // Remove from global config

@@ -18,7 +18,6 @@ import {
   registerProject,
   unregisterProject,
   detectConfigMode,
-  findLocalConfigPath,
   syncShadow,
   isOldConfigFormat,
   matchProjectByCwd,

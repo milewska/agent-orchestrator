@@ -522,7 +522,7 @@ export function loadConfig(configPath?: string): OrchestratorConfig {
 
   // 2. Try global config (multi-project mode)
   const globalConfig = loadGlobalConfig();
-  if (globalConfig && Object.keys(globalConfig.projects).length > 0) {
+  if (globalConfig) {
     const globalPath = findGlobalConfigPath();
     const config = buildEffectiveConfig(globalConfig, globalPath);
     // Apply defaults, reactions, and uniqueness validation
@@ -566,7 +566,7 @@ export function loadConfigWithPath(configPath?: string): {
   // Try global config (multi-project mode)
   if (!configPath) {
     const globalConfig = loadGlobalConfig();
-    if (globalConfig && Object.keys(globalConfig.projects).length > 0) {
+    if (globalConfig) {
       const globalPath = findGlobalConfigPath();
       let config = buildEffectiveConfig(globalConfig, globalPath);
       config = applyProjectDefaults(config);

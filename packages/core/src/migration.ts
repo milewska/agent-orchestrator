@@ -8,8 +8,8 @@
  * This is a one-way migration. The old format is not supported after migration.
  */
 
-import { readFileSync, writeFileSync, existsSync, symlinkSync, readdirSync, renameSync, realpathSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { readFileSync, writeFileSync, existsSync, symlinkSync, readdirSync, renameSync, realpathSync, mkdirSync } from "node:fs";
+import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -175,14 +175,11 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
   const oldStorageHash = generateConfigHash(configPath);
 
   // Compute the runtime hash that getProjectBaseDir(globalConfigPath, ...)
-  // will produce after migration. generateConfigHash does:
-  //   realpathSync(configPath) → dirname → sha256 → slice(0,12)
-  // The global config will be at ~/.agent-orchestrator/config.yaml,
-  // so dirname is the resolved ~/.agent-orchestrator/ path.
-  const globalDir = resolve(homedir(), ".agent-orchestrator");
-  const resolvedGlobalDir = existsSync(globalDir)
-    ? realpathSync(globalDir)
-    : globalDir;
+  // will produce after migration. Uses findGlobalConfigPath() to respect
+  // AO_GLOBAL_CONFIG_PATH and XDG env vars.
+  const globalConfigDir = dirname(findGlobalConfigPath());
+  mkdirSync(globalConfigDir, { recursive: true });
+  const resolvedGlobalDir = realpathSync(globalConfigDir);
   const runtimeHash = createHash("sha256").update(resolvedGlobalDir).digest("hex").slice(0, 12);
 
   // Backup the original config BEFORE writing any flat local configs.

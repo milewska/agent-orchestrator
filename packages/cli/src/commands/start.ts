@@ -1456,15 +1456,26 @@ export function registerStart(program: Command): void {
           if (agentOverride) {
             const { orchestratorAgent, workerAgent } = agentOverride;
 
-            const rawYaml = readFileSync(config.configPath, "utf-8");
-            const rawConfig = yamlParse(rawYaml);
-            const proj = rawConfig.projects[projectId];
-            proj.orchestrator = { ...(proj.orchestrator ?? {}), agent: orchestratorAgent };
-            proj.worker = { ...(proj.worker ?? {}), agent: workerAgent };
-            writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
-            console.log(chalk.dim(`  ✓ Saved to ${config.configPath}\n`));
-            
-            config = loadConfig(config.configPath);
+            if (config.globalConfigPath) {
+              // Multi-project mode: write to shadow file
+              const shadow = loadShadowFile(projectId) ?? {};
+              shadow["orchestrator"] = { ...(shadow["orchestrator"] as Record<string, unknown> ?? {}), agent: orchestratorAgent };
+              shadow["worker"] = { ...(shadow["worker"] as Record<string, unknown> ?? {}), agent: workerAgent };
+              saveShadowFile(projectId, shadow);
+              console.log(chalk.dim(`  ✓ Saved agent config\n`));
+            } else {
+              // Legacy single-file mode
+              const rawYaml = readFileSync(config.configPath, "utf-8");
+              const rawConfig = yamlParse(rawYaml);
+              const proj = rawConfig.projects[projectId];
+              if (proj) {
+                proj.orchestrator = { ...(proj.orchestrator ?? {}), agent: orchestratorAgent };
+                proj.worker = { ...(proj.worker ?? {}), agent: workerAgent };
+                writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
+                console.log(chalk.dim(`  ✓ Saved to ${config.configPath}\n`));
+              }
+            }
+            config = loadConfig();
             project = config.projects[projectId];
           }
 
