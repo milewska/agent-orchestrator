@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import type {
@@ -18,6 +18,9 @@ const execFileAsync = promisify(execFile);
 const DOCKER_COMMAND_TIMEOUT_MS = 30_000;
 const SAFE_SESSION_ID = /^[a-zA-Z0-9_-]+$/;
 const LONG_MESSAGE_THRESHOLD = 200;
+const CONTAINER_AO_BIN_DIR = "/tmp/ao/bin";
+const CONTAINER_AO_DATA_DIR = "/tmp/ao/data";
+const AO_METADATA_HELPER = "ao-metadata-helper.sh";
 
 export const manifest = {
   name: "docker",
@@ -41,6 +44,12 @@ interface DockerRuntimeConfig {
   };
 }
 
+interface VolumeMount {
+  hostPath: string;
+  containerPath: string;
+  readOnly?: boolean;
+}
+
 function assertValidSessionId(id: string): void {
   if (!SAFE_SESSION_ID.test(id)) {
     throw new Error(`Invalid session ID "${id}": must match ${SAFE_SESSION_ID}`);
@@ -53,6 +62,140 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function parseDockerRuntimeConfig(config?: Record<string, unknown>): DockerRuntimeConfig {
   return isPlainObject(config) ? (config as DockerRuntimeConfig) : {};
+}
+
+function pathIsFile(path: string): boolean {
+  try {
+    return existsSync(path) && lstatSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function pathIsDirectory(path: string): boolean {
+  try {
+    return existsSync(path) && lstatSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function parsePathEntries(value?: string): string[] {
+  return (value ?? "").split(":").filter(Boolean);
+}
+
+function rewritePathEntries(
+  value: string | undefined,
+  replacements: Map<string, string>,
+): string | undefined {
+  if (!value) return undefined;
+
+  const entries: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of parsePathEntries(value)) {
+    const next = replacements.get(entry) ?? entry;
+    if (!next || seen.has(next)) continue;
+    entries.push(next);
+    seen.add(next);
+  }
+
+  return entries.length > 0 ? entries.join(":") : undefined;
+}
+
+function dedupeMounts(mounts: VolumeMount[]): VolumeMount[] {
+  const deduped = new Map<string, VolumeMount>();
+  for (const mount of mounts) {
+    if (!mount.hostPath || !mount.containerPath) continue;
+    deduped.set(`${mount.hostPath}->${mount.containerPath}`, mount);
+  }
+  return [...deduped.values()];
+}
+
+function findWrapperDir(pathValue?: string): string | undefined {
+  for (const entry of parsePathEntries(pathValue)) {
+    if (pathIsFile(join(entry, AO_METADATA_HELPER))) {
+      return entry;
+    }
+  }
+  return undefined;
+}
+
+function resolveExternalGitCommonDir(workspacePath: string): string | undefined {
+  const gitPath = join(workspacePath, ".git");
+  if (!pathIsFile(gitPath)) return undefined;
+
+  let rawGitDir: string;
+  try {
+    rawGitDir = readFileSync(gitPath, "utf-8").trim();
+  } catch {
+    return undefined;
+  }
+
+  const match = rawGitDir.match(/^gitdir:\s*(.+)\s*$/i);
+  if (!match) return undefined;
+
+  const gitDir = resolve(workspacePath, match[1]);
+  const commonDirFile = join(gitDir, "commondir");
+  if (!pathIsFile(commonDirFile)) {
+    return gitDir;
+  }
+
+  try {
+    const commonDir = readFileSync(commonDirFile, "utf-8").trim();
+    return commonDir ? resolve(gitDir, commonDir) : gitDir;
+  } catch {
+    return gitDir;
+  }
+}
+
+function getWorkspaceMounts(workspacePath: string): VolumeMount[] {
+  const mounts: VolumeMount[] = [{ hostPath: workspacePath, containerPath: workspacePath }];
+  const gitCommonDir = resolveExternalGitCommonDir(workspacePath);
+  if (gitCommonDir) {
+    mounts.push({ hostPath: gitCommonDir, containerPath: gitCommonDir });
+  }
+  return dedupeMounts(mounts);
+}
+
+function prepareContainerEnvironment(environment: Record<string, string>): {
+  environment: Record<string, string>;
+  mounts: VolumeMount[];
+} {
+  const prepared = { ...environment };
+  const mounts: VolumeMount[] = [];
+
+  const wrapperDir = findWrapperDir(prepared["PATH"]);
+  if (wrapperDir && pathIsDirectory(wrapperDir)) {
+    mounts.push({
+      hostPath: wrapperDir,
+      containerPath: CONTAINER_AO_BIN_DIR,
+      readOnly: true,
+    });
+    const rewrittenPath = rewritePathEntries(
+      prepared["PATH"],
+      new Map([[wrapperDir, CONTAINER_AO_BIN_DIR]]),
+    );
+    if (rewrittenPath) {
+      prepared["PATH"] = rewrittenPath;
+    }
+  }
+
+  const aoDataDir = prepared["AO_DATA_DIR"];
+  if (aoDataDir && pathIsDirectory(aoDataDir)) {
+    mounts.push({ hostPath: aoDataDir, containerPath: CONTAINER_AO_DATA_DIR });
+    prepared["AO_DATA_DIR"] = CONTAINER_AO_DATA_DIR;
+  }
+
+  // GH_PATH is host-resolved by the agent plugin and often invalid in-container.
+  delete prepared["GH_PATH"];
+
+  return { environment: prepared, mounts: dedupeMounts(mounts) };
+}
+
+function toVolumeArg(mount: VolumeMount): string {
+  return mount.readOnly
+    ? `${mount.hostPath}:${mount.containerPath}:ro`
+    : `${mount.hostPath}:${mount.containerPath}`;
 }
 
 async function docker(args: string[]): Promise<string> {
@@ -208,17 +351,17 @@ export function create(): Runtime {
       const containerName = config.sessionId;
       const tmuxSessionName = config.sessionId;
       const shell = runtimeConfig.shell ?? "/bin/sh";
+      const preparedEnvironment = prepareContainerEnvironment(config.environment ?? {});
+      const mounts = dedupeMounts([
+        ...getWorkspaceMounts(config.workspacePath),
+        ...preparedEnvironment.mounts,
+      ]);
 
-      const runArgs = [
-        "run",
-        "-d",
-        "--name",
-        containerName,
-        "--workdir",
-        config.workspacePath,
-        "--volume",
-        `${config.workspacePath}:${config.workspacePath}`,
-      ];
+      const runArgs = ["run", "-d", "--name", containerName, "--workdir", config.workspacePath];
+
+      for (const mount of mounts) {
+        runArgs.push("--volume", toVolumeArg(mount));
+      }
 
       const dockerUser = runtimeConfig.user ?? getDefaultDockerUser();
       if (dockerUser) {
@@ -256,7 +399,7 @@ export function create(): Runtime {
       try {
         await docker(runArgs);
         const envArgs: string[] = [];
-        for (const [key, value] of Object.entries(config.environment ?? {})) {
+        for (const [key, value] of Object.entries(preparedEnvironment.environment)) {
           envArgs.push("-e", `${key}=${value}`);
         }
         await dockerTmux(containerName, [
