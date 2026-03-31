@@ -179,8 +179,8 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
     );
   }
 
-  // Track used IDs to detect collisions within this migration
-  const usedIds = new Set<string>();
+  // Track used IDs — seed with existing global config projects to prevent overwrites
+  const usedIds = new Set<string>(Object.keys(globalConfig.projects));
 
   for (const [configKey, projectRaw] of Object.entries(oldProjects)) {
     const projectPath = expandHome(String(projectRaw["path"] ?? ""));

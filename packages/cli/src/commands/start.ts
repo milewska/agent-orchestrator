@@ -1296,19 +1296,15 @@ export function registerStart(program: Command): void {
                 process.exit(0);
               } else if (choice === "new") {
                 // Generate unique orchestrator: same project, new session.
-                // Use in-memory config (has full behavior) — don't read raw
-                // global config which only has identity-only entries.
-                const existingPrefixes = new Set(
-                  Object.values(config.projects).map((p) => p.sessionPrefix).filter(Boolean),
-                );
+                // Check against existing project IDs (which equal session prefixes
+                // in multi-project mode) to avoid collisions.
+                const existingIds = new Set(Object.keys(config.projects));
 
                 let newId: string;
-                let newPrefix: string;
                 do {
                   const suffix = Math.random().toString(36).slice(2, 6);
                   newId = `${projectId}-${suffix}`;
-                  newPrefix = generateSessionPrefix(newId);
-                } while (config.projects[newId] || existingPrefixes.has(newPrefix));
+                } while (existingIds.has(newId));
 
                 // Register in global config + create shadow from existing project
                 if (config.globalConfigPath) {
@@ -1330,7 +1326,7 @@ export function registerStart(program: Command): void {
                   const rawConfig = yamlParse(rawYaml);
                   rawConfig.projects[newId] = {
                     ...rawConfig.projects[projectId],
-                    sessionPrefix: newPrefix,
+                    sessionPrefix: generateSessionPrefix(newId),
                   };
                   writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
                 }
