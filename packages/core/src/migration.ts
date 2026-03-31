@@ -34,6 +34,7 @@ import {
   isOldConfigFormat,
   isSecretField,
   filterSecrets,
+  registerProject,
   detectConfigMode,
   findLocalConfigPath,
   loadLocalProjectConfig,
@@ -122,7 +123,7 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
   // 2. Build global config — load existing one first to avoid overwriting
   // projects registered by previous migrations from other project dirs.
   const existing = loadGlobalConfig();
-  const globalConfig: GlobalConfig = existing ?? {
+  let globalConfig: GlobalConfig = existing ?? {
     port: (parsed["port"] as number) ?? 3000,
     terminalPort: parsed["terminalPort"] as number | undefined,
     directTerminalPort: parsed["directTerminalPort"] as number | undefined,
@@ -222,7 +223,7 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
       }
     }
 
-    globalConfig.projects[projectId] = globalEntry;
+    globalConfig = registerProject(globalConfig, projectId, globalEntry);
     registeredProjects.push(projectId);
 
     // 3. Build flat local config (behavior only, strip identity)

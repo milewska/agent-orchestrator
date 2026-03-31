@@ -38,8 +38,10 @@ import {
   loadLocalProjectConfig,
   syncShadow,
   matchProjectByCwd,
+  findGlobalConfigPath,
   needsMigration,
   migrateToMultiProject,
+  buildEffectiveConfig,
   generateProjectId,
   expandHome,
   type OrchestratorConfig,
@@ -140,20 +142,17 @@ async function handleMultiProjectStart(
       if (globalConfig.projects[derivedId]) {
         const existing = globalConfig.projects[derivedId];
         if (resolve(expandHome(existing.path)) !== resolvedDir) {
-          // Collision with different project
+          // Collision with different project — auto-resolve with suffix
+          let suffix = 2;
+          let altId = `${derivedId}${suffix}`;
+          while (globalConfig.projects[altId]) {
+            suffix++;
+            altId = `${derivedId}${suffix}`;
+          }
+          projectId = altId;
           if (isHumanCaller()) {
             console.log(chalk.yellow(`\nDerived project ID "${derivedId}" is already taken by ${existing.name ?? derivedId}.`));
-            // For now, append a suffix
-            let suffix = 2;
-            let altId = `${derivedId}${suffix}`;
-            while (globalConfig.projects[altId]) {
-              suffix++;
-              altId = `${derivedId}${suffix}`;
-            }
-            projectId = altId;
             console.log(chalk.dim(`  Using "${projectId}" instead.\n`));
-          } else {
-            return null; // Let old flow handle
           }
         } else {
           projectId = derivedId;
@@ -213,8 +212,11 @@ async function handleMultiProjectStart(
     }
   }
 
-  // 4. Build effective config (use loadConfig which applies defaults + reactions)
-  const effectiveConfig = loadConfig();
+  // 4. Build effective config directly from the in-memory globalConfig.
+  // Don't use loadConfig() here — it re-enters the full discovery chain
+  // and AO_CONFIG_PATH could redirect to a stale/old-format config.
+  const globalPath = findGlobalConfigPath();
+  const effectiveConfig = buildEffectiveConfig(globalConfig, globalPath);
 
   return { config: effectiveConfig, projectId };
 }

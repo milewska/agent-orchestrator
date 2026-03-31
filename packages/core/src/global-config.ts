@@ -279,12 +279,13 @@ export function loadGlobalConfig(): GlobalConfig | null {
   const parsed = parseYaml(raw);
   const validated = GlobalConfigSchema.parse(parsed);
 
-  // Expand ~ in project paths
-  for (const entry of Object.values(validated.projects)) {
+  // Clone before mutating to avoid modifying Zod's parse output directly
+  const config = structuredClone(validated);
+  for (const entry of Object.values(config.projects)) {
     entry.path = expandHome(entry.path);
   }
 
-  return validated;
+  return config;
 }
 
 /**
@@ -519,16 +520,18 @@ export function isOldConfigFormat(raw: unknown): boolean {
 
   const projects = obj["projects"] as Record<string, unknown>;
   let hasOldStyleEntry = false;
+  let hasMigratedEntry = false;
   for (const entry of Object.values(projects)) {
     if (typeof entry !== "object" || entry === null) continue;
     const e = entry as Record<string, unknown>;
-    // Global configs have `_shadowSyncedAt` — skip those
-    if ("_shadowSyncedAt" in e) return false;
-    if ("path" in e && "repo" in e) {
+    if ("_shadowSyncedAt" in e) {
+      hasMigratedEntry = true;
+    } else if ("path" in e && "repo" in e) {
       hasOldStyleEntry = true;
     }
   }
-  return hasOldStyleEntry;
+  // Only old format if there are old-style entries and NO migrated entries
+  return hasOldStyleEntry && !hasMigratedEntry;
 }
 
 /**

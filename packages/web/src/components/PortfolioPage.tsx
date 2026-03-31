@@ -118,9 +118,9 @@ export function PortfolioPage({ projects, initialCards }: PortfolioPageProps) {
           const card = cardMap.get(session.projectId);
           if (!card) continue;
 
-          card.sessionCounts.total++;
           const bucket = classifySession(session);
           if (bucket !== "done" && bucket in card.sessionCounts) {
+            card.sessionCounts.total++;
             card.sessionCounts[bucket]++;
           }
         }
