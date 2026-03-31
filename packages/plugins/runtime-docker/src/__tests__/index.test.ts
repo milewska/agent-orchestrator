@@ -14,6 +14,9 @@ vi.mock("node:crypto", () => ({
 }));
 
 vi.mock("node:fs", () => ({
+  existsSync: vi.fn(),
+  lstatSync: vi.fn(),
+  readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
 }));
@@ -26,6 +29,9 @@ const mockExecFileCustom = (childProcess.execFile as any)[
   Symbol.for("nodejs.util.promisify.custom")
 ] as ReturnType<typeof vi.fn>;
 const expectedDockerOptions = { timeout: 30_000 };
+const mockExistsSync = fs.existsSync as ReturnType<typeof vi.fn>;
+const mockLstatSync = fs.lstatSync as ReturnType<typeof vi.fn>;
+const mockReadFileSync = fs.readFileSync as ReturnType<typeof vi.fn>;
 
 function mockDockerSuccess(stdout = ""): void {
   mockExecFileCustom.mockResolvedValueOnce({ stdout: stdout ? `${stdout}\n` : "", stderr: "" });
@@ -33,6 +39,36 @@ function mockDockerSuccess(stdout = ""): void {
 
 function mockDockerError(message: string): void {
   mockExecFileCustom.mockRejectedValueOnce(new Error(message));
+}
+
+function addFileSystemEntries(
+  entries: Array<{ path: string; kind: "file" | "dir"; content?: string }>,
+): void {
+  const stats = new Map(entries.map((entry) => [entry.path, entry.kind]));
+  const contents = new Map(
+    entries
+      .filter((entry) => entry.content !== undefined)
+      .map((entry) => [entry.path, entry.content!]),
+  );
+
+  mockExistsSync.mockImplementation((candidate: string) => stats.has(candidate));
+  mockLstatSync.mockImplementation((candidate: string) => {
+    const kind = stats.get(candidate);
+    if (!kind) {
+      throw new Error(`ENOENT: ${candidate}`);
+    }
+    return {
+      isFile: () => kind === "file",
+      isDirectory: () => kind === "dir",
+    };
+  });
+  mockReadFileSync.mockImplementation((candidate: string) => {
+    const content = contents.get(candidate);
+    if (content === undefined) {
+      throw new Error(`ENOENT: ${candidate}`);
+    }
+    return content;
+  });
 }
 
 function makeHandle(overrides: Partial<RuntimeHandle> = {}): RuntimeHandle {
@@ -54,6 +90,13 @@ import dockerPlugin, { create, manifest } from "../index.js";
 beforeEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
+  mockExistsSync.mockReturnValue(false);
+  mockLstatSync.mockImplementation(() => {
+    throw new Error("ENOENT");
+  });
+  mockReadFileSync.mockImplementation(() => {
+    throw new Error("ENOENT");
+  });
 });
 
 describe("manifest & exports", () => {
@@ -215,6 +258,78 @@ describe("runtime.create()", () => {
       ["exec", "docker-session", "tmux", "send-keys", "-t", "docker-session", "Enter"],
       expectedDockerOptions,
     );
+  });
+
+  it("mounts worktree git metadata, remaps wrappers, and strips host-only GH_PATH", async () => {
+    addFileSystemEntries([
+      {
+        path: "/worktrees/docker-session/.git",
+        kind: "file",
+        content: "gitdir: /repo/.git/worktrees/docker-session\n",
+      },
+      { path: "/repo/.git/worktrees/docker-session/commondir", kind: "file", content: "../..\n" },
+      { path: "/host/.ao/bin", kind: "dir" },
+      { path: "/host/.ao/bin/ao-metadata-helper.sh", kind: "file", content: "#!/bin/sh\n" },
+      { path: "/host/.agent/sessions", kind: "dir" },
+    ]);
+
+    mockDockerSuccess("container-id");
+    mockDockerSuccess();
+    mockDockerSuccess();
+    mockDockerSuccess();
+
+    await create().create({
+      sessionId: "docker-session",
+      workspacePath: "/worktrees/docker-session",
+      launchCommand: "codex --model gpt-5",
+      environment: {
+        AO_SESSION: "docker-session",
+        PATH: "/host/.ao/bin:/usr/local/bin:/usr/bin:/bin",
+        GH_PATH: "/usr/local/bin/gh",
+        AO_DATA_DIR: "/host/.agent/sessions",
+      },
+      runtimeConfig: { image: "ao-fake-codex:latest" },
+    });
+
+    const runArgs = mockExecFileCustom.mock.calls[0]?.[1] as string[];
+    expect(runArgs).toEqual(
+      expect.arrayContaining([
+        "run",
+        "-d",
+        "--name",
+        "docker-session",
+        "--workdir",
+        "/worktrees/docker-session",
+        "--volume",
+        "/worktrees/docker-session:/worktrees/docker-session",
+        "--volume",
+        "/repo/.git:/repo/.git",
+        "--volume",
+        "/host/.ao/bin:/tmp/ao/bin:ro",
+        "--volume",
+        "/host/.agent/sessions:/tmp/ao/data",
+        "ao-fake-codex:latest",
+      ]),
+    );
+
+    const tmuxArgs = mockExecFileCustom.mock.calls[1]?.[1] as string[];
+    expect(tmuxArgs).toEqual([
+      "exec",
+      "docker-session",
+      "tmux",
+      "new-session",
+      "-d",
+      "-s",
+      "docker-session",
+      "-c",
+      "/worktrees/docker-session",
+      "-e",
+      "AO_SESSION=docker-session",
+      "-e",
+      "PATH=/tmp/ao/bin:/usr/local/bin:/usr/bin:/bin",
+      "-e",
+      "AO_DATA_DIR=/tmp/ao/data",
+    ]);
   });
 
   it("removes the container if startup fails", async () => {
