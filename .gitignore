@@ -59,7 +59,7 @@ packages/web/agent-orchestrator.yaml
 # Local agent orchestrator config (may contain secrets)
 agent-orchestrator.yaml
 
-# Agent configuration and activity logs (personal, not for repo)
+# Agent configuration and activity logs
 .claude/
 .opencode/
 .ao/
