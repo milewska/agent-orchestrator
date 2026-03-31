@@ -103,6 +103,9 @@ update_ao_metadata() {
 
   [[ -f "\$metadata_file" ]] || return 0
 
+  # Validate key — only allow alphanumeric, underscore, hyphen (prevents sed injection)
+  [[ "\$key" =~ ^[a-zA-Z0-9_-]+$ ]] || return 0
+
   local temp_file="\${metadata_file}.tmp.\$\$"
 
   # Strip newlines from value to prevent metadata line injection

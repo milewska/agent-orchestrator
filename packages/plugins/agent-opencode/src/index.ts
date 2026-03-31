@@ -245,7 +245,7 @@ function createOpenCodeAgent(): Agent {
         ];
         const captureScript = buildSessionIdCaptureScript();
         const fallbackScript = buildSessionLookupScript();
-        const runCommand = ["opencode", "run", ...runOptions, "--", "noop"].join(" ");
+        const runCommand = ["opencode", "run", ...runOptions, "--command", "true"].join(" ");
         const resumeOptions = [...(promptValue ? ["--prompt", promptValue] : []), ...sharedOptions];
         const resumeOptionsSuffix = resumeOptions.length > 0 ? ` ${resumeOptions.join(" ")}` : "";
         const missingSessionError = shellEscape(
