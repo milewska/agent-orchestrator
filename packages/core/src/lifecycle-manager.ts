@@ -957,35 +957,37 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     // Skip if we already dispatched this exact failure set
     if (ciFingerprint === lastCIDispatchHash) return;
 
-    // Dispatch CI failure details
+    // Dispatch CI failure details directly via sessionManager.send() rather than
+    // executeReaction() to avoid consuming the ci-failed reaction's retry budget.
+    // The transition reaction owns escalation; this is a follow-up info delivery.
     const reactionConfig = getReactionConfigForSession(session, ciReactionKey);
     if (
       reactionConfig &&
       reactionConfig.action &&
       (reactionConfig.auto !== false || reactionConfig.action === "notify")
     ) {
-      // Build a detailed message with failure information, falling back to the
-      // configured static message when check details are available
       const detailedMessage = formatCIFailureMessage(failedChecks);
-      const messageToSend = detailedMessage;
 
-      // Create a reaction config clone with the detailed message
-      const reactionWithDetails: ReactionConfig = {
-        ...reactionConfig,
-        message: messageToSend,
-      };
+      try {
+        if (reactionConfig.action === "send-to-agent") {
+          await sessionManager.send(session.id, detailedMessage);
+        } else {
+          // For "notify" action, send to human notifiers instead
+          const event = createEvent("ci.failing", {
+            sessionId: session.id,
+            projectId: session.projectId,
+            message: detailedMessage,
+            data: { failedChecks: failedChecks.map((c) => c.name) },
+          });
+          await notifyHuman(event, reactionConfig.priority ?? "warning");
+        }
 
-      const result = await executeReaction(
-        session.id,
-        session.projectId,
-        ciReactionKey,
-        reactionWithDetails,
-      );
-      if (result.success) {
         updateSessionMetadata(session, {
           lastCIFailureDispatchHash: ciFingerprint,
           lastCIFailureDispatchAt: new Date().toISOString(),
         });
+      } catch {
+        // Send failed — will retry on next poll cycle
       }
     }
   }
