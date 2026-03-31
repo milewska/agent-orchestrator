@@ -1,26 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   checkActivityLogState,
   classifyTerminalActivity,
   readLastActivityEntry,
+  appendActivityEntry,
   recordTerminalActivity,
+  getActivityLogPath,
   ACTIVITY_INPUT_STALENESS_MS,
 } from "../activity-log.js";
 import type { ActivityState } from "../types.js";
-
-const { mockAppendFile, mockMkdir } = vi.hoisted(() => ({
-  mockAppendFile: vi.fn().mockResolvedValue(undefined),
-  mockMkdir: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock("node:fs/promises", async (importOriginal) => {
-  const actual = (await importOriginal()) as Record<string, unknown>;
-  return {
-    ...actual,
-    appendFile: mockAppendFile,
-    mkdir: mockMkdir,
-  };
-});
 
 describe("classifyTerminalActivity", () => {
   it("returns active state with no trigger", () => {
@@ -92,38 +83,116 @@ describe("checkActivityLogState", () => {
 });
 
 describe("readLastActivityEntry", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "ao-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
   it("returns null when file does not exist", async () => {
-    const result = await readLastActivityEntry("/nonexistent/path");
+    const result = await readLastActivityEntry(join(tmpDir, "nonexistent"));
+    expect(result).toBeNull();
+  });
+
+  it("returns null for empty file", async () => {
+    await mkdir(join(tmpDir, ".ao"), { recursive: true });
+    await writeFile(getActivityLogPath(tmpDir), "", "utf-8");
+    const result = await readLastActivityEntry(tmpDir);
+    expect(result).toBeNull();
+  });
+
+  it("parses a valid entry", async () => {
+    await appendActivityEntry(tmpDir, "active", "terminal");
+    const result = await readLastActivityEntry(tmpDir);
+    expect(result).not.toBeNull();
+    expect(result!.entry.state).toBe("active");
+    expect(result!.entry.source).toBe("terminal");
+    expect(result!.modifiedAt).toBeInstanceOf(Date);
+  });
+
+  it("reads the last entry from multiple lines", async () => {
+    await appendActivityEntry(tmpDir, "active", "terminal");
+    await appendActivityEntry(tmpDir, "waiting_input", "terminal", "prompt?");
+    const result = await readLastActivityEntry(tmpDir);
+    expect(result!.entry.state).toBe("waiting_input");
+    expect(result!.entry.trigger).toBe("prompt?");
+  });
+
+  it("returns null for invalid JSON", async () => {
+    await mkdir(join(tmpDir, ".ao"), { recursive: true });
+    await writeFile(getActivityLogPath(tmpDir), "not json\n", "utf-8");
+    const result = await readLastActivityEntry(tmpDir);
+    expect(result).toBeNull();
+  });
+
+  it("returns null for invalid state value", async () => {
+    await mkdir(join(tmpDir, ".ao"), { recursive: true });
+    const bad = JSON.stringify({ ts: new Date().toISOString(), state: "invalid", source: "terminal" });
+    await writeFile(getActivityLogPath(tmpDir), bad + "\n", "utf-8");
+    const result = await readLastActivityEntry(tmpDir);
+    expect(result).toBeNull();
+  });
+
+  it("returns null for missing required fields", async () => {
+    await mkdir(join(tmpDir, ".ao"), { recursive: true });
+    const bad = JSON.stringify({ ts: new Date().toISOString() });
+    await writeFile(getActivityLogPath(tmpDir), bad + "\n", "utf-8");
+    const result = await readLastActivityEntry(tmpDir);
     expect(result).toBeNull();
   });
 });
 
 describe("recordTerminalActivity", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "ao-test-"));
   });
 
-  it("writes activity entry for active state", async () => {
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("writes activity entry to JSONL", async () => {
     const detect = () => "active" as ActivityState;
-    await recordTerminalActivity("/workspace", "output", detect);
-    expect(mockAppendFile).toHaveBeenCalledOnce();
-    const written = JSON.parse(mockAppendFile.mock.calls[0][1] as string);
-    expect(written.state).toBe("active");
-    expect(written.source).toBe("terminal");
+    await recordTerminalActivity(tmpDir, "output", detect);
+    const result = await readLastActivityEntry(tmpDir);
+    expect(result!.entry.state).toBe("active");
+    expect(result!.entry.source).toBe("terminal");
   });
 
-  it("always writes waiting_input immediately", async () => {
+  it("writes waiting_input with trigger", async () => {
     const detect = () => "waiting_input" as ActivityState;
-    await recordTerminalActivity("/workspace", "prompt?", detect);
-    expect(mockAppendFile).toHaveBeenCalledOnce();
-    const written = JSON.parse(mockAppendFile.mock.calls[0][1] as string);
-    expect(written.state).toBe("waiting_input");
-    expect(written.trigger).toBeDefined();
+    await recordTerminalActivity(tmpDir, "line1\nline2\nprompt?", detect);
+    const result = await readLastActivityEntry(tmpDir);
+    expect(result!.entry.state).toBe("waiting_input");
+    expect(result!.entry.trigger).toBeDefined();
   });
 
-  it("always writes blocked immediately", async () => {
-    const detect = () => "blocked" as ActivityState;
-    await recordTerminalActivity("/workspace", "error", detect);
-    expect(mockAppendFile).toHaveBeenCalledOnce();
+  it("deduplicates same state within 20s", async () => {
+    const detect = () => "active" as ActivityState;
+    await recordTerminalActivity(tmpDir, "output1", detect);
+    await recordTerminalActivity(tmpDir, "output2", detect);
+
+    // Read file directly — should have only 1 line (deduped)
+    const { readFile: rf } = await import("node:fs/promises");
+    const content = await rf(getActivityLogPath(tmpDir), "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(1);
+  });
+
+  it("always writes actionable states even if same", async () => {
+    const detect = () => "waiting_input" as ActivityState;
+    await recordTerminalActivity(tmpDir, "prompt1", detect);
+    await recordTerminalActivity(tmpDir, "prompt2", detect);
+
+    const { readFile: rf } = await import("node:fs/promises");
+    const content = await rf(getActivityLogPath(tmpDir), "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    expect(lines).toHaveLength(2);
   });
 });
