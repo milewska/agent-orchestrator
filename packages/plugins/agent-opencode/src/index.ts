@@ -167,13 +167,23 @@ async function findOpenCodeSession(
     );
 
     const sessions = parseSessionList(stdout);
-    return (
-      (session.metadata?.opencodeSessionId
-        ? sessions.find((s) => s.id === session.metadata.opencodeSessionId)
-        : undefined) ??
-      sessions.find((s) => s.title === `AO:${session.id}`) ??
-      null
-    );
+
+    // Prefer exact ID match from metadata
+    if (session.metadata?.opencodeSessionId) {
+      const match = sessions.find((s) => s.id === session.metadata.opencodeSessionId);
+      if (match) return match;
+    }
+
+    // Fallback: title match — pick the most recently updated session
+    // to avoid binding to a stale session when titles collide.
+    const titleMatches = sessions.filter((s) => s.title === `AO:${session.id}`);
+    if (titleMatches.length === 0) return null;
+    if (titleMatches.length === 1) return titleMatches[0]!;
+    return titleMatches.reduce((best, s) => {
+      const bestTs = parseUpdatedTimestamp(best.updated)?.getTime() ?? 0;
+      const sTs = parseUpdatedTimestamp(s.updated)?.getTime() ?? 0;
+      return sTs > bestTs ? s : best;
+    });
   } catch {
     return null;
   }

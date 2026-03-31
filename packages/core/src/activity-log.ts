@@ -71,25 +71,35 @@ export async function readLastActivityEntry(
       const fileStat = await handle.stat();
       if (fileStat.size === 0) return null;
 
-      // Read last 1KB — more than enough for a single JSON line
-      const tailSize = Math.min(fileStat.size, 1024);
+      // Read last 4KB — more than enough for a single JSON line
+      const tailSize = Math.min(fileStat.size, 4096);
       const offset = Math.max(0, fileStat.size - tailSize);
       const buffer = Buffer.alloc(tailSize);
       const { bytesRead } = await handle.read(buffer, 0, tailSize, offset);
       if (bytesRead === 0) return null;
       const content = buffer.subarray(0, bytesRead).toString("utf-8");
 
-      // Find the last non-empty line
-      const lines = content.split("\n").filter((l) => l.trim());
+      // Find the last non-empty line. If we read from a non-zero offset,
+      // the first line may be truncated — drop it.
+      let lines = content.split("\n").filter((l) => l.trim());
+      if (offset > 0 && lines.length > 1) lines = lines.slice(1);
       if (lines.length === 0) return null;
 
-      const lastLine = lines[lines.length - 1];
-      if (!lastLine) return null;
-      const parsed: unknown = JSON.parse(lastLine);
+      // Try lines from the end — skip any that fail to parse (e.g. truncated)
+      let parsed: unknown = null;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          parsed = JSON.parse(lines[i]!);
+          break;
+        } catch {
+          continue;
+        }
+      }
+      if (parsed === null) return null;
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
 
       const record = parsed as Record<string, unknown>;
-      const validStates = new Set(["active", "ready", "idle", "waiting_input", "blocked"]);
+      const validStates = new Set(["active", "ready", "idle", "waiting_input", "blocked", "exited"]);
       const validSources = new Set(["terminal", "native"]);
       if (
         typeof record.ts !== "string" ||
@@ -182,13 +192,15 @@ export async function recordTerminalActivity(
 ): Promise<void> {
   const { state, trigger } = classifyTerminalActivity(terminalOutput, detectActivity);
 
-  // Deduplicate writes to avoid refreshing file mtime every poll cycle,
+  // Deduplicate writes to avoid refreshing file mtime every poll cycle (~30s),
   // which would prevent mtime-based fallbacks from reaching "ready" or "idle".
+  // The window (60s) must exceed the poll interval so mtime can age past the
+  // active window (30s) between writes, allowing "ready" to be reached.
   if (state !== "waiting_input" && state !== "blocked") {
     const lastEntry = await readLastActivityEntry(workspacePath);
     if (lastEntry && lastEntry.entry.state === state) {
       const entryAgeMs = Date.now() - lastEntry.modifiedAt.getTime();
-      if (entryAgeMs < 20_000) return;
+      if (entryAgeMs < 60_000) return;
     }
   }
 
