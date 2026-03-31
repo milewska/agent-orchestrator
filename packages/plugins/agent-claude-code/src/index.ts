@@ -3,6 +3,7 @@ import {
   readLastJsonlEntry,
   normalizeAgentPermissionMode,
   DEFAULT_READY_THRESHOLD_MS,
+  DEFAULT_ACTIVE_WINDOW_MS,
   type Agent,
   type AgentSessionInfo,
   type AgentLaunchConfig,
@@ -745,11 +746,13 @@ function createClaudeCodeAgent(): Agent {
       const ageMs = Date.now() - entry.modifiedAt.getTime();
       const timestamp = entry.modifiedAt;
 
+      const activeWindowMs = Math.min(DEFAULT_ACTIVE_WINDOW_MS, threshold);
       switch (entry.lastType) {
         case "user":
         case "tool_use":
         case "progress":
-          return { state: ageMs > threshold ? "idle" : "active", timestamp };
+          if (ageMs <= activeWindowMs) return { state: "active", timestamp };
+          return { state: ageMs > threshold ? "idle" : "ready", timestamp };
 
         case "assistant":
         case "system":
@@ -764,7 +767,8 @@ function createClaudeCodeAgent(): Agent {
           return { state: "blocked", timestamp };
 
         default:
-          return { state: ageMs > threshold ? "idle" : "active", timestamp };
+          if (ageMs <= activeWindowMs) return { state: "active", timestamp };
+          return { state: ageMs > threshold ? "idle" : "ready", timestamp };
       }
     },
 
