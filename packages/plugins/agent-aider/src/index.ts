@@ -8,6 +8,7 @@ import {
   recordTerminalActivity,
   PREFERRED_GH_PATH,
   DEFAULT_READY_THRESHOLD_MS,
+  DEFAULT_ACTIVE_WINDOW_MS,
   type Agent,
   type AgentSessionInfo,
   type AgentLaunchConfig,
@@ -201,7 +202,7 @@ function createAiderAgent(): Agent {
       const chatMtime = await getChatHistoryMtime(session.workspacePath);
       if (chatMtime) {
         const ageMs = Date.now() - chatMtime.getTime();
-        const activeWindowMs = Math.min(30_000, threshold);
+        const activeWindowMs = Math.min(DEFAULT_ACTIVE_WINDOW_MS, threshold);
         if (ageMs <= activeWindowMs) return { state: "active", timestamp: chatMtime };
         if (ageMs <= threshold) return { state: "ready", timestamp: chatMtime };
         return { state: "idle", timestamp: chatMtime };
@@ -212,7 +213,7 @@ function createAiderAgent(): Agent {
       //    This works because recordActivity only writes on state transitions
       //    (not every poll cycle), so mtime reflects the last real state change.
       if (activityResult) {
-        const activeWindowMs = Math.min(30_000, threshold);
+        const activeWindowMs = Math.min(DEFAULT_ACTIVE_WINDOW_MS, threshold);
         const ageMs = Math.max(0, Date.now() - activityResult.modifiedAt.getTime());
         if (ageMs <= activeWindowMs) {
           return { state: "active", timestamp: activityResult.modifiedAt };

@@ -320,7 +320,7 @@ All agent plugins (claude-code, codex, aider, opencode, etc.) must implement the
 | `getRestoreCommand` | Resume a previous session | Agent has no resume capability (return `null`) |
 | `setupWorkspaceHooks` | Install metadata-update hooks (PATH wrappers or agent-native) | Never — required for dashboard PR tracking |
 | `postLaunchSetup` | Post-launch config (re-ensure hooks, resolve binary) | Only if no post-launch work needed |
-| `recordActivity` | Write terminal-derived activity to JSONL for `getActivityState` | Agent has native JSONL (Claude Code, Codex) |
+| `recordActivity` | Write terminal-derived activity to JSONL for `getActivityState` | Agent has native JSONL with full state coverage (Claude Code). Codex implements it as a safety net for when its native JSONL is missing/unparseable. |
 
 **Metadata hooks are critical.** Without `setupWorkspaceHooks`, PRs created by agents won't appear in the dashboard. Two patterns exist:
 - **Agent-native hooks** (Claude Code): PostToolUse hooks in `.claude/settings.json`

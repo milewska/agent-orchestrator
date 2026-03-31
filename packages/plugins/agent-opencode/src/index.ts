@@ -1,5 +1,6 @@
 import {
   DEFAULT_READY_THRESHOLD_MS,
+  DEFAULT_ACTIVE_WINDOW_MS,
   shellEscape,
   buildAgentPath,
   readLastActivityEntry,
@@ -306,7 +307,7 @@ function createOpenCodeAgent(): Agent {
       readyThresholdMs?: number,
     ): Promise<ActivityDetection | null> {
       const threshold = readyThresholdMs ?? DEFAULT_READY_THRESHOLD_MS;
-      const activeWindowMs = Math.min(30_000, threshold);
+      const activeWindowMs = Math.min(DEFAULT_ACTIVE_WINDOW_MS, threshold);
 
       // Check if process is running first
       const exitedAt = new Date();

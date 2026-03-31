@@ -83,6 +83,9 @@ export interface ActivityLogEntry {
 /** Default threshold (ms) before a "ready" session becomes "idle". */
 export const DEFAULT_READY_THRESHOLD_MS = 300_000; // 5 minutes
 
+/** Default window (ms) for "active" state — activity newer than this is "active", older is "ready". */
+export const DEFAULT_ACTIVE_WINDOW_MS = 30_000; // 30 seconds
+
 /** Session status constants */
 export const SESSION_STATUS = {
   SPAWNING: "spawning" as const,
