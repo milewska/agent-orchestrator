@@ -131,7 +131,16 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
     try {
       const existingRaw = readFileSync(globalPath, "utf-8");
       const existingParsed = parseYaml(existingRaw);
-      existing = existingParsed as GlobalConfig;
+      // Validate the parsed object has the expected shape before using it
+      if (
+        typeof existingParsed === "object" &&
+        existingParsed !== null &&
+        typeof (existingParsed as Record<string, unknown>)["projects"] === "object"
+      ) {
+        existing = existingParsed as GlobalConfig;
+        // Ensure projects is never undefined
+        existing.projects ??= {};
+      }
     } catch {
       // Corrupted global config — start fresh
     }
