@@ -241,17 +241,19 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         // If the agent implements recordActivity, capture terminal output and record
         // BEFORE calling getActivityState so the JSONL has fresh data to read.
         if (agent.recordActivity && session.workspacePath) {
-          const runtime = registry.get<Runtime>(
-            "runtime",
-            project.runtime ?? config.defaults.runtime,
-          );
-          const terminalOutput = runtime
-            ? await runtime.getOutput(session.runtimeHandle, 10)
-            : "";
-          if (terminalOutput) {
-            await agent.recordActivity(session, terminalOutput).catch(() => {
-              // Non-fatal — activity recording is best-effort
-            });
+          try {
+            const runtime = registry.get<Runtime>(
+              "runtime",
+              project.runtime ?? config.defaults.runtime,
+            );
+            const terminalOutput = runtime
+              ? await runtime.getOutput(session.runtimeHandle, 10)
+              : "";
+            if (terminalOutput) {
+              await agent.recordActivity(session, terminalOutput);
+            }
+          } catch {
+            // Non-fatal — activity recording is best-effort
           }
         }
 
