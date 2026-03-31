@@ -506,9 +506,24 @@ export function findConfig(startDir?: string): string | null {
  * 3. Fall back to local config search (old single-file format)
  */
 export function loadConfig(configPath?: string): OrchestratorConfig {
-  // 1. Explicit param — use old single-file format
+  // 1. Explicit param — try old single-file format first, then global config
   if (configPath) {
-    return loadConfigFromFile(configPath);
+    try {
+      return loadConfigFromFile(configPath);
+    } catch {
+      // May be a global config path or flat local config — try multi-project
+      const globalConfig = loadGlobalConfig();
+      if (globalConfig) {
+        const globalPath = findGlobalConfigPath();
+        const config = buildEffectiveConfig(globalConfig, globalPath);
+        let effective = applyProjectDefaults(config);
+        effective = applyDefaultReactions(effective);
+        validateProjectUniqueness(effective);
+        return effective;
+      }
+      // Re-throw original error if global config doesn't work either
+      return loadConfigFromFile(configPath);
+    }
   }
 
   // 2. Try global config (multi-project mode)
