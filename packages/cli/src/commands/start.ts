@@ -1426,11 +1426,22 @@ export function registerStart(program: Command): void {
                   const origProject = config.projects[projectId];
                   const updated = registerProject(gc, newId, { name: newId, path: origProject.path });
                   saveGlobalConfig(updated);
-                  // Copy shadow from original project
-                  const origShadow = loadShadowFile(projectId);
-                  if (origShadow) {
-                    saveShadowFile(newId, origShadow);
+                  // Copy shadow from original project — try shadow file first,
+                  // fall back to in-memory config for hybrid projects without shadow
+                  let origShadow = loadShadowFile(projectId);
+                  if (!origShadow) {
+                    // Build shadow from in-memory effective config
+                    const p = origProject;
+                    origShadow = {
+                      repo: p.repo,
+                      defaultBranch: p.defaultBranch,
+                      ...(p.agent ? { agent: p.agent } : {}),
+                      ...(p.runtime ? { runtime: p.runtime } : {}),
+                      ...(p.workspace ? { workspace: p.workspace } : {}),
+                      ...(p.agentConfig ? { agentConfig: p.agentConfig } : {}),
+                    };
                   }
+                  saveShadowFile(newId, origShadow);
                 } else {
                   // Legacy single-file mode: edit YAML directly
                   const rawYaml = readFileSync(config.configPath, "utf-8");
