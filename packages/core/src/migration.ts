@@ -35,6 +35,8 @@ import {
   isSecretField,
   filterSecrets,
   registerProject,
+  saveShadowFile,
+  loadShadowFile,
   detectConfigMode,
   findLocalConfigPath,
   loadLocalProjectConfig,
@@ -196,14 +198,18 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
     }
     usedIds.add(projectId);
 
-    // Build global registry entry (identity + shadow)
+    // Register identity-only entry in global config
     const globalEntry: GlobalProjectEntry = {
       name: String(projectRaw["name"] ?? configKey),
       path: projectRaw["path"] as string,
+    };
+    globalConfig = registerProject(globalConfig, projectId, globalEntry);
+    registeredProjects.push(projectId);
+
+    // Write behavior fields to per-project shadow file
+    const shadowData: Record<string, unknown> = {
       _shadowSyncedAt: Math.floor(Date.now() / 1000),
     };
-
-    // Copy all non-identity, non-secret fields to shadow
     for (const [key, value] of Object.entries(projectRaw)) {
       if (identityFields.has(key)) continue;
       if (isSecretField(key)) {
@@ -212,19 +218,17 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
       }
       if (typeof value === "object" && value !== null && !Array.isArray(value)) {
         const excluded: string[] = [];
-        (globalEntry as Record<string, unknown>)[key] = filterSecrets(
+        shadowData[key] = filterSecrets(
           value as Record<string, unknown>, excluded, key,
         );
         for (const e of excluded) {
           warnings.push(`Excluded secret-like field "${e}" from shadow for "${configKey}"`);
         }
       } else {
-        (globalEntry as Record<string, unknown>)[key] = value;
+        shadowData[key] = value;
       }
     }
-
-    globalConfig = registerProject(globalConfig, projectId, globalEntry);
-    registeredProjects.push(projectId);
+    saveShadowFile(projectId, shadowData);
 
     // 3. Build flat local config (behavior only, strip identity)
     const localConfig: Record<string, unknown> = {};
@@ -316,7 +320,7 @@ function readdirSyncSafe(dir: string): string[] {
  *
  * For each project in the global config:
  * - If local config exists at project.path (hybrid mode): use local config for behavior
- * - Otherwise (global-only mode): use shadow in global config for behavior
+ * - Otherwise (global-only mode): use shadow file at projects/{id}.yaml for behavior
  *
  * The result is an OrchestratorConfig that looks exactly like the old format
  * (with all projects populated), allowing existing code to work without changes.
@@ -341,15 +345,15 @@ export function buildEffectiveConfig(
           const localConfig = loadLocalProjectConfig(localPath);
           behaviorFields = localConfig as Record<string, unknown>;
         } catch {
-          // Invalid local config — fall back to shadow with warning
-          behaviorFields = extractBehaviorFromShadow(entry);
+          // Invalid local config — fall back to shadow file
+          behaviorFields = loadShadowOrEmpty(projectId);
         }
       } else {
-        behaviorFields = extractBehaviorFromShadow(entry);
+        behaviorFields = loadShadowOrEmpty(projectId);
       }
     } else {
-      // Global-only mode: shadow IS the config
-      behaviorFields = extractBehaviorFromShadow(entry);
+      // Global-only mode: shadow file IS the config
+      behaviorFields = loadShadowOrEmpty(projectId);
     }
 
     // The project ID (map key) is already the session prefix — do not
@@ -403,13 +407,13 @@ export function buildEffectiveConfig(
   };
 }
 
-/** Extract behavior fields from a shadow entry (everything that isn't identity/internal) */
-function extractBehaviorFromShadow(entry: Record<string, unknown>): Record<string, unknown> {
+/** Load shadow file for a project, stripping internal fields. Returns {} if missing. */
+function loadShadowOrEmpty(projectId: string): Record<string, unknown> {
+  const shadow = loadShadowFile(projectId);
+  if (!shadow) return {};
   const behavior: Record<string, unknown> = {};
-  const identityFields = new Set(["name", "path"]);
-
-  for (const [key, value] of Object.entries(entry)) {
-    if (!identityFields.has(key) && !key.startsWith("_")) {
+  for (const [key, value] of Object.entries(shadow)) {
+    if (!key.startsWith("_")) {
       behavior[key] = value;
     }
   }

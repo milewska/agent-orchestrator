@@ -182,7 +182,7 @@ async function handleMultiProjectStart(
 
       saveGlobalConfig(globalConfig);
       console.log(chalk.green(`  ✓ Registered project "${projectId}" (hybrid mode)`));
-      console.log(chalk.green(`  ✓ Shadow synced to global config`));
+      console.log(chalk.green(`  ✓ Shadow synced`));
     } else {
       // No local config — not registered, not in a known project dir
       // Return null to let the old auto-create flow handle this

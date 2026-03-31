@@ -33,6 +33,12 @@ export {
   findLocalConfigPath,
   loadLocalProjectConfig,
   syncShadow,
+  getShadowDir,
+  getShadowFilePath,
+  loadShadowFile,
+  saveShadowFile,
+  deleteShadowFile,
+  migrateInlineShadowsToFiles,
   isOldConfigFormat,
   matchProjectByCwd,
 } from "./global-config.js";

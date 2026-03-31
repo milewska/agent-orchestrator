@@ -1,17 +1,27 @@
 /**
  * Global config management for multi-project architecture.
  *
- * The global config at ~/.agent-orchestrator/config.yaml owns:
+ * Layout:
+ *   ~/.agent-orchestrator/
+ *     config.yaml              ← Lightweight registry: project identity + global settings
+ *     projects/
+ *       {id}.yaml              ← Per-project shadow: behavior fields only
+ *
+ * The global config at config.yaml owns:
  * - Project registry (identity: name, path, project ID)
- * - Shadow copies of project behavior (synced from local on `ao start`)
  * - Global operational settings (port, defaults, notifiers, reactions)
+ *
+ * Shadow files at projects/{id}.yaml own:
+ * - Project behavior (agent, runtime, tracker, reactions, etc.)
+ * - Synced from local config on `ao start` (hybrid mode)
+ * - Edited directly by user (global-only mode)
  *
  * Two ownership modes per project:
  * - Hybrid: local config exists → shadow is a read-only cache synced on `ao start`
  * - Global-only: no local config → shadow IS the authoritative config
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
@@ -44,19 +54,15 @@ export function isSecretField(key: string): boolean {
 // =============================================================================
 
 /**
- * Shadow project entry in global config.
- * Identity fields + passthrough behavior fields.
+ * Project entry in global config — identity only.
+ * Behavior fields live in separate shadow files at ~/.agent-orchestrator/projects/{id}.yaml.
  */
-const GlobalProjectEntrySchema = z
-  .object({
-    /** Display name (identity, not synced) */
-    name: z.string().optional(),
-    /** Local path to the repo (identity, not synced) */
-    path: z.string(),
-    /** Unix timestamp of last successful shadow sync (hybrid mode only) */
-    _shadowSyncedAt: z.number().optional(),
-  })
-  .passthrough();
+const GlobalProjectEntrySchema = z.object({
+  /** Display name */
+  name: z.string().optional(),
+  /** Local path to the repo */
+  path: z.string(),
+});
 
 /**
  * Global config schema.
@@ -82,7 +88,7 @@ const GlobalConfigSchema = z.object({
       worker: z.object({ agent: z.string().optional() }).optional(),
     })
     .default({}),
-  /** Project registry with identity + shadow behavior */
+  /** Project registry (identity only — behavior is in shadow files) */
   projects: z.record(GlobalProjectEntrySchema).default({}),
   /** Display order for projects in sidebar/portfolio */
   projectOrder: z.array(z.string()).optional(),
@@ -275,6 +281,9 @@ export function loadGlobalConfig(): GlobalConfig | null {
     return null;
   }
 
+  // One-time migration: move inline shadows to per-project files
+  migrateInlineShadowsToFiles();
+
   const raw = readFileSync(path, "utf-8");
   const parsed = parseYaml(raw);
   const validated = GlobalConfigSchema.parse(parsed);
@@ -375,7 +384,125 @@ export function unregisterProject(
   if (updated.projectOrder) {
     updated.projectOrder = updated.projectOrder.filter((id) => id !== projectId);
   }
+  // Clean up the per-project shadow file
+  deleteShadowFile(projectId);
   return updated;
+}
+
+// =============================================================================
+// SHADOW FILE I/O
+// =============================================================================
+
+/**
+ * Get the directory where per-project shadow files are stored.
+ * Located next to the global config file: ~/.agent-orchestrator/projects/
+ */
+export function getShadowDir(): string {
+  const globalPath = findGlobalConfigPath();
+  return join(dirname(globalPath), "projects");
+}
+
+/**
+ * Get the shadow file path for a specific project.
+ */
+export function getShadowFilePath(projectId: string): string {
+  return join(getShadowDir(), `${projectId}.yaml`);
+}
+
+/**
+ * Load a shadow file for a project. Returns null if missing or unparseable.
+ * Fault-isolated: one broken shadow does not affect other projects.
+ */
+export function loadShadowFile(projectId: string): Record<string, unknown> | null {
+  const filePath = getShadowFilePath(projectId);
+  if (!existsSync(filePath)) return null;
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const parsed = parseYaml(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save a shadow file for a project. Atomic write (temp + rename).
+ */
+export function saveShadowFile(projectId: string, data: Record<string, unknown>): void {
+  const dir = getShadowDir();
+  mkdirSync(dir, { recursive: true });
+  const filePath = getShadowFilePath(projectId);
+  const yaml = stringifyYaml(data, { lineWidth: 0 });
+  const tmpPath = join(dir, `.${projectId}-${randomBytes(6).toString("hex")}.yaml.tmp`);
+  writeFileSync(tmpPath, yaml, "utf-8");
+  renameSync(tmpPath, filePath);
+}
+
+/**
+ * Delete a shadow file for a project.
+ */
+export function deleteShadowFile(projectId: string): void {
+  const filePath = getShadowFilePath(projectId);
+  if (!existsSync(filePath)) return;
+  try {
+    unlinkSync(filePath);
+  } catch {
+    // Best-effort cleanup
+  }
+}
+
+/**
+ * Migrate inline shadow data from global config to per-project files.
+ * Called on loadGlobalConfig when inline behavior fields are detected.
+ * This is a one-time transparent migration from the old inline format.
+ */
+export function migrateInlineShadowsToFiles(): boolean {
+  const path = findGlobalConfigPath();
+  if (!existsSync(path)) return false;
+
+  const raw = readFileSync(path, "utf-8");
+  const parsed = parseYaml(raw) as Record<string, unknown>;
+  const projects = parsed["projects"] as Record<string, Record<string, unknown>> | undefined;
+  if (!projects) return false;
+
+  const identityKeys = new Set(["name", "path"]);
+  let migrated = false;
+
+  for (const [id, entry] of Object.entries(projects)) {
+    if (typeof entry !== "object" || entry === null) continue;
+
+    // Check if this entry has any non-identity keys (behavior fields)
+    const behaviorKeys = Object.keys(entry).filter((k) => !identityKeys.has(k));
+    if (behaviorKeys.length === 0) continue;
+
+    // Don't overwrite an existing shadow file
+    if (existsSync(getShadowFilePath(id))) continue;
+
+    // Extract behavior fields into a shadow file
+    const shadow: Record<string, unknown> = {};
+    for (const key of behaviorKeys) {
+      shadow[key] = entry[key];
+    }
+    saveShadowFile(id, shadow);
+
+    // Strip behavior fields from inline entry (mutating parsed object)
+    for (const key of behaviorKeys) {
+      delete entry[key]; // eslint-disable-line @typescript-eslint/no-dynamic-delete
+    }
+    migrated = true;
+  }
+
+  if (migrated) {
+    // Rewrite config.yaml with identity-only entries
+    const yaml = stringifyYaml(parsed, { lineWidth: 0 });
+    const dir = dirname(path);
+    const tmpPath = join(dir, `.config-${randomBytes(6).toString("hex")}.yaml.tmp`);
+    writeFileSync(tmpPath, yaml, "utf-8");
+    renameSync(tmpPath, path);
+  }
+
+  return migrated;
 }
 
 // =============================================================================
@@ -425,37 +552,26 @@ export function loadLocalProjectConfig(configPath: string): LocalProjectConfig {
 // =============================================================================
 
 /**
- * Sync local config into the global config shadow for a project (hybrid mode).
+ * Sync local config into a per-project shadow file (hybrid mode).
  *
- * - Copies all behavior fields from local config into the shadow
- * - Preserves identity fields (name, path) in the shadow
- * - Excludes secret-like fields with a warning
- * - Sets _shadowSyncedAt timestamp
+ * Writes behavior fields to ~/.agent-orchestrator/projects/{id}.yaml.
+ * Does NOT modify the global config (identity stays in config.yaml).
+ * Excludes secret-like fields with a warning.
  *
- * Returns { updated global config, excluded secret fields }
+ * Returns { unchanged global config, excluded secret fields }
  */
 export function syncShadow(
   globalConfig: GlobalConfig,
   projectId: string,
   localConfig: LocalProjectConfig,
 ): { config: GlobalConfig; excludedSecrets: string[] } {
-  const updated = structuredClone(globalConfig);
-  const existing = updated.projects[projectId];
-  if (!existing) {
+  if (!globalConfig.projects[projectId]) {
     throw new Error(`Project "${projectId}" not found in global config`);
   }
 
-  // Preserve identity fields and internal fields
-  const identity: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(existing)) {
-    if (IDENTITY_FIELDS.has(key) || isInternalField(key)) {
-      identity[key] = value;
-    }
-  }
-
-  // Build new shadow from local config, excluding secrets
+  // Build shadow from local config, excluding identity and secrets
   const excludedSecrets: string[] = [];
-  const shadow: Record<string, unknown> = { ...identity };
+  const shadow: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(localConfig)) {
     if (IDENTITY_FIELDS.has(key) || isInternalField(key)) continue;
@@ -465,10 +581,8 @@ export function syncShadow(
       continue;
     }
 
-    // Deep check for secret-like nested fields
     if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      const cleaned = filterSecrets(value as Record<string, unknown>, excludedSecrets, key);
-      shadow[key] = cleaned;
+      shadow[key] = filterSecrets(value as Record<string, unknown>, excludedSecrets, key);
     } else {
       shadow[key] = value;
     }
@@ -476,8 +590,11 @@ export function syncShadow(
 
   shadow["_shadowSyncedAt"] = Math.floor(Date.now() / 1000);
 
-  updated.projects[projectId] = shadow as GlobalProjectEntry;
-  return { config: updated, excludedSecrets };
+  // Write to per-project shadow file (not inline in global config)
+  saveShadowFile(projectId, shadow);
+
+  // Return globalConfig unchanged — identity stays in config.yaml
+  return { config: globalConfig, excludedSecrets };
 }
 
 /** Recursively filter secret-like fields from an object at all nesting levels */
@@ -507,31 +624,26 @@ export function filterSecrets(
 
 /**
  * Detect if raw YAML content is the old single-project format.
- * Old format has a `projects:` key at the top level with project entries
- * that contain both identity (path, name) and behavior fields, but do NOT
- * have `_shadowSyncedAt` (which is only present in migrated global configs).
+ * Old format: `projects:` key with entries containing both identity (path)
+ * and behavior fields (repo) inline. New format: identity-only entries
+ * (behavior is in separate shadow files).
  */
 export function isOldConfigFormat(raw: unknown): boolean {
   if (typeof raw !== "object" || raw === null) return false;
   const obj = raw as Record<string, unknown>;
 
-  // Old format: has `projects` key and at least one project with `path` + `repo`
   if (!obj["projects"] || typeof obj["projects"] !== "object") return false;
 
   const projects = obj["projects"] as Record<string, unknown>;
-  let hasOldStyleEntry = false;
-  let hasMigratedEntry = false;
   for (const entry of Object.values(projects)) {
     if (typeof entry !== "object" || entry === null) continue;
     const e = entry as Record<string, unknown>;
-    if ("_shadowSyncedAt" in e) {
-      hasMigratedEntry = true;
-    } else if ("path" in e && "repo" in e) {
-      hasOldStyleEntry = true;
+    // Old format has `repo` inline (behavior mixed with identity)
+    if ("path" in e && "repo" in e) {
+      return true;
     }
   }
-  // Only old format if there are old-style entries and NO migrated entries
-  return hasOldStyleEntry && !hasMigratedEntry;
+  return false;
 }
 
 /**
