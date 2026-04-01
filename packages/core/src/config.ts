@@ -497,15 +497,6 @@ export function findConfig(startDir?: string): string | null {
 }
 
 /**
- * Load config with multi-project support.
- *
- * Resolution order:
- * 1. If explicit configPath is provided, use it (old-format compat)
- * 2. Try global config at ~/.agent-orchestrator/config.yaml
- *    → If found, build effective config from global + local configs
- * 3. Fall back to local config search (old single-file format)
- */
-/**
  * Build effective config from global registry + shadow files.
  * Shared pipeline used by all multi-project loading paths.
  */
@@ -522,6 +513,15 @@ function loadFromGlobalConfig(): OrchestratorConfig | null {
   return effective;
 }
 
+/**
+ * Load config with multi-project support.
+ *
+ * Resolution order:
+ * 1. If explicit configPath is provided, use it (old-format compat)
+ * 2. Try global config at ~/.agent-orchestrator/config.yaml
+ *    → If found, build effective config from global + local configs
+ * 3. Fall back to local config search (old single-file format)
+ */
 export function loadConfig(configPath?: string): OrchestratorConfig {
   // 1. Explicit param — try old single-file format first, then global config
   if (configPath) {

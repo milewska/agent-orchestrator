@@ -137,9 +137,18 @@ export function migrateToMultiProject(configPath: string): MigrationResult {
         existingParsed !== null &&
         typeof (existingParsed as Record<string, unknown>)["projects"] === "object"
       ) {
-        existing = existingParsed as GlobalConfig;
-        // Ensure projects is never undefined
-        existing.projects ??= {};
+        const raw = existingParsed as Record<string, unknown>;
+        existing = {
+          port: (raw["port"] as number) ?? 3000,
+          readyThresholdMs: (raw["readyThresholdMs"] as number) ?? 300_000,
+          defaults: (raw["defaults"] as GlobalConfig["defaults"]) ?? {
+            runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: ["composio", "desktop"],
+          },
+          projects: (raw["projects"] as GlobalConfig["projects"]) ?? {},
+          notifiers: (raw["notifiers"] as GlobalConfig["notifiers"]) ?? {},
+          notificationRouting: (raw["notificationRouting"] as GlobalConfig["notificationRouting"]) ?? {},
+          reactions: (raw["reactions"] as GlobalConfig["reactions"]) ?? {},
+        };
       }
     } catch {
       // Corrupted global config — start fresh
