@@ -11,7 +11,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve, basename, dirname } from "node:path";
+import { resolve, basename } from "node:path";
 import { cwd } from "node:process";
 import chalk from "chalk";
 import ora from "ora";
@@ -30,27 +30,17 @@ import {
   normalizeOrchestratorSessionStrategy,
   ConfigNotFoundError,
   // Multi-project imports
+  resolveMultiProjectStart,
   loadGlobalConfig,
   saveGlobalConfig,
   registerProject,
-  detectConfigMode,
   findLocalConfigPath,
-  loadLocalProjectConfig,
-  syncShadow,
-  matchProjectByCwd,
-  findGlobalConfigPath,
-  needsMigration,
-  migrateToMultiProject,
-  buildEffectiveConfig,
-  generateProjectId,
-  expandHome,
   saveShadowFile,
   loadShadowFile,
   filterSecrets,
   type OrchestratorConfig,
   type ProjectConfig,
   type ParsedRepoUrl,
-  type GlobalProjectEntry,
 } from "@composio/ao-core";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { exec, execSilent, git } from "../lib/shell.js";
@@ -90,152 +80,27 @@ const IS_TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 // =============================================================================
 
 /**
- * Handle multi-project registration and shadow sync on `ao start`.
- *
- * Flow:
- * 1. Check for old format → migrate if needed
- * 2. Load or scaffold global config
- * 3. Register current project if not yet registered
- * 4. Detect mode (hybrid/global-only) and sync shadow if hybrid
- * 5. Return effective OrchestratorConfig
+ * Thin CLI wrapper around resolveMultiProjectStart from core.
+ * Adds user-facing console output for migration and registration messages.
  */
-async function handleMultiProjectStart(
+function handleMultiProjectStart(
   workingDir: string,
-): Promise<{ config: OrchestratorConfig; projectId: string } | null> {
-  const resolvedDir = resolve(workingDir);
+): { config: OrchestratorConfig; projectId: string } | null {
+  const result = resolveMultiProjectStart(workingDir);
+  if (!result) return null;
 
-  // 1. Check for old format migration — search locally only, don't use
-  // findConfigFile which checks AO_CONFIG_PATH and could target another repo.
-  const localConfigPath = findLocalConfigPath(resolvedDir);
-  if (localConfigPath && needsMigration(localConfigPath)) {
-    console.log(chalk.yellow("\nDetected single-project config format."));
-    console.log(chalk.dim("Migrating to multi-project...\n"));
-
-    const result = migrateToMultiProject(localConfigPath);
-    if (result.migrated) {
-      console.log(chalk.green(`  ✓ Created global config at ${result.globalConfigPath}`));
-      for (const id of result.registeredProjects) {
-        const sessions = result.sessionCounts[id] ?? 0;
-        console.log(chalk.green(`  ✓ Registered project "${id}"${sessions > 0 ? ` (${sessions} sessions preserved)` : ""}`));
-      }
-      if (result.warnings.length > 0) {
-        for (const w of result.warnings) {
-          console.log(chalk.yellow(`  ⚠ ${w}`));
-        }
-      }
-      console.log(chalk.green("\nMigration complete.\n"));
-    }
-  }
-
-  // 2. Load or scaffold global config
-  let globalConfig = loadGlobalConfig();
-  if (!globalConfig) {
-    // No global config exists — will be handled by the existing auto-create flow
-    // Return null to let the old flow handle first-time setup
-    return null;
-  }
-
-  // 3. Check if current dir matches a registered project
-  let projectId = matchProjectByCwd(globalConfig, resolvedDir);
-
-  if (!projectId) {
-    // Not registered yet — walk up from CWD to find a local config.
-    // This handles running `ao start` from a subdirectory (e.g., ~/project/src).
-    let searchDir = resolvedDir;
-    let localPath: string | null = null;
-    while (searchDir !== dirname(searchDir)) {
-      localPath = findLocalConfigPath(searchDir);
-      if (localPath) break;
-      searchDir = dirname(searchDir);
-    }
-    // Use the directory where the config was found as the project root
-    const projectRoot = localPath ? searchDir : resolvedDir;
-
-    if (localPath) {
-      // Has local config → auto-register in hybrid mode
-      const derivedId = generateSessionPrefix(generateProjectId(projectRoot));
-
-      // Check for collision
-      if (globalConfig.projects[derivedId]) {
-        const existing = globalConfig.projects[derivedId];
-        if (resolve(expandHome(existing.path)) !== projectRoot) {
-          // Collision with different project — auto-resolve with suffix
-          let suffix = 2;
-          let altId = `${derivedId}${suffix}`;
-          while (globalConfig.projects[altId]) {
-            suffix++;
-            altId = `${derivedId}${suffix}`;
-          }
-          projectId = altId;
-          if (isHumanCaller()) {
-            console.log(chalk.yellow(`\nDerived project ID "${derivedId}" is already taken by ${existing.name ?? derivedId}.`));
-            console.log(chalk.dim(`  Using "${projectId}" instead.\n`));
-          }
-        } else {
-          projectId = derivedId;
-        }
-      } else {
-        projectId = derivedId;
-      }
-
-      // Register project using the discovered root, not the CWD
-      const entry: GlobalProjectEntry = {
-        name: basename(projectRoot),
-        path: projectRoot,
-      };
-      globalConfig = registerProject(globalConfig, projectId, entry);
-
-      // Sync shadow from local config
-      try {
-        const localConfig = loadLocalProjectConfig(localPath);
-        const { config: synced, excludedSecrets } = syncShadow(globalConfig, projectId, localConfig);
-        globalConfig = synced;
-        if (excludedSecrets.length > 0) {
-          console.log(chalk.yellow(`  ⚠ Excluded secret-like fields from shadow: ${excludedSecrets.join(", ")}`));
-        }
-      } catch (err) {
-        console.log(chalk.yellow(`  ⚠ Could not sync local config: ${err instanceof Error ? err.message : String(err)}`));
-      }
-
-      saveGlobalConfig(globalConfig);
-      console.log(chalk.green(`  ✓ Registered project "${projectId}" (hybrid mode)`));
-      console.log(chalk.green(`  ✓ Shadow synced`));
+  // Print messages from the core function
+  for (const msg of result.messages) {
+    if (msg.level === "success") {
+      console.log(chalk.green(`  ✓ ${msg.text}`));
+    } else if (msg.level === "warn") {
+      console.log(chalk.yellow(`  ⚠ ${msg.text}`));
     } else {
-      // No local config — not registered, not in a known project dir
-      // Return null to let the old auto-create flow handle this
-      return null;
-    }
-  } else {
-    // Already registered — sync shadow if hybrid mode.
-    // Use the registered project path (not CWD) for mode detection,
-    // since CWD may be a subdirectory where no config file exists.
-    const registeredPath = expandHome(globalConfig.projects[projectId].path);
-    const mode = detectConfigMode(registeredPath);
-    if (mode === "hybrid") {
-      const localPath = findLocalConfigPath(registeredPath);
-      if (localPath) {
-        try {
-          const localConfig = loadLocalProjectConfig(localPath);
-          const { config: synced, excludedSecrets } = syncShadow(globalConfig, projectId, localConfig);
-          globalConfig = synced;
-          saveGlobalConfig(globalConfig);
-          if (excludedSecrets.length > 0) {
-            console.log(chalk.yellow(`  ⚠ Excluded secret-like fields from shadow: ${excludedSecrets.join(", ")}`));
-          }
-        } catch (err) {
-          console.log(chalk.yellow(`  ⚠ Shadow sync failed: ${err instanceof Error ? err.message : String(err)}`));
-        }
-      }
+      console.log(chalk.dim(`  ${msg.text}`));
     }
   }
 
-  // 4. Build effective config directly from the in-memory globalConfig.
-  // Don't use loadConfig() here — it re-enters the full discovery chain
-  // and AO_CONFIG_PATH could redirect to a stale/old-format config.
-  const globalPath = findGlobalConfigPath();
-  const effectiveConfig = buildEffectiveConfig(globalConfig, globalPath);
-
-  return { config: effectiveConfig, projectId };
+  return { config: result.config, projectId: result.projectId };
 }
 
 // =============================================================================

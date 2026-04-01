@@ -58,6 +58,10 @@ export {
 } from "./migration.js";
 export type { MigrationResult } from "./migration.js";
 
+// Multi-project start — registration, sync, config building
+export { resolveMultiProjectStart } from "./multi-project-start.js";
+export type { MultiProjectStartResult } from "./multi-project-start.js";
+
 // Plugin registry
 export {
   createPluginRegistry,
