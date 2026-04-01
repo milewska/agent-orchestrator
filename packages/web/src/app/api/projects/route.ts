@@ -31,7 +31,7 @@ function hasLocalConfigFile(dirPath: string): string | null {
   return null;
 }
 
-function buildFlatLocalConfig(projectName: string, repo?: string) {
+function buildFlatLocalConfig(repo?: string) {
   return {
     ...(repo ? { repo } : {}),
     defaultBranch: "main",
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
         await ensureGitRepo(dirPath);
         await writeFile(
           join(dirPath, "agent-orchestrator.yaml"),
-          configToYaml(buildFlatLocalConfig(inferredName)),
+          configToYaml(buildFlatLocalConfig()),
           "utf-8",
         );
         localConfig = join(dirPath, "agent-orchestrator.yaml");
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
 
           await writeFile(
             join(dirPath, "agent-orchestrator.yaml"),
-            configToYaml(buildFlatLocalConfig(inferredName)),
+            configToYaml(buildFlatLocalConfig()),
             "utf-8",
           );
           localConfig = join(dirPath, "agent-orchestrator.yaml");

@@ -66,9 +66,7 @@ export async function loadPortfolioPageData(): Promise<{
     summary.attentionCounts[attentionLevel] += 1;
   }
 
-  const projectSummaries = [...summaries.values()].sort((left, right) =>
-    left.name.localeCompare(right.name),
-  );
+  const projectSummaries = [...summaries.values()];
 
   for (const summary of projectSummaries) {
     for (const level of ATTENTION_LEVELS) {

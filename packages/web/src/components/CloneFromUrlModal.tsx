@@ -101,7 +101,7 @@ export function CloneFromUrlModal({
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://github.com/user/repo.git"
-            className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-base)] px-3 py-2 text-[14px] text-[var(--color-text-primary)] focus:border-[var(--color-status-error)] focus:outline-none"
+            className="w-full rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-base)] px-3 py-2 text-[14px] text-[var(--color-text-primary)] focus:border-[var(--color-accent)] focus:outline-none"
             style={{ minHeight: 44 }}
           />
         </div>

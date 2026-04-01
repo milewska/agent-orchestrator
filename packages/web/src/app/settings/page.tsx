@@ -52,8 +52,7 @@ export default async function SettingsRoute() {
       attentionCounts: emptyAttentionCounts(),
       degraded: project.degraded,
       degradedReason: project.degradedReason,
-    }))
-    .sort((left, right) => left.name.localeCompare(right.name));
+    }));
   const agentDefaults = getAgentDefaults();
 
   return (

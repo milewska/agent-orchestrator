@@ -37,10 +37,9 @@ export function resolveProjectConfig(entry: PortfolioProject): { config: Orchest
         projects: {
           [entry.configProjectKey]: {
             ...effectiveProject,
-            repo:
-              typeof effectiveProject["repo"] === "string"
-                ? effectiveProject["repo"]
-                : "",
+            ...(typeof effectiveProject["repo"] === "string"
+              ? { repo: effectiveProject["repo"] }
+              : {}),
           },
         },
       });
