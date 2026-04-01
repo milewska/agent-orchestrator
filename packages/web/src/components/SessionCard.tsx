@@ -537,6 +537,9 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
                       </>
                     )}
                     {alert.label}
+                    {alert.notified && (
+                      <span className="ml-1 opacity-60" title="Agent has been notified"> · notified</span>
+                    )}
                   </a>
                   {alert.actionLabel && (
                     <button
@@ -712,6 +715,7 @@ interface Alert {
   borderColor?: string;
   url: string;
   count?: number;
+  notified?: boolean;
   actionLabel?: string;
   actionMessage?: string;
   actionClassName?: string;
@@ -722,6 +726,7 @@ function getAlerts(session: DashboardSession): Alert[] {
   if (!pr || pr.state !== "open") return [];
   if (isPRRateLimited(pr)) return [];
 
+  const meta = session.metadata;
   const alerts: Alert[] = [];
 
   if (pr.ciStatus === CI_STATUS.FAILING) {
@@ -743,6 +748,7 @@ function getAlerts(session: DashboardSession): Alert[] {
         color: "var(--color-alert-ci)",
         borderColor: "var(--color-alert-ci)",
         url: failedCheck?.url ?? pr.url + "/checks",
+        notified: Boolean(meta["lastCIFailureDispatchHash"]),
         actionLabel: "ask to fix",
         actionMessage: `Please fix the failing CI checks on ${pr.url}`,
         actionClassName: "bg-[var(--color-alert-ci-bg)] text-white hover:brightness-110",
@@ -757,6 +763,7 @@ function getAlerts(session: DashboardSession): Alert[] {
       className: "",
       color: "var(--color-alert-changes)",
       url: pr.url,
+      notified: Boolean(meta["lastPendingReviewDispatchHash"]),
       actionLabel: "ask to address",
       actionMessage: `Please address the requested changes on ${pr.url}`,
       actionClassName: "bg-[var(--color-alert-changes-bg)] text-white hover:brightness-110",
@@ -781,6 +788,7 @@ function getAlerts(session: DashboardSession): Alert[] {
       className: "",
       color: "var(--color-alert-conflict)",
       url: pr.url,
+      notified: meta["lastMergeConflictDispatched"] === "true",
       actionLabel: "ask to fix",
       actionMessage: `Please resolve the merge conflicts on ${pr.url} by rebasing on the base branch`,
       actionClassName: "bg-[var(--color-alert-conflict-bg)] text-white hover:brightness-110",
