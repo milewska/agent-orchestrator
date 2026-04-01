@@ -133,7 +133,7 @@ export function ActivityFeedPage({
             <p className="mt-3 max-w-[38ch] text-[var(--font-size-base)] leading-relaxed text-[var(--color-text-secondary)]">
               {workspaceCount > 0
                 ? "Try a different search or open a workspace from the sidebar to start new work."
-                : "Open, clone, or quick start a workspace from the sidebar to begin tracking activity here."}
+                : "Open or clone a workspace from the sidebar to begin tracking activity here."}
             </p>
           </div>
         )}

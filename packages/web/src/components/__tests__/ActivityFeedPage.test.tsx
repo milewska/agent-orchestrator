@@ -101,7 +101,7 @@ describe("ActivityFeedPage", () => {
 
     expect(screen.getByText("No activity yet")).toBeInTheDocument();
     expect(
-      screen.getByText(/Open, clone, or quick start a workspace from the sidebar/i),
+      screen.getByText(/Open or clone a workspace from the sidebar/i),
     ).toBeInTheDocument();
   });
 

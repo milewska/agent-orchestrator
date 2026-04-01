@@ -16,6 +16,25 @@ import { registerAndResolveProject } from "@/lib/project-registration";
 
 const execFileAsync = promisify(execFile);
 
+function extractFlatLocalConfig(config: Record<string, unknown>, projectKey: string): Record<string, unknown> {
+  const projects = config["projects"];
+  if (!projects || typeof projects !== "object") {
+    return {};
+  }
+
+  const project = (projects as Record<string, unknown>)[projectKey];
+  if (!project || typeof project !== "object") {
+    return {};
+  }
+
+  const flat: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(project)) {
+    if (key === "name" || key === "path" || key === "sessionPrefix") continue;
+    flat[key] = value;
+  }
+  return flat;
+}
+
 async function ensureDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true });
 }
@@ -65,7 +84,11 @@ export async function POST(request: Request) {
         parsed: repo,
         repoPath: targetDir,
       });
-      await writeFile(join(targetDir, "agent-orchestrator.yaml"), configToYaml(config), "utf-8");
+      await writeFile(
+        join(targetDir, "agent-orchestrator.yaml"),
+        configToYaml(extractFlatLocalConfig(config, projectKey)),
+        "utf-8",
+      );
     } else {
       const config = loadConfig(configPath);
       projectKey = Object.keys(config.projects)[0] ?? projectKey;

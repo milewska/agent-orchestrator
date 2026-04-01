@@ -1,7 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import {
   findConfigFile,
   readOriginRemoteUrl,
@@ -9,11 +11,16 @@ import {
   generateConfigFromUrl,
   configToYaml,
   sanitizeProjectId,
+  generateOrchestratorPrompt,
 } from "@composio/ao-core";
 import { getAllProjects } from "@/lib/project-name";
 import { RegisterProjectSchema } from "@/lib/api-schemas";
 import { getPortfolioServices } from "@/lib/portfolio-services";
+import { migrateLegacyConfigForPortfolioRegistration } from "@/lib/legacy-config-migration";
 import { registerAndResolveProject } from "@/lib/project-registration";
+import { getServices } from "@/lib/services";
+
+const execFileAsync = promisify(execFile);
 
 /** Check if an agent-orchestrator config file exists directly at the given path (no upward walk). */
 function hasLocalConfigFile(dirPath: string): string | null {
@@ -22,6 +29,53 @@ function hasLocalConfigFile(dirPath: string): string | null {
     if (existsSync(configPath)) return configPath;
   }
   return null;
+}
+
+function buildFlatLocalConfig(projectName: string, repo?: string) {
+  return {
+    ...(repo ? { repo } : {}),
+    defaultBranch: "main",
+    runtime: "tmux",
+    agent: "claude-code",
+    workspace: "worktree",
+  };
+}
+
+function extractFlatLocalConfig(config: Record<string, unknown>, projectKey: string): Record<string, unknown> {
+  const projects = config["projects"];
+  if (!projects || typeof projects !== "object") {
+    return {};
+  }
+
+  const project = (projects as Record<string, unknown>)[projectKey];
+  if (!project || typeof project !== "object") {
+    return {};
+  }
+
+  const flat: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(project)) {
+    if (key === "name" || key === "path" || key === "sessionPrefix") continue;
+    flat[key] = value;
+  }
+  return flat;
+}
+
+async function ensureGitRepo(dirPath: string): Promise<void> {
+  if (existsSync(join(dirPath, ".git"))) return;
+
+  await execFileAsync("git", ["init", "-b", "main"], {
+    cwd: dirPath,
+    timeout: 30_000,
+  }).catch(async () => {
+    await execFileAsync("git", ["init"], {
+      cwd: dirPath,
+      timeout: 30_000,
+    });
+    await execFileAsync("git", ["branch", "-M", "main"], {
+      cwd: dirPath,
+      timeout: 30_000,
+    });
+  });
 }
 
 export const dynamic = "force-dynamic";
@@ -84,46 +138,63 @@ export async function POST(request: NextRequest) {
         // Fall through to auto-generation instead of erroring.
       }
 
-      // 3. No config — auto-generate from git remote
+      // 3. No config — auto-generate from git remote, or bootstrap a local-only project
       if (!existsSync(join(dirPath, ".git"))) {
-        return NextResponse.json(
-          { error: "This directory is not a git repository. Initialize it with `git init` or select a git repository." },
-          { status: 400 },
+        const inferredName = parsed.data.name?.trim() || basename(dirPath);
+        configProjectKey = configProjectKey || sanitizeProjectId(inferredName);
+
+        await ensureGitRepo(dirPath);
+        await writeFile(
+          join(dirPath, "agent-orchestrator.yaml"),
+          configToYaml(buildFlatLocalConfig(inferredName)),
+          "utf-8",
         );
+        localConfig = join(dirPath, "agent-orchestrator.yaml");
+      } else {
+        const originUrl = readOriginRemoteUrl(dirPath);
+        if (!originUrl) {
+          const inferredName = parsed.data.name?.trim() || basename(dirPath);
+          configProjectKey = configProjectKey || sanitizeProjectId(inferredName);
+
+          await writeFile(
+            join(dirPath, "agent-orchestrator.yaml"),
+            configToYaml(buildFlatLocalConfig(inferredName)),
+            "utf-8",
+          );
+          localConfig = join(dirPath, "agent-orchestrator.yaml");
+        } else {
+          let parsedUrl;
+          try {
+            parsedUrl = parseRepoUrl(originUrl);
+          } catch {
+            return NextResponse.json(
+              { error: `Could not parse the git remote URL: ${originUrl}` },
+              { status: 400 },
+            );
+          }
+
+          const config = generateConfigFromUrl({ parsed: parsedUrl, repoPath: dirPath });
+          const projectKey = sanitizeProjectId(parsedUrl.repo);
+          const configYaml = configToYaml(extractFlatLocalConfig(config, projectKey));
+
+          try {
+            await writeFile(join(dirPath, "agent-orchestrator.yaml"), configYaml, "utf-8");
+          } catch (writeErr) {
+            return NextResponse.json(
+              { error: `Could not write config file: ${writeErr instanceof Error ? writeErr.message : "permission denied"}` },
+              { status: 500 },
+            );
+          }
+
+          configProjectKey = configProjectKey || projectKey;
+          localConfig = join(dirPath, "agent-orchestrator.yaml");
+        }
       }
-
-      const originUrl = readOriginRemoteUrl(dirPath);
-      if (!originUrl) {
-        return NextResponse.json(
-          { error: "No git remote 'origin' found. Add a remote with `git remote add origin <url>` and try again." },
-          { status: 400 },
-        );
+    } else {
+      const migration = migrateLegacyConfigForPortfolioRegistration(dirPath, localConfig);
+      if (migration.migrated) {
+        configProjectKey = configProjectKey || migration.configProjectKey;
       }
-
-      let parsedUrl;
-      try {
-        parsedUrl = parseRepoUrl(originUrl);
-      } catch {
-        return NextResponse.json(
-          { error: `Could not parse the git remote URL: ${originUrl}` },
-          { status: 400 },
-        );
-      }
-
-      const config = generateConfigFromUrl({ parsed: parsedUrl, repoPath: dirPath });
-      const configYaml = configToYaml(config);
-
-      try {
-        await writeFile(join(dirPath, "agent-orchestrator.yaml"), configYaml, "utf-8");
-      } catch (writeErr) {
-        return NextResponse.json(
-          { error: `Could not write config file: ${writeErr instanceof Error ? writeErr.message : "permission denied"}` },
-          { status: 500 },
-        );
-      }
-
-      configProjectKey = configProjectKey || sanitizeProjectId(parsedUrl.repo);
-      localConfig = join(dirPath, "agent-orchestrator.yaml");
     }
 
     const project = registerAndResolveProject(dirPath, {
@@ -131,11 +202,43 @@ export async function POST(request: NextRequest) {
       displayName: parsed.data.name,
     });
 
+    let orchestrator:
+      | {
+          id: string;
+          projectId: string;
+          projectName: string;
+        }
+      | undefined;
+
+    try {
+      const { config, sessionManager } = await getServices();
+      const projectConfig = config.projects[project.id];
+      if (projectConfig) {
+        const systemPrompt = generateOrchestratorPrompt({
+          config,
+          projectId: project.id,
+          project: projectConfig,
+        });
+        const session = await sessionManager.spawnOrchestrator({
+          projectId: project.id,
+          systemPrompt,
+        });
+        orchestrator = {
+          id: session.id,
+          projectId: project.id,
+          projectName: project.name,
+        };
+      }
+    } catch (spawnError) {
+      console.error(`Failed to auto-start orchestrator for ${project.id}:`, spawnError);
+    }
+
     return NextResponse.json({
       project: {
         id: project.id,
         name: project.name,
       },
+      orchestrator,
     });
   } catch (err) {
     return NextResponse.json(

@@ -9,7 +9,6 @@ interface PortfolioPageProps {
   projectSummaries: PortfolioProjectSummary[];
   onOpenProject?: () => void;
   onCloneFromUrl?: () => void;
-  onQuickStart?: () => void;
 }
 
 /** Attention levels that require human action, ordered by urgency */
@@ -19,12 +18,10 @@ export function PortfolioPage({
   projectSummaries,
   onOpenProject,
   onCloneFromUrl,
-  onQuickStart,
 }: PortfolioPageProps) {
   const controls = useDashboardShellControls();
   const openProject = onOpenProject ?? controls?.openAddProject ?? (() => {});
   const cloneFromUrl = onCloneFromUrl ?? controls?.openCloneFromUrl ?? (() => {});
-  const quickStart = onQuickStart ?? controls?.openQuickStart ?? (() => {});
 
   const totalSessions = projectSummaries.reduce((s, p) => s + p.sessionCount, 0);
   const hasProjects = projectSummaries.length > 0 && totalSessions > 0;
@@ -37,7 +34,6 @@ export function PortfolioPage({
     projectSummaries={projectSummaries}
     openProject={openProject}
     cloneFromUrl={cloneFromUrl}
-    quickStart={quickStart}
   />;
 }
 
@@ -179,12 +175,10 @@ function LauncherHome({
   projectSummaries,
   openProject,
   cloneFromUrl,
-  quickStart,
 }: {
   projectSummaries: PortfolioProjectSummary[];
   openProject: () => void;
   cloneFromUrl: () => void;
-  quickStart: () => void;
 }) {
   const workspaceCount = projectSummaries.length;
   const workspaceLabel = `${workspaceCount} workspace${workspaceCount === 1 ? "" : "s"} available`;
@@ -197,11 +191,11 @@ function LauncherHome({
             Agent Orchestrator
           </h1>
           <p className="mx-auto mt-5 max-w-[38ch] text-[var(--font-size-base)] leading-relaxed text-[var(--color-text-secondary)] sm:text-[var(--font-size-lg)]">
-            Open a workspace, clone a repo, or start a fresh project from the same portfolio home.
+            Open a workspace or clone a repo from the same portfolio home.
           </p>
         </div>
 
-        <div className="mt-14 grid w-full gap-3 sm:grid-cols-3">
+        <div className="mt-14 grid w-full gap-3 sm:grid-cols-2">
           <LauncherCard
             label="Open project"
             description="Register an existing local workspace."
@@ -213,12 +207,6 @@ function LauncherHome({
             description="Clone a repository into your workspace root."
             onClick={cloneFromUrl}
             icon={<CloneIcon />}
-          />
-          <LauncherCard
-            label="Quick start"
-            description="Create an empty or Next.js project locally."
-            onClick={quickStart}
-            icon={<QuickStartIcon />}
           />
         </div>
 
@@ -276,15 +264,6 @@ function CloneIcon() {
     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
       <circle cx="12" cy="12" r="7.25" />
       <path d="M12 4.75c2.4 2.05 3.6 4.48 3.6 7.25S14.4 17.2 12 19.25M12 4.75c-2.4 2.05-3.6 4.48-3.6 7.25S9.6 17.2 12 19.25M4.75 12h14.5" />
-    </svg>
-  );
-}
-
-function QuickStartIcon() {
-  return (
-    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-      <path d="M6.75 5.75h10.5A1.75 1.75 0 0 1 19 7.5v9a1.75 1.75 0 0 1-1.75 1.75H6.75A1.75 1.75 0 0 1 5 16.5v-9a1.75 1.75 0 0 1 1.75-1.75Z" />
-      <path d="M12 9v6M9 12h6" />
     </svg>
   );
 }

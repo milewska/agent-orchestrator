@@ -21,8 +21,6 @@ interface UnifiedSidebarProps {
   mobileOpen?: boolean;
   onMobileClose?: () => void;
   onAddProject?: () => void;
-  onCloneFromUrl?: () => void;
-  onQuickStart?: () => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   width?: number;
@@ -56,8 +54,6 @@ function SidebarContent({
   activeSessionId,
   compact: _compact = false,
   onAddProject,
-  onCloneFromUrl,
-  onQuickStart,
 }: {
   projects: PortfolioProjectSummary[];
   sessions?: DashboardSession[];
@@ -65,12 +61,11 @@ function SidebarContent({
   activeSessionId?: string;
   compact?: boolean;
   onAddProject?: () => void;
-  onCloneFromUrl?: () => void;
-  onQuickStart?: () => void;
 }) {
   const router = useRouter();
   const pathname = usePathname() ?? "/";
   const isHome = pathname === "/activity";
+  const [availableAgents, setAvailableAgents] = useState<string[]>([]);
   const [groupBy, setGroupBy] = useState<"repo" | "status">("repo");
   const [repoFilter, setRepoFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -122,6 +117,55 @@ function SidebarContent({
     return map;
   }, [projects]);
 
+  const spawnAgents = useMemo(
+    () =>
+      [
+        {
+          id: "opencode",
+          label: "Open Code",
+          icon: <AgentFaviconIcon src="/agent-icons/opencode.png" fallback="OC" />,
+        },
+        {
+          id: "claude-code",
+          label: "Claude Code",
+          icon: <AgentFaviconIcon src="/agent-icons/claude-code.png" fallback="CC" />,
+        },
+        {
+          id: "codex",
+          label: "Codex",
+          icon: <AgentFaviconIcon src="/agent-icons/codex.svg" fallback="CX" />,
+        },
+      ].filter((agent) => availableAgents.includes(agent.id)),
+    [availableAgents],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAvailableAgents() {
+      try {
+        const res = await fetch("/api/agents");
+        const body = (await res.json().catch(() => null)) as
+          | { agents?: Array<{ id?: string }> }
+          | null;
+        if (!res.ok || !body?.agents || cancelled) return;
+        setAvailableAgents(
+          body.agents
+            .map((agent) => (typeof agent.id === "string" ? agent.id : null))
+            .filter((agent): agent is string => Boolean(agent)),
+        );
+      } catch {
+        // Ignore availability fetch failures; the menu will simply show no agent options.
+      }
+    }
+
+    void loadAvailableAgents();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     function handleFilterPointerDown(event: PointerEvent) {
       if (!filterMenuRef.current?.contains(event.target as Node)) {
@@ -167,8 +211,14 @@ function SidebarContent({
     if (!removeTarget) return;
     setRemoving(true);
     try {
-      await fetch(`/api/projects/${encodeURIComponent(removeTarget.id)}`, { method: "DELETE" });
+      const projectId = removeTarget.id;
+      await fetch(`/api/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
       setRemoveTarget(null);
+      const viewingDeletedProject =
+        activeProjectId === projectId || pathname.startsWith(`/projects/${encodeURIComponent(projectId)}`);
+      if (viewingDeletedProject) {
+        router.push("/");
+      }
       router.refresh();
     } catch (error) {
       console.error(error);
@@ -179,18 +229,18 @@ function SidebarContent({
 
   async function handleSpawnAgent(projectId: string, agent?: string) {
     try {
-      const res = await fetch("/api/orchestrators", {
+      const res = await fetch("/api/spawn", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, ...(agent ? { agent } : {}) }),
       });
       const body = (await res.json().catch(() => null)) as
-        | { error?: string; orchestrator?: { id: string } }
+        | { error?: string; session?: { id: string } }
         | null;
-      if (!res.ok || !body?.orchestrator?.id) {
-        throw new Error(body?.error || "Failed to spawn orchestrator");
+      if (!res.ok || !body?.session?.id) {
+        throw new Error(body?.error || "Failed to spawn agent");
       }
-      router.push(getProjectSessionHref(projectId, body.orchestrator.id));
+      router.push(getProjectSessionHref(projectId, body.session.id));
     } catch (error) {
       console.error(error);
     }
@@ -365,22 +415,6 @@ function SidebarContent({
                   onAddProject?.();
                 }}
               />
-              <SidebarMenuButton
-                icon={<LinkIcon />}
-                label="Clone from URL"
-                onClick={() => {
-                  setShowAddMenu(false);
-                  onCloneFromUrl?.();
-                }}
-              />
-              <SidebarMenuButton
-                icon={<ZapIcon />}
-                label="Quick start"
-                onClick={() => {
-                  setShowAddMenu(false);
-                  onQuickStart?.();
-                }}
-              />
             </div>
           ) : null}
         </div>
@@ -472,30 +506,23 @@ function SidebarContent({
                       </SidebarIconButton>
                       {spawnMenuProjectId === project.id ? (
                         <div className="absolute right-0 top-8 z-20 min-w-[164px] rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-1 shadow-[var(--box-shadow-lg,0_14px_40px_rgba(0,0,0,0.18))]">
-                          <SidebarMenuButton
-                            icon={<AgentOpenCodeIcon />}
-                            label="Open Code"
-                            onClick={() => {
-                              setSpawnMenuProjectId(null);
-                              void handleSpawnAgent(project.id, "opencode");
-                            }}
-                          />
-                          <SidebarMenuButton
-                            icon={<AgentClaudeCodeIcon />}
-                            label="Claude Code"
-                            onClick={() => {
-                              setSpawnMenuProjectId(null);
-                              void handleSpawnAgent(project.id, "claude-code");
-                            }}
-                          />
-                          <SidebarMenuButton
-                            icon={<AgentCodexIcon />}
-                            label="Codex"
-                            onClick={() => {
-                              setSpawnMenuProjectId(null);
-                              void handleSpawnAgent(project.id, "codex");
-                            }}
-                          />
+                          {spawnAgents.length > 0 ? (
+                            spawnAgents.map((agent) => (
+                              <SidebarMenuButton
+                                key={agent.id}
+                                icon={agent.icon}
+                                label={agent.label}
+                                onClick={() => {
+                                  setSpawnMenuProjectId(null);
+                                  void handleSpawnAgent(project.id, agent.id);
+                                }}
+                              />
+                            ))
+                          ) : (
+                            <div className="px-3 py-2 text-[11px] text-[var(--color-text-tertiary)]">
+                              No available agents
+                            </div>
+                          )}
                         </div>
                       ) : null}
                     </div>
@@ -699,8 +726,6 @@ export function UnifiedSidebar({
   mobileOpen = false,
   onMobileClose,
   onAddProject,
-  onCloneFromUrl,
-  onQuickStart,
   collapsed = false,
   onToggleCollapse,
   width = 228,
@@ -777,7 +802,13 @@ export function UnifiedSidebar({
     [width, onWidthChange],
   );
 
-  const contentProps = { projects, sessions, activeProjectId, activeSessionId, onAddProject, onCloneFromUrl, onQuickStart };
+  const contentProps = {
+    projects,
+    sessions,
+    activeProjectId,
+    activeSessionId,
+    onAddProject,
+  };
 
   return (
     <>
@@ -974,12 +1005,12 @@ function PopoverOption({
 }
 
 function SidebarMenuButton({
-  label,
   icon,
+  label,
   onClick,
 }: {
-  label: string;
   icon?: React.ReactNode;
+  label: string;
   onClick: () => void;
 }) {
   return (
@@ -1143,26 +1174,32 @@ function TrashIcon() {
   );
 }
 
-function AgentOpenCodeIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 17l6-6-6-6M12 19h8" />
-    </svg>
-  );
-}
+function AgentFaviconIcon({
+  src,
+  fallback,
+}: {
+  src: string;
+  fallback: string;
+}) {
+  const [failed, setFailed] = useState(false);
 
-function AgentClaudeCodeIcon() {
-  return (
-    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM8 12h.01M12 12h.01M16 12h.01" />
-    </svg>
-  );
-}
+  if (failed) {
+    return (
+      <span className="flex h-4 w-4 items-center justify-center rounded-[4px] bg-slate-100 text-[9px] font-semibold tracking-[0.08em] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+        {fallback}
+      </span>
+    );
+  }
 
-function AgentCodexIcon() {
   return (
-    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.7" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
-      <path d="m7 8-4 4 4 4M17 8l4 4-4 4M14 4l-4 16" />
-    </svg>
+    <span className="flex h-4 w-4 items-center justify-center overflow-hidden rounded-[4px] bg-white ring-1 ring-slate-200/70 dark:bg-slate-900 dark:ring-slate-700/70">
+      <img
+        alt=""
+        aria-hidden="true"
+        className="h-full w-full object-cover"
+        src={src}
+        onError={() => setFailed(true)}
+      />
+    </span>
   );
 }

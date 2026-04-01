@@ -8,14 +8,6 @@ export const RegisterProjectSchema = z.object({
 });
 export type RegisterProjectInput = z.infer<typeof RegisterProjectSchema>;
 
-/** POST /api/projects/quick-start — scaffold and register a new project */
-export const QuickStartProjectSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  location: z.string().min(1, "Location is required"),
-  template: z.enum(["empty", "nextjs"]),
-});
-export type QuickStartProjectInput = z.infer<typeof QuickStartProjectSchema>;
-
 /** POST /api/projects/clone — clone and register a project */
 export const CloneProjectSchema = z.object({
   url: z.string().url("A valid Git URL is required"),

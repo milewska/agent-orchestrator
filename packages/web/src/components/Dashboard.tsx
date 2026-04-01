@@ -97,13 +97,6 @@ function DashboardInner({
   const hasSeededMobileExpansionRef = useRef(false);
   sessionsRef.current = sessions;
   const allProjectsView = projects.length > 1 && projectId === undefined;
-  const _currentProjectOrchestrator = useMemo(
-    () =>
-      projectId
-        ? activeOrchestrators.find((orchestrator) => orchestrator.projectId === projectId) ?? null
-        : null,
-    [activeOrchestrators, projectId],
-  );
   const prsHref = getProjectScopedHref("/prs", projectId);
 
   const displaySessions = useMemo(() => {
@@ -431,9 +424,15 @@ function DashboardInner({
     }
   };
 
-  const hasAnySessions = KANBAN_LEVELS.some(
-    (level) => grouped[level].length > 0,
+  const currentProjectOrchestrator = useMemo(
+    () =>
+      projectId
+        ? activeOrchestrators.find((orchestrator) => orchestrator.projectId === projectId) ?? null
+        : null,
+    [activeOrchestrators, projectId],
   );
+  const hasProjectSessions = sessions.length > 0;
+  const showProjectBoard = hasProjectSessions || currentProjectOrchestrator !== null;
 
   const anyRateLimited = useMemo(
     () => sessions.some((session) => session.pr && isPRRateLimited(session.pr)),
@@ -623,7 +622,7 @@ function DashboardInner({
           />
         )}
 
-        {!allProjectsView && hasAnySessions && (
+        {!allProjectsView && showProjectBoard && (
           <div className="kanban-board-wrap">
             <div className="board-section-head">
               <div>
@@ -676,7 +675,7 @@ function DashboardInner({
           </div>
         )}
 
-        {!allProjectsView && !hasAnySessions && <EmptyState />}
+        {!allProjectsView && !showProjectBoard && <EmptyState />}
 
       </div>
     </div>

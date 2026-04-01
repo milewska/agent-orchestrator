@@ -39,6 +39,13 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  if (body.agent !== undefined && body.agent !== null) {
+    const agentErr = validateString(body.agent, "agent", 255);
+    if (agentErr) {
+      return jsonWithCorrelation({ error: agentErr }, { status: 400 }, correlationId);
+    }
+  }
+
   try {
     const { config, sessionManager } = await getServices();
     const projectId = body.projectId as string;
@@ -65,6 +72,7 @@ export async function POST(request: NextRequest) {
       branch: typeof body.branch === "string" ? body.branch.trim() : undefined,
       prompt:
         typeof body.prompt === "string" ? stripControlChars(body.prompt).trim() || undefined : undefined,
+      agent: typeof body.agent === "string" ? body.agent.trim() || undefined : undefined,
     });
 
     recordApiObservation({

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getPortfolio, loadPreferences, savePreferences } from "@composio/ao-core";
 import { UpdatePreferencesSchema } from "@/lib/api-schemas";
-import { invalidatePortfolioCache } from "@/lib/project-registration";
+import { invalidateProjectCaches } from "@/lib/project-registration";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +32,7 @@ export async function PUT(request: Request) {
     }
 
     savePreferences(preferences);
-    invalidatePortfolioCache();
+    invalidateProjectCaches();
 
     return NextResponse.json({
       ok: true,

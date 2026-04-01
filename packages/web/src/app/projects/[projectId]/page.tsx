@@ -18,6 +18,7 @@ import { getAllProjects } from "@/lib/project-name";
 import { filterProjectSessions, filterWorkerSessions } from "@/lib/project-utils";
 import { resolveGlobalPause, type GlobalPauseState } from "@/lib/global-pause";
 import { loadPortfolioPageData } from "@/lib/portfolio-page-data";
+import { ensureProjectOrchestrator } from "@/lib/ensure-project-orchestrator";
 
 export async function generateMetadata(props: {
   params: Promise<{ projectId: string }>;
@@ -78,6 +79,13 @@ async function loadProjectPageData(projectFilter: string): Promise<{
   };
 
   try {
+    try {
+      await ensureProjectOrchestrator(projectFilter);
+    } catch {
+      // Best-effort self-heal: if orchestrator startup fails, continue to render
+      // the page using whatever sessions currently exist.
+    }
+
     const { config, registry, sessionManager } = await getServices();
     const allSessions = await sessionManager.list();
 

@@ -13,13 +13,11 @@ import { useRouter } from "next/navigation";
 import { useModal } from "@/hooks/useModal";
 import { AddProjectModal } from "./AddProjectModal";
 import { CloneFromUrlModal } from "./CloneFromUrlModal";
-import { QuickStartModal } from "./QuickStartModal";
 import { UnifiedSidebar } from "./UnifiedSidebar";
 
 interface DashboardShellControls {
   openAddProject: () => void;
   openCloneFromUrl: () => void;
-  openQuickStart: () => void;
 }
 
 interface DashboardShellProps {
@@ -52,14 +50,12 @@ export function DashboardShell({
   const toggleSidebarCollapse = useCallback(() => setSidebarCollapsed((v) => !v), []);
   const addProjectModal = useModal();
   const cloneModal = useModal();
-  const quickStartModal = useModal();
   const controls = useMemo<DashboardShellControls>(
     () => ({
       openAddProject: addProjectModal.open,
       openCloneFromUrl: cloneModal.open,
-      openQuickStart: quickStartModal.open,
     }),
-    [addProjectModal.open, cloneModal.open, quickStartModal.open],
+    [addProjectModal.open, cloneModal.open],
   );
 
   return (
@@ -73,8 +69,6 @@ export function DashboardShell({
           mobileOpen={mobileOpen}
           onMobileClose={() => setMobileOpen(false)}
           onAddProject={addProjectModal.open}
-          onCloneFromUrl={cloneModal.open}
-          onQuickStart={quickStartModal.open}
           collapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapse}
           width={sidebarWidth}
@@ -104,14 +98,6 @@ export function DashboardShell({
         <CloneFromUrlModal
           open={cloneModal.isOpen}
           onClose={cloneModal.close}
-          defaultLocation={defaultLocation}
-          onProjectCreated={(projectId) => {
-            router.push(`/projects/${encodeURIComponent(projectId)}`);
-          }}
-        />
-        <QuickStartModal
-          open={quickStartModal.isOpen}
-          onClose={quickStartModal.close}
           defaultLocation={defaultLocation}
           onProjectCreated={(projectId) => {
             router.push(`/projects/${encodeURIComponent(projectId)}`);

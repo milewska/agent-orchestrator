@@ -39,7 +39,6 @@ describe("PortfolioPage", () => {
     expect(screen.getByText("Agent Orchestrator")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Open project/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Clone from URL/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Quick start/i })).toBeInTheDocument();
     expect(screen.getByText("2 workspaces available")).toBeInTheDocument();
   });
 
@@ -53,23 +52,19 @@ describe("PortfolioPage", () => {
   it("fires the expected launcher actions", () => {
     const onOpenProject = vi.fn();
     const onCloneFromUrl = vi.fn();
-    const onQuickStart = vi.fn();
 
     render(
       <PortfolioPage
         projectSummaries={[makeSummary({ id: "ao", name: "Agent Orchestrator" })]}
         onOpenProject={onOpenProject}
         onCloneFromUrl={onCloneFromUrl}
-        onQuickStart={onQuickStart}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Open project/i }));
     fireEvent.click(screen.getByRole("button", { name: /Clone from URL/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Quick start/i }));
 
     expect(onOpenProject).toHaveBeenCalledTimes(1);
     expect(onCloneFromUrl).toHaveBeenCalledTimes(1);
-    expect(onQuickStart).toHaveBeenCalledTimes(1);
   });
 });

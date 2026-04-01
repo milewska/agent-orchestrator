@@ -6,7 +6,7 @@ import {
   unregisterProject,
 } from "@composio/ao-core";
 import { UpdateProjectPrefsSchema } from "@/lib/api-schemas";
-import { invalidatePortfolioCache } from "@/lib/project-registration";
+import { invalidateProjectCaches } from "@/lib/project-registration";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +67,7 @@ export async function PUT(
     };
 
     savePreferences(preferences);
-    invalidatePortfolioCache();
+    invalidateProjectCaches();
 
     return NextResponse.json({
       ok: true,
@@ -97,25 +97,11 @@ export async function DELETE(
       return NextResponse.json({ error: `Project "${id}" not found` }, { status: 404 });
     }
 
-    if (project.source === "registered") {
-      unregisterProject(id);
-      const preferences = cleanPreferences(id, true);
-      savePreferences(preferences);
-    } else {
-      const preferences = loadPreferences();
-      preferences.projects ??= {};
-      preferences.projects[id] = {
-        ...preferences.projects[id],
-        enabled: false,
-        pinned: false,
-      };
-      if (preferences.defaultProjectId === id) {
-        delete preferences.defaultProjectId;
-      }
-      savePreferences(preferences);
-    }
+    unregisterProject(id);
+    const preferences = cleanPreferences(id, true);
+    savePreferences(preferences);
 
-    invalidatePortfolioCache();
+    invalidateProjectCaches();
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json(

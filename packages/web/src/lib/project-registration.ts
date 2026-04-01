@@ -5,6 +5,7 @@ import {
   registerProject,
   savePreferences,
 } from "@composio/ao-core";
+import { invalidateServicesCache } from "./services";
 
 function normalizePath(path: string): string {
   return resolve(path);
@@ -17,6 +18,11 @@ export function invalidatePortfolioCache(): void {
   delete globalForPortfolio._aoPortfolioCache;
 }
 
+export function invalidateProjectCaches(): void {
+  invalidatePortfolioCache();
+  invalidateServicesCache();
+}
+
 export function registerAndResolveProject(
   repoPath: string,
   options?: {
@@ -26,7 +32,7 @@ export function registerAndResolveProject(
 ) {
   const normalizedRepoPath = normalizePath(repoPath);
   registerProject(normalizedRepoPath, options?.configProjectKey);
-  invalidatePortfolioCache();
+  invalidateProjectCaches();
 
   const project = getPortfolio().find(
     (candidate) =>
@@ -46,7 +52,7 @@ export function registerAndResolveProject(
       displayName: options.displayName,
     };
     savePreferences(preferences);
-    invalidatePortfolioCache();
+    invalidateProjectCaches();
     return {
       ...project,
       name: options.displayName,
