@@ -304,16 +304,9 @@ async function atomicWriteFile(filePath: string, content: string, mode: number):
  * 2. Appends an "Agent Orchestrator" section to the workspace AGENTS.md
  */
 export async function setupPathWrapperWorkspace(workspacePath: string): Promise<void> {
-  // 1. Write shared wrappers to ~/.ao/bin/
+  // 1. Write shared wrappers to ~/.ao/bin/ (skip if version marker matches)
   await mkdir(getAoBinDir(), { recursive: true });
 
-  await atomicWriteFile(
-    join(getAoBinDir(), "ao-metadata-helper.sh"),
-    AO_METADATA_HELPER,
-    0o755,
-  );
-
-  // Only write wrappers if they don't exist or are outdated (check marker)
   const markerPath = join(getAoBinDir(), ".ao-version");
   let needsUpdate = true;
   try {
@@ -324,6 +317,11 @@ export async function setupPathWrapperWorkspace(workspacePath: string): Promise<
   }
 
   if (needsUpdate) {
+    await atomicWriteFile(
+      join(getAoBinDir(), "ao-metadata-helper.sh"),
+      AO_METADATA_HELPER,
+      0o755,
+    );
     // Write wrappers atomically, then write the version marker last.
     // If we crash between wrapper writes and marker write, the next
     // invocation will redo the writes (safe: wrappers are idempotent).
