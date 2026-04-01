@@ -82,7 +82,7 @@ describe("PullRequestsPage", () => {
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/?project=my-app");
     expect(screen.getByRole("link", { name: "Orchestrator" })).toHaveAttribute(
       "href",
-      "/sessions/my-app-orchestrator",
+      "/projects/my-app/sessions/my-app-orchestrator",
     );
   });
 

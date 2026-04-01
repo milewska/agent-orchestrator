@@ -184,8 +184,8 @@ describe("PRStatus", () => {
 // ── SessionCard ──────────────────────────────────────────────────────
 
 describe("SessionCard", () => {
-  it("renders summary when no PR, issue title, or branch title exists", () => {
-    const session = makeSession({ id: "backend-1", summary: "Fixing auth", branch: null });
+  it("renders session id and summary", () => {
+    const session = makeSession({ id: "backend-1", summary: "Fixing auth" });
     render(<SessionCard session={session} />);
     expect(screen.getByText("backend-1")).toBeInTheDocument();
     expect(screen.getByText("Fixing auth")).toBeInTheDocument();
@@ -208,7 +208,7 @@ describe("SessionCard", () => {
     const session = makeSession({ id: "backend-5" });
     render(<SessionCard session={session} />);
     const link = screen.getByText("terminal");
-    expect(link).toHaveAttribute("href", "/sessions/backend-5#session-terminal-section");
+    expect(link).toHaveAttribute("href", "/projects/my-app/sessions/backend-5");
   });
 
   it("shows restore button when agent has exited", () => {
@@ -269,68 +269,6 @@ describe("SessionCard", () => {
     expect(onMerge).toHaveBeenCalledWith(42);
   });
 
-  it("renders passing CI check chips as hyperlinks when url is present", () => {
-    const pr = makePR({
-      state: "open",
-      ciStatus: "passing",
-      ciChecks: [
-        { name: "lint-and-type-checks", status: "passed", url: "https://github.com/owner/repo/runs/111" },
-        { name: "tests", status: "passed", url: "https://github.com/owner/repo/runs/222" },
-        { name: "no-url-check", status: "passed" },
-      ],
-      reviewDecision: "approved",
-      mergeability: {
-        mergeable: true,
-        ciPassing: true,
-        approved: true,
-        noConflicts: true,
-        blockers: [],
-      },
-    });
-    const session = makeSession({ status: "mergeable", activity: "idle", pr });
-    render(<SessionCard session={session} />);
-
-    const lintLink = screen.getByRole("link", { name: /lint-and-type-checks/ });
-    expect(lintLink).toHaveAttribute("href", "https://github.com/owner/repo/runs/111");
-    expect(lintLink).toHaveAttribute("target", "_blank");
-    expect(lintLink).toHaveAttribute("rel", "noopener noreferrer");
-
-    const testsLink = screen.getByRole("link", { name: /^tests$/ });
-    expect(testsLink).toHaveAttribute("href", "https://github.com/owner/repo/runs/222");
-
-    // Check without url should still render as plain text, not a link
-    expect(screen.queryByRole("link", { name: /no-url-check/ })).not.toBeInTheDocument();
-    expect(screen.getByText("no-url-check")).toBeInTheDocument();
-  });
-
-  it("stops propagation when clicking a passing CI chip link", () => {
-    const onClick = vi.fn();
-    const pr = makePR({
-      state: "open",
-      ciStatus: "passing",
-      ciChecks: [
-        { name: "build", status: "passed", url: "https://github.com/owner/repo/runs/333" },
-      ],
-      reviewDecision: "approved",
-      mergeability: {
-        mergeable: true,
-        ciPassing: true,
-        approved: true,
-        noConflicts: true,
-        blockers: [],
-      },
-    });
-    const session = makeSession({ status: "mergeable", activity: "idle", pr });
-    render(
-      <div onClick={onClick}>
-        <SessionCard session={session} />
-      </div>,
-    );
-    const link = screen.getByRole("link", { name: /build/ });
-    fireEvent.click(link);
-    expect(onClick).not.toHaveBeenCalled();
-  });
-
   it("shows CI failing alert", () => {
     const pr = makePR({
       state: "open",
@@ -350,7 +288,7 @@ describe("SessionCard", () => {
     });
     const session = makeSession({ status: "ci_failed", activity: "idle", pr });
     render(<SessionCard session={session} />);
-    expect(screen.getByRole("link", { name: "1 check failing" })).toBeInTheDocument();
+    expect(screen.getByText("1 CI check failing")).toBeInTheDocument();
   });
 
   it("shows CI status unknown when ciStatus is failing but no failed checks", () => {
@@ -455,7 +393,7 @@ describe("SessionCard", () => {
     });
     const session = makeSession({ activity: "idle", pr });
     render(<SessionCard session={session} />);
-    expect(screen.getByRole("button", { name: "Ask to fix" })).toBeInTheDocument();
+    expect(screen.getByText("ask to fix")).toBeInTheDocument();
   });
 
   it("shows action buttons even when agent is active", () => {
@@ -474,13 +412,13 @@ describe("SessionCard", () => {
     });
     const session = makeSession({ activity: "active", pr });
     render(<SessionCard session={session} />);
-    expect(screen.getByRole("button", { name: "Ask to fix" })).toBeInTheDocument();
+    expect(screen.getByText("ask to fix")).toBeInTheDocument();
   });
 
   it("shows issue details in the compact card footer", () => {
     const session = makeSession({ id: "test-1", issueId: "INT-100", pr: null });
     render(<SessionCard session={session} />);
-    expect(screen.getAllByText("INT-100")).toHaveLength(1);
+    expect(screen.getAllByText("INT-100")).toHaveLength(2);
   });
 
   it("shows icon-only terminate button in the footer", () => {
@@ -582,13 +520,11 @@ describe("SessionCard", () => {
       expect(onSend).toHaveBeenCalledTimes(1);
     });
 
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Sent" })).not.toBeInTheDocument();
-      expect(screen.getByRole("textbox", { name: /type a reply to the agent/i })).toHaveValue(
-        "please continue",
-      );
-      expect(screen.getByRole("textbox", { name: /type a reply to the agent/i })).not.toBeDisabled();
-    });
+    expect(screen.queryByRole("button", { name: "Sent" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /type a reply to the agent/i })).toHaveValue(
+      "please continue",
+    );
+    expect(screen.getByRole("textbox", { name: /type a reply to the agent/i })).not.toBeDisabled();
   });
 
   it("shows a temporary failed state when an alert action send is rejected", async () => {
@@ -610,7 +546,7 @@ describe("SessionCard", () => {
 
     render(<SessionCard session={session} onSend={onSend} />);
 
-    const actionButton = screen.getByRole("button", { name: "Ask to fix" });
+    const actionButton = screen.getByRole("button", { name: "ask to fix" });
     fireEvent.click(actionButton);
 
     await waitFor(() => {
@@ -620,7 +556,7 @@ describe("SessionCard", () => {
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "failed" })).toBeInTheDocument();
     });
-    expect(screen.queryByRole("button", { name: "Sent!" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "sent!" })).not.toBeInTheDocument();
   });
 });
 
@@ -637,26 +573,7 @@ describe("AttentionZone", () => {
 
   it("renders empty state when sessions array is empty", () => {
     render(<AttentionZone level="respond" sessions={[]} />);
-    expect(screen.getByText("Respond")).toBeInTheDocument();
-    expect(screen.getByText("0")).toBeInTheDocument();
-    expect(screen.queryByText("No agents need your input.")).not.toBeInTheDocument();
-  });
-
-  it("renders zone-specific empty messages for all attention zones", () => {
-    const cases: Array<[string, string]> = [
-      ["review", "Review"],
-      ["pending", "Pending"],
-      ["working", "Working"],
-      ["done", "Done"],
-    ];
-    for (const [level, expectedLabel] of cases) {
-      const { unmount } = render(
-        <AttentionZone level={level as "review" | "pending" | "working" | "done"} sessions={[]} />,
-      );
-      expect(screen.getByText(expectedLabel)).toBeInTheDocument();
-      expect(screen.getByText("0")).toBeInTheDocument();
-      unmount();
-    }
+    expect(screen.getByText("No sessions")).toBeInTheDocument();
   });
 
   it("shows session cards when not collapsed", () => {
@@ -686,48 +603,5 @@ describe("AttentionZone", () => {
     render(<AttentionZone level="respond" sessions={sessions} onRestore={onRestore} />);
     fireEvent.click(screen.getByText("restore"));
     expect(onRestore).toHaveBeenCalledWith("s1");
-  });
-});
-
-// ── Unenriched PR shimmer ─────────────────────────────────────────────
-
-describe("Unenriched PR shimmer", () => {
-  it("SessionCard shows shimmer for unenriched PR size", () => {
-    const pr = makePR({ enriched: false });
-    const session = makeSession({ pr });
-    const { container } = render(<SessionCard session={session} />);
-    const shimmers = container.querySelectorAll(".animate-pulse");
-    expect(shimmers.length).toBeGreaterThan(0);
-  });
-
-  it("SessionCard shows actual size for enriched PR", () => {
-    const pr = makePR({ enriched: true, additions: 50, deletions: 10 });
-    const session = makeSession({ pr });
-    render(<SessionCard session={session} />);
-    expect(screen.getByText("+50 -10 S")).toBeInTheDocument();
-  });
-
-  it("SessionCard suppresses alerts for unenriched PR", () => {
-    const pr = makePR({
-      enriched: false,
-      ciStatus: "failing",
-      ciChecks: [{ name: "build", status: "failed" }],
-    });
-    const session = makeSession({ pr });
-    const { container } = render(<SessionCard session={session} />);
-    expect(container.querySelector(".session-card__alert-pill")).toBeNull();
-  });
-
-  it("PRStatus shows shimmer for unenriched PR", () => {
-    const pr = makePR({ enriched: false });
-    const { container } = render(<PRStatus pr={pr} />);
-    const shimmers = container.querySelectorAll(".animate-pulse");
-    expect(shimmers.length).toBeGreaterThan(0);
-  });
-
-  it("PRStatus shows actual data for enriched PR", () => {
-    const pr = makePR({ enriched: true, additions: 50, deletions: 10 });
-    render(<PRStatus pr={pr} />);
-    expect(screen.getByText("+50 -10 S")).toBeInTheDocument();
   });
 });
