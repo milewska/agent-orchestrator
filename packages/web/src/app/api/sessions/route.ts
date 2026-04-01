@@ -87,27 +87,20 @@ export async function GET(request: Request) {
     );
 
     if (metadataSettled) {
-      const prEnrichPromises: Promise<boolean>[] = [];
-
-      for (let i = 0; i < workerSessions.length; i++) {
-        const core = workerSessions[i];
-        if (!core?.pr) continue;
+      const enrichPromises = workerSessions.map((core, i) => {
+        if (!core?.pr) return Promise.resolve();
 
         const project = resolveProject(core, config.projects);
         const scm = getSCM(registry, project);
-        if (!scm) continue;
+        if (!scm) return Promise.resolve();
 
-        prEnrichPromises.push(
-          settlesWithin(
-            enrichSessionPR(dashboardSessions[i], scm, core.pr),
-            PER_PR_ENRICH_TIMEOUT_MS,
-          ),
+        return settlesWithin(
+          enrichSessionPR(dashboardSessions[i], scm, core.pr),
+          PER_PR_ENRICH_TIMEOUT_MS,
         );
-      }
+      });
 
-      if (prEnrichPromises.length > 0) {
-        await settlesWithin(Promise.allSettled(prEnrichPromises), PR_ENRICH_TIMEOUT_MS);
-      }
+      await settlesWithin(Promise.allSettled(enrichPromises), PR_ENRICH_TIMEOUT_MS);
     }
 
     recordApiObservation({
