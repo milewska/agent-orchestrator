@@ -676,8 +676,7 @@ function IssuesList({ pr, metadata }: { pr: DashboardPR; metadata: Record<string
   const ciIsFailing = pr.ciStatus === CI_STATUS.FAILING || lifecycleStatus === "ci_failed";
   const hasChangesRequested =
     pr.reviewDecision === "changes_requested" || lifecycleStatus === "changes_requested";
-  const hasConflicts =
-    (pr.state !== "merged" && !pr.mergeability.noConflicts) || conflictNotified;
+  const hasConflicts = pr.state !== "merged" && !pr.mergeability.noConflicts;
 
   if (ciIsFailing) {
     const failCount = pr.ciChecks.filter((c) => c.status === "failed").length;

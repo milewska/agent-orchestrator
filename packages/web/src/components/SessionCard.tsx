@@ -737,8 +737,7 @@ function getAlerts(session: DashboardSession): Alert[] {
   const ciIsFailing = pr.ciStatus === CI_STATUS.FAILING || lifecycleStatus === "ci_failed";
   const hasChangesRequested =
     pr.reviewDecision === "changes_requested" || lifecycleStatus === "changes_requested";
-  const hasConflicts =
-    !pr.mergeability.noConflicts || meta["lastMergeConflictDispatched"] === "true";
+  const hasConflicts = !pr.mergeability.noConflicts;
 
   if (ciIsFailing) {
     const failedCheck = pr.ciChecks.find((c) => c.status === "failed");
