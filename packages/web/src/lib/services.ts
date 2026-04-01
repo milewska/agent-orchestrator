@@ -12,8 +12,10 @@ import "server-only";
  * bundle them correctly.
  */
 
+import { existsSync } from "node:fs";
 import {
   loadConfig,
+  getGlobalConfigPath,
   createPluginRegistry,
   createSessionManager,
   createLifecycleManager,
@@ -33,6 +35,7 @@ import {
 // Static plugin imports — webpack needs these to be string literals
 import pluginRuntimeTmux from "@aoagents/ao-plugin-runtime-tmux";
 import pluginAgentClaudeCode from "@aoagents/ao-plugin-agent-claude-code";
+import pluginAgentCodex from "@aoagents/ao-plugin-agent-codex";
 import pluginAgentCursor from "@aoagents/ao-plugin-agent-cursor";
 import pluginAgentOpencode from "@aoagents/ao-plugin-agent-opencode";
 import pluginWorkspaceWorktree from "@aoagents/ao-plugin-workspace-worktree";
@@ -69,13 +72,33 @@ export function getServices(): Promise<Services> {
   return globalForServices._aoServicesInit;
 }
 
+export function invalidateServicesCache(): void {
+  try {
+    globalForServices._aoServices?.lifecycleManager.stop();
+  } catch {
+    // Best-effort cleanup during cache invalidation.
+  }
+  globalForServices._aoServices = undefined;
+  globalForServices._aoServicesInit = undefined;
+}
+
+function loadCanonicalConfig(): OrchestratorConfig {
+  const globalConfigPath = getGlobalConfigPath();
+  if (existsSync(globalConfigPath)) {
+    return loadConfig(globalConfigPath);
+  }
+
+  return loadConfig();
+}
+
 async function initServices(): Promise<Services> {
-  const config = loadConfig();
+  const config = loadCanonicalConfig();
   const registry = createPluginRegistry();
 
   // Register plugins explicitly (webpack can't handle dynamic import() in core)
   registry.register(pluginRuntimeTmux);
   registry.register(pluginAgentClaudeCode);
+  registry.register(pluginAgentCodex);
   registry.register(pluginAgentCursor);
   registry.register(pluginAgentOpencode);
   registry.register(pluginWorkspaceWorktree);

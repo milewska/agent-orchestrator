@@ -7,6 +7,7 @@ const {
   mockRegistry,
   tmuxPlugin,
   claudePlugin,
+  codexPlugin,
   opencodePlugin,
   worktreePlugin,
   scmPlugin,
@@ -31,6 +32,7 @@ const {
     mockRegistry,
     tmuxPlugin: { manifest: { name: "tmux" } },
     claudePlugin: { manifest: { name: "claude-code" } },
+    codexPlugin: { manifest: { name: "codex" } },
     opencodePlugin: { manifest: { name: "opencode" } },
     worktreePlugin: { manifest: { name: "worktree" } },
     scmPlugin: { manifest: { name: "github" } },
@@ -41,6 +43,7 @@ const {
 
 vi.mock("@aoagents/ao-core", () => ({
   loadConfig: mockLoadConfig,
+  getGlobalConfigPath: vi.fn(() => "/tmp/.agent-orchestrator/config.yaml"),
   createPluginRegistry: () => mockRegistry,
   createSessionManager: mockCreateSessionManager,
   createLifecycleManager: () => ({
@@ -54,6 +57,7 @@ vi.mock("@aoagents/ao-core", () => ({
 
 vi.mock("@aoagents/ao-plugin-runtime-tmux", () => ({ default: tmuxPlugin }));
 vi.mock("@aoagents/ao-plugin-agent-claude-code", () => ({ default: claudePlugin }));
+vi.mock("@aoagents/ao-plugin-agent-codex", () => ({ default: codexPlugin }));
 vi.mock("@aoagents/ao-plugin-agent-opencode", () => ({ default: opencodePlugin }));
 vi.mock("@aoagents/ao-plugin-workspace-worktree", () => ({ default: worktreePlugin }));
 vi.mock("@aoagents/ao-plugin-scm-github", () => ({ default: scmPlugin }));

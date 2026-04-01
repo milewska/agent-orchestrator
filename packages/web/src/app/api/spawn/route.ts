@@ -1,5 +1,10 @@
 import { type NextRequest } from "next/server";
-import { validateIdentifier, validateString, validateConfiguredProject } from "@/lib/validation";
+import {
+  validateIdentifier,
+  validateString,
+  stripControlChars,
+  validateConfiguredProject,
+} from "@/lib/validation";
 import { getServices } from "@/lib/services";
 import { sessionToDashboard } from "@/lib/serialize";
 import { getCorrelationId, jsonWithCorrelation, recordApiObservation } from "@/lib/observability";
@@ -25,11 +30,24 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Prompt validated here; sanitized (newline stripping) below after project validation
+  if (body.branch !== undefined && body.branch !== null) {
+    const branchErr = validateString(body.branch, "branch", 255);
+    if (branchErr) {
+      return jsonWithCorrelation({ error: branchErr }, { status: 400 }, correlationId);
+    }
+  }
+
   if (body.prompt !== undefined && body.prompt !== null) {
-    const promptErr = validateString(body.prompt, "prompt", 4096);
+    const promptErr = validateString(body.prompt, "prompt", 20_000);
     if (promptErr) {
       return jsonWithCorrelation({ error: promptErr }, { status: 400 }, correlationId);
+    }
+  }
+
+  if (body.agent !== undefined && body.agent !== null) {
+    const agentErr = validateString(body.agent, "agent", 255);
+    if (agentErr) {
+      return jsonWithCorrelation({ error: agentErr }, { status: 400 }, correlationId);
     }
   }
 
@@ -53,14 +71,13 @@ export async function POST(request: NextRequest) {
       return jsonWithCorrelation({ error: projectErr }, { status: 404 }, correlationId);
     }
 
-    // Strip newlines from prompt to prevent metadata injection (key=value format uses \n as delimiter)
-    const rawPrompt = (body.prompt as string) ?? undefined;
-    const prompt = rawPrompt ? rawPrompt.replace(/[\r\n]/g, " ").trim() : undefined;
-
     const session = await sessionManager.spawn({
       projectId,
       issueId: (body.issueId as string) ?? undefined,
-      prompt: prompt || undefined,
+      branch: typeof body.branch === "string" ? body.branch.trim() || undefined : undefined,
+      prompt:
+        typeof body.prompt === "string" ? stripControlChars(body.prompt).trim() || undefined : undefined,
+      agent: typeof body.agent === "string" ? body.agent.trim() || undefined : undefined,
     });
 
     recordApiObservation({
