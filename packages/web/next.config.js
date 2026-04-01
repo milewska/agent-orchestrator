@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.AO_NEXT_DIST_DIR || ".next",
   transpilePackages: [
     "@aoagents/ao-core",
     "@aoagents/ao-plugin-agent-claude-code",

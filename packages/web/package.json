@@ -12,8 +12,9 @@
     "next.config.js"
   ],
   "scripts": {
-    "dev": "concurrently \"npm:dev:next\" \"npm:dev:direct-terminal\"",
-    "dev:next": "next dev -p ${PORT:-3000}",
+    "dev": "concurrently \"npm:dev:next\" \"npm:dev:terminal\" \"npm:dev:direct-terminal\"",
+    "dev:next": "AO_NEXT_DIST_DIR=.next-dev next dev -p ${PORT:-3000}",
+    "dev:terminal": "tsx watch server/terminal-websocket.ts",
     "dev:direct-terminal": "tsx watch server/direct-terminal-ws.ts",
     "prebuild": "rimraf .next dist-server",
     "build": "next build && tsc -p tsconfig.server.json",
@@ -23,13 +24,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "clean": "rimraf .next dist-server",
+    "clean": "rimraf .next .next-dev dist-server",
     "screenshot": "tsx e2e/screenshot.ts",
     "screenshot:install": "npx playwright install chromium"
   },
   "dependencies": {
     "@aoagents/ao-core": "workspace:*",
     "@aoagents/ao-plugin-agent-claude-code": "workspace:*",
+    "@aoagents/ao-plugin-agent-codex": "workspace:*",
     "@aoagents/ao-plugin-agent-cursor": "workspace:*",
     "@aoagents/ao-plugin-agent-opencode": "workspace:*",
     "@aoagents/ao-plugin-runtime-tmux": "workspace:*",
@@ -45,7 +47,9 @@
     "react-dom": "^19.0.0",
     "server-only": "^0.0.1",
     "ws": "^8.19.0",
-    "xterm": "^5.3.0"
+    "xterm": "^5.3.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.0"
   },
   "optionalDependencies": {
     "node-pty": "^1.1.0"

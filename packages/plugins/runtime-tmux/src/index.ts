@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+<<<<<<< HEAD
 import {
   type PluginModule,
   type Runtime,
@@ -12,11 +13,11 @@ import {
   type RuntimeHandle,
   type RuntimeMetrics,
   type AttachInfo,
-  shellEscape,
 } from "@aoagents/ao-core";
 
 const execFileAsync = promisify(execFile);
 const TMUX_COMMAND_TIMEOUT_MS = 5_000;
+const SHELL_READY_DELAY_MS = 300;
 
 export const manifest = {
   name: "tmux",
@@ -32,13 +33,6 @@ function assertValidSessionId(id: string): void {
   if (!SAFE_SESSION_ID.test(id)) {
     throw new Error(`Invalid session ID "${id}": must match ${SAFE_SESSION_ID}`);
   }
-}
-
-function writeLaunchScript(command: string): string {
-  const scriptPath = join(tmpdir(), `ao-launch-${randomUUID()}.sh`);
-  const content = `#!/usr/bin/env bash\nrm -- "$0" 2>/dev/null || true\n${command}\n`;
-  writeFileSync(scriptPath, content, { encoding: "utf-8", mode: 0o700 });
-  return `bash ${shellEscape(scriptPath)}`;
 }
 
 /** Run a tmux command and return stdout */
@@ -63,32 +57,22 @@ export function create(): Runtime {
         envArgs.push("-e", `${key}=${value}`);
       }
 
-      // Create tmux session in detached mode
-      await tmux("new-session", "-d", "-s", sessionName, "-c", config.workspacePath, ...envArgs);
-
-      // Send the launch command — clean up the session if this fails.
-      // Use a temp script for long commands so the pane shows a short
-      // invocation instead of a pasted wall of shell.
-      try {
-        if (config.launchCommand.length > 200) {
-          const invocation = writeLaunchScript(config.launchCommand);
-          await tmux("send-keys", "-t", sessionName, "-l", invocation);
-          await sleep(300);
-          await tmux("send-keys", "-t", sessionName, "Enter");
-        } else {
-          await tmux("send-keys", "-t", sessionName, config.launchCommand, "Enter");
-        }
-      } catch (err: unknown) {
-        try {
-          await tmux("kill-session", "-t", sessionName);
-        } catch {
-          // Best-effort cleanup
-        }
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new Error(`Failed to send launch command to session "${sessionName}": ${msg}`, {
-          cause: err,
-        });
-      }
+      // Run the launch command as the session's initial command in a plain POSIX
+      // shell rather than the user's interactive shell. This avoids prompt/startup
+      // noise and zsh-specific parsing/globbing failures for long bootstrap commands
+      // (notably OpenCode).
+      await tmux(
+        "new-session",
+        "-d",
+        "-s",
+        sessionName,
+        "-c",
+        config.workspacePath,
+        ...envArgs,
+        "sh",
+        "-lc",
+        config.launchCommand,
+      );
 
       return {
         id: sessionName,
@@ -143,7 +127,7 @@ export function create(): Runtime {
 
       // Small delay to let tmux process the pasted text before pressing Enter.
       // Without this, Enter can arrive before the text is fully rendered.
-      await sleep(300);
+      await sleep(SHELL_READY_DELAY_MS);
       await tmux("send-keys", "-t", handle.id, "Enter");
     },
 
