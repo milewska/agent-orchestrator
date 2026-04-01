@@ -1033,10 +1033,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     }
 
     // Check for conflicts using cached enrichment data or fallback to individual call
-    let hasConflicts = false;
     const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
     const cachedData = prEnrichmentCache.get(prKey);
 
+    let hasConflicts: boolean;
     if (cachedData) {
       hasConflicts = cachedData.hasConflicts === true;
     } else {
