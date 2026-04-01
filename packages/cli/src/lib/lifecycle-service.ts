@@ -13,7 +13,13 @@ import { getProjectBaseDir, getGlobalDataDir, type OrchestratorConfig } from "@c
 
 const LIFECYCLE_PID_FILE = "lifecycle-worker.pid";
 const LIFECYCLE_LOG_FILE = "lifecycle-worker.log";
+const LIFECYCLE_ALL_PID_FILENAME = "lifecycle-all.pid";
 const DEFAULT_START_TIMEOUT_MS = 5_000;
+
+/** Get the PID file path for the poll-all lifecycle worker. */
+export function getAllProjectsPidFile(): string {
+  return join(getGlobalDataDir(), LIFECYCLE_ALL_PID_FILENAME);
+}
 const STOP_TIMEOUT_MS = 5_000;
 
 export interface LifecycleWorkerStatus {
@@ -123,7 +129,7 @@ export function getLifecycleWorkerStatus(
   // Also check poll-all worker — if running, it covers this project.
   // Report running=true but keep pid=null so callers don't kill the
   // shared poll-all worker when stopping a single project.
-  const allPidFile = join(getGlobalDataDir(), "lifecycle-all.pid");
+  const allPidFile = getAllProjectsPidFile();
   const allPid = readPid(allPidFile);
   if (allPid !== null && isProcessRunning(allPid)) {
     return { running: true, pid: null, pidFile, logFile };

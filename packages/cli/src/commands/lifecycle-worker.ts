@@ -1,29 +1,20 @@
 import type { Command } from "commander";
 import chalk from "chalk";
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { createCorrelationId, createProjectObserver, loadConfig, getGlobalDataDir } from "@composio/ao-core";
+import { dirname } from "node:path";
+import { createCorrelationId, createProjectObserver, loadConfig } from "@composio/ao-core";
 import { getLifecycleManager } from "../lib/create-session-manager.js";
 import {
   clearLifecycleWorkerPid,
   getLifecycleWorkerStatus,
   writeLifecycleWorkerPid,
   isProcessRunning,
+  getAllProjectsPidFile,
 } from "../lib/lifecycle-service.js";
-
-// Lazy PID file path — only computed when poll-all mode is actually used,
-// not on every CLI command import.
-let _allPidFile: string | null = null;
-function getAllPidFile(): string {
-  if (!_allPidFile) {
-    _allPidFile = join(getGlobalDataDir(), "lifecycle-all.pid");
-  }
-  return _allPidFile;
-}
 
 function readAllPid(): number | null {
   try {
-    const pidFile = getAllPidFile();
+    const pidFile = getAllProjectsPidFile();
     if (!existsSync(pidFile)) return null;
     const raw = readFileSync(pidFile, "utf-8").trim();
     const pid = Number.parseInt(raw, 10);
@@ -32,13 +23,13 @@ function readAllPid(): number | null {
 }
 
 function writeAllPid(pid: number): void {
-  const pidFile = getAllPidFile();
+  const pidFile = getAllProjectsPidFile();
   mkdirSync(dirname(pidFile), { recursive: true });
   writeFileSync(pidFile, `${pid}\n`, "utf-8");
 }
 
 function clearAllPid(pid?: number): void {
-  const pidFile = getAllPidFile();
+  const pidFile = getAllProjectsPidFile();
   if (!existsSync(pidFile)) return;
   if (pid !== undefined) {
     const stored = readAllPid();
