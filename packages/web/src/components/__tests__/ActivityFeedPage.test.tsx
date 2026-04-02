@@ -162,4 +162,26 @@ describe("ActivityFeedPage", () => {
       "/projects/ao/sessions/ao-1",
     );
   });
+
+  it("groups future-dated activity under Today", () => {
+    render(
+      <ActivityFeedPage
+        projectSummaries={[makeSummary({ id: "ao", name: "Agent Orchestrator" })]}
+        activityItems={[
+          makeActivityItem({
+            projectId: "ao",
+            projectName: "Agent Orchestrator",
+            sessionId: "ao-1",
+            session: {
+              summary: "Clock skew item",
+              lastActivityAt: "2026-03-29T10:30:00.000Z",
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Today")).toBeInTheDocument();
+    expect(screen.queryByText("-2 days ago")).not.toBeInTheDocument();
+  });
 });

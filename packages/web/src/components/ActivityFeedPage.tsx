@@ -159,11 +159,12 @@ function getSecondaryLabel(session: PortfolioActivityItem["session"]): string | 
 
 function groupActivityItems(items: PortfolioActivityItem[]): ActivityGroup[] {
   const groups = new Map<string, ActivityGroup>();
+  const referenceDate = new Date();
 
   for (const item of items) {
     const date = new Date(item.session.lastActivityAt);
-    const key = getGroupKey(date);
-    const label = getGroupLabel(date);
+    const key = getGroupKey(date, referenceDate);
+    const label = getGroupLabel(date, referenceDate);
     const existing = groups.get(key);
     if (existing) {
       existing.items.push(item);
@@ -175,27 +176,30 @@ function groupActivityItems(items: PortfolioActivityItem[]): ActivityGroup[] {
   return [...groups.values()];
 }
 
-function getDayDifference(date: Date): number {
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+function getDayDifference(date: Date, referenceDate: Date): number {
+  const startOfToday = new Date(
+    referenceDate.getFullYear(),
+    referenceDate.getMonth(),
+    referenceDate.getDate(),
+  ).getTime();
   const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  return Math.floor((startOfToday - startOfDate) / 86_400_000);
+  return Math.max(0, Math.floor((startOfToday - startOfDate) / 86_400_000));
 }
 
-function getGroupKey(date: Date): string {
-  const diffDays = getDayDifference(date);
+function getGroupKey(date: Date, referenceDate: Date): string {
+  const diffDays = getDayDifference(date, referenceDate);
   if (diffDays <= 1) return `day:${diffDays}`;
   if (diffDays < 7) return `days:${diffDays}`;
   const weeks = Math.floor(diffDays / 7);
   if (weeks < 5) return `weeks:${weeks}`;
   const months =
-    (new Date().getFullYear() - date.getFullYear()) * 12 +
-    (new Date().getMonth() - date.getMonth());
+    (referenceDate.getFullYear() - date.getFullYear()) * 12 +
+    (referenceDate.getMonth() - date.getMonth());
   return `months:${Math.max(1, months)}`;
 }
 
-function getGroupLabel(date: Date): string {
-  const diffDays = getDayDifference(date);
+function getGroupLabel(date: Date, referenceDate: Date): string {
+  const diffDays = getDayDifference(date, referenceDate);
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Yesterday";
   if (diffDays < 7) return `${diffDays} days ago`;
@@ -203,8 +207,8 @@ function getGroupLabel(date: Date): string {
   if (weeks === 1) return "1 week ago";
   if (weeks < 5) return `${weeks} weeks ago`;
   const months =
-    (new Date().getFullYear() - date.getFullYear()) * 12 +
-    (new Date().getMonth() - date.getMonth());
+    (referenceDate.getFullYear() - date.getFullYear()) * 12 +
+    (referenceDate.getMonth() - date.getMonth());
   return months <= 1 ? "1 month ago" : `${months} months ago`;
 }
 
