@@ -58,6 +58,7 @@ const {
 }));
 
 vi.mock("@composio/ao-core", async (importOriginal) => {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
   const actual = await importOriginal<typeof import("@composio/ao-core")>();
   return {
     ...actual,
@@ -274,8 +275,9 @@ describe("ao project remove", () => {
     mockIsHumanCaller.mockReturnValue(false);
     mockSessionManager.list.mockResolvedValue([]);
     mockUnregisterProject.mockImplementation((cfg: GlobalConfig, id: string) => {
-      const updated = { ...cfg, projects: { ...cfg.projects } };
-      delete updated.projects[id];
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      const { [id]: _removed, ...rest } = cfg.projects;
+      const updated = { ...cfg, projects: rest };
       return updated;
     });
     mockLoadConfig.mockReturnValue(makeGlobalConfig());
