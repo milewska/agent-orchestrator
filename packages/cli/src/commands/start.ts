@@ -1313,6 +1313,10 @@ export function registerStart(program: Command): void {
                     config = loadConfig();
                     projectId = newId;
                     project = config.projects[newId];
+                  } else {
+                    // Project not found in raw YAML (unexpected — fall back to suffix approach)
+                    opts = { ...opts, orchestratorSuffix: String(suffix) };
+                    console.log(chalk.green(`\n✓ Starting orchestrator-${suffix} for "${projectId}"\n`));
                   }
                 }
               } else if (choice === "restart") {

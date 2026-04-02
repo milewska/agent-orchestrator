@@ -265,6 +265,8 @@ describe("isSecretField", () => {
     expect(isSecretField("secretKey")).toBe(true);
     expect(isSecretField("password")).toBe(true);
     expect(isSecretField("API_KEY")).toBe(true);
+    expect(isSecretField("dbCredentials")).toBe(true);
+    expect(isSecretField("serviceCredential")).toBe(true);
   });
 
   it("does not match non-secret fields", () => {

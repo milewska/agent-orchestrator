@@ -43,7 +43,7 @@ const IDENTITY_FIELDS = new Set(["name", "path"]);
 const isInternalField = (key: string): boolean => key.startsWith("_");
 
 /** Secret-like field patterns (excluded from shadow sync in hybrid mode) */
-const SECRET_PATTERNS = [/token$/i, /key$/i, /secret$/i, /password$/i];
+const SECRET_PATTERNS = [/token$/i, /key$/i, /secret$/i, /password$/i, /credentials?$/i];
 
 export function isSecretField(key: string): boolean {
   return SECRET_PATTERNS.some((p) => p.test(key));
