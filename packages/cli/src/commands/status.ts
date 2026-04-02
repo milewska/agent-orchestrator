@@ -12,6 +12,11 @@ import {
   type ProjectConfig,
   isOrchestratorSession,
   loadConfig,
+  loadGlobalConfig,
+  isProjectShadowStale,
+  getPortfolio,
+  getPortfolioSessionCounts,
+  createPluginRegistry,
 } from "@composio/ao-core";
 import { git, getTmuxSessions, getTmuxActivity } from "../lib/shell.js";
 import {
@@ -23,6 +28,11 @@ import {
   reviewDecisionIcon,
   padCol,
 } from "../lib/format.js";
+import {
+  formatPortfolioDegradedReason,
+  formatPortfolioProjectName,
+  formatPortfolioProjectStatus,
+} from "../lib/portfolio-display.js";
 import { getAgentByName, getSCM } from "../lib/plugins.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
 
@@ -209,8 +219,69 @@ export function registerStatus(program: Command): void {
     .command("status")
     .description("Show all sessions with branch, activity, PR, and CI status")
     .option("-p, --project <id>", "Filter by project ID")
+    .option("--portfolio", "Show status across all portfolio projects")
     .option("--json", "Output as JSON")
-    .action(async (opts: { project?: string; json?: boolean }) => {
+    .action(async (opts: { project?: string; portfolio?: boolean; json?: boolean }) => {
+      // Portfolio view: show cross-project summary
+      if (opts.portfolio) {
+        try {
+          const portfolio = getPortfolio();
+
+          if (portfolio.length === 0) {
+            console.log(chalk.dim("No projects in portfolio."));
+            console.log(
+              chalk.dim("Run `ao start` in a project or `ao project add <path>` to register one."),
+            );
+            return;
+          }
+
+          const counts = await getPortfolioSessionCounts(portfolio);
+
+          if (opts.json) {
+            const jsonData = portfolio.map((p) => ({
+              id: p.id,
+              name: p.name,
+              enabled: p.enabled,
+              degraded: p.degraded,
+              source: p.source,
+              sessions: counts[p.id] || { total: 0, active: 0 },
+            }));
+            console.log(JSON.stringify(jsonData, null, 2));
+            return;
+          }
+
+          console.log(banner("PORTFOLIO STATUS"));
+          console.log();
+
+          for (const p of portfolio) {
+            const count = counts[p.id] || { total: 0, active: 0 };
+            const status = formatPortfolioProjectStatus(p, count);
+            const name = formatPortfolioProjectName(p);
+            const degradedReason = formatPortfolioDegradedReason(p);
+            console.log(`  ${chalk.bold(p.id)}${name}  ${status}  ${count.total} sessions`);
+            if (degradedReason) {
+              console.log(`    ${degradedReason}`);
+            }
+          }
+
+          const totalActive = Object.values(counts).reduce((sum, c) => sum + c.active, 0);
+          const totalSessions = Object.values(counts).reduce((sum, c) => sum + c.total, 0);
+          console.log();
+          console.log(
+            chalk.dim(
+              `  ${totalSessions} session${totalSessions !== 1 ? "s" : ""} across ${portfolio.length} project${portfolio.length !== 1 ? "s" : ""} (${totalActive} active)`,
+            ),
+          );
+          console.log();
+        } catch (err) {
+          console.error(
+            chalk.red("Failed to load portfolio:"),
+            err instanceof Error ? err.message : String(err),
+          );
+          process.exit(1);
+        }
+        return;
+      }
       let config: ReturnType<typeof loadConfig>;
       try {
         config = loadConfig();
@@ -220,6 +291,9 @@ export function registerStatus(program: Command): void {
         await showFallbackStatus();
         return;
       }
+
+      // Load global config once for staleness checks (best-effort)
+      const globalConfig = loadGlobalConfig();
 
       if (opts.project && !config.projects[opts.project]) {
         console.error(chalk.red(`Unknown project: ${opts.project}`));
@@ -264,6 +338,14 @@ export function registerStatus(program: Command): void {
 
         if (!opts.json) {
           console.log(header(projectConfig.name || projectId));
+          // Show staleness warning if local config was changed since last ao start
+          if (globalConfig && isProjectShadowStale(projectId, globalConfig)) {
+            console.log(
+              chalk.yellow(
+                `  ⚠ local config changed since last \`ao start\` — shadow may be stale. Run \`ao start\` to sync.`,
+              ),
+            );
+          }
         }
 
         if (projectSessions.length === 0) {
@@ -327,7 +409,6 @@ export function registerStatus(program: Command): void {
 
         // Check for issues awaiting verification across all projects
         try {
-          const { createPluginRegistry } = await import("@composio/ao-core");
           const registry = createPluginRegistry();
           await registry.loadFromConfig(config, (pkg: string) => import(pkg));
 
@@ -360,6 +441,10 @@ export function registerStatus(program: Command): void {
         }
 
         console.log();
+      }
+
+      if (!opts.json && projectIds.length > 1) {
+        console.log(chalk.dim("  Tip: Use --portfolio to see all projects"));
       }
     });
 }
