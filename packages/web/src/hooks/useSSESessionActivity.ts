@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ActivityState, SSESnapshotEvent } from "@/lib/types";
 
 interface SessionActivity {
@@ -18,10 +18,9 @@ export function useSSESessionActivity(
   project?: string,
 ): SessionActivity | null {
   const [activity, setActivity] = useState<SessionActivity | null>(null);
-  const sessionIdRef = useRef(sessionId);
-  sessionIdRef.current = sessionId;
 
   useEffect(() => {
+    setActivity(null);
     const url = project ? `/api/events?project=${encodeURIComponent(project)}` : "/api/events";
     const es = new EventSource(url);
     let disposed = false;
@@ -33,7 +32,7 @@ export function useSSESessionActivity(
         if (data.type !== "snapshot") return;
 
         const snapshot = data as SSESnapshotEvent;
-        const match = snapshot.sessions.find((s) => s.id === sessionIdRef.current);
+        const match = snapshot.sessions.find((s) => s.id === sessionId);
         if (!match) return;
 
         setActivity((prev) => {
@@ -49,7 +48,7 @@ export function useSSESessionActivity(
       disposed = true;
       es.close();
     };
-  }, [project]);
+  }, [sessionId, project]);
 
   return activity;
 }

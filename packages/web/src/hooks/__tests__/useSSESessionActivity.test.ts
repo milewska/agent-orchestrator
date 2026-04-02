@@ -173,4 +173,35 @@ describe("useSSESessionActivity", () => {
 
     expect(result.current).toBeNull();
   });
+
+  it("resets activity and reconnects when sessionId changes", () => {
+    let currentSessionId = "session-1";
+    const { result, rerender } = renderHook(() =>
+      useSSESessionActivity(currentSessionId),
+    );
+
+    const firstInstance = eventSourceMock;
+
+    act(() => {
+      firstInstance.onmessage!.call(firstInstance, {
+        data: JSON.stringify({
+          type: "snapshot",
+          sessions: [
+            { id: "session-1", status: "working", activity: "active", attentionLevel: "working", lastActivityAt: new Date().toISOString() },
+          ],
+        }),
+      } as MessageEvent);
+    });
+
+    expect(result.current?.activity).toBe("active");
+
+    currentSessionId = "session-2";
+    rerender();
+
+    // State should reset to null immediately on sessionId change
+    expect(result.current).toBeNull();
+
+    // First EventSource should have been closed
+    expect(firstInstance.close).toHaveBeenCalled();
+  });
 });
