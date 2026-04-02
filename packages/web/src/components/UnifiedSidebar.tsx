@@ -78,14 +78,12 @@ function SidebarContent({
   sessions,
   activeProjectId,
   activeSessionId,
-  compact = false,
   onAddProject,
 }: {
   projects: PortfolioProjectSummary[];
   sessions?: DashboardSession[];
   activeProjectId?: string;
   activeSessionId?: string;
-  compact?: boolean;
   onAddProject?: () => void;
 }) {
   const router = useRouter();
@@ -130,7 +128,7 @@ function SidebarContent({
     return filtered;
   }, [groupBy, orderedProjects, repoFilter, sortedProjects, statusFilter]);
 
-  const canReorderWorkspaces = !compact && groupBy === "repo" && repoFilter === "all";
+  const canReorderWorkspaces = groupBy === "repo" && repoFilter === "all";
 
   const activeAgents = useMemo(() => {
     if (!sessions) return [];
@@ -1003,7 +1001,7 @@ export function UnifiedSidebar({
                 <CloseIcon />
               </button>
             </div>
-            <SidebarContent {...contentProps} compact />
+            <SidebarContent {...contentProps} />
           </div>
         </div>
       ) : null}

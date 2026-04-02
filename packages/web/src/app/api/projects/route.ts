@@ -16,8 +16,9 @@ import {
 import { getAllProjects } from "@/lib/project-name";
 import { RegisterProjectSchema } from "@/lib/api-schemas";
 import { getPortfolioServices } from "@/lib/portfolio-services";
-import { assertWorkspacePathAllowed } from "@/lib/filesystem-access";
 import { migrateLegacyConfigForPortfolioRegistration } from "@/lib/legacy-config-migration";
+import { buildFlatLocalConfig, extractFlatLocalConfig } from "@/lib/local-project-config";
+import { assertPathWithinHome } from "@/lib/path-security";
 import { registerAndResolveProject } from "@/lib/project-registration";
 import { getServices } from "@/lib/services";
 
@@ -31,36 +32,6 @@ function hasLocalConfigFile(dirPath: string): string | null {
   }
   return null;
 }
-
-function buildFlatLocalConfig(repo?: string) {
-  return {
-    ...(repo ? { repo } : {}),
-    defaultBranch: "main",
-    runtime: "tmux",
-    agent: "claude-code",
-    workspace: "worktree",
-  };
-}
-
-function extractFlatLocalConfig(config: Record<string, unknown>, projectKey: string): Record<string, unknown> {
-  const projects = config["projects"];
-  if (!projects || typeof projects !== "object") {
-    return {};
-  }
-
-  const project = (projects as Record<string, unknown>)[projectKey];
-  if (!project || typeof project !== "object") {
-    return {};
-  }
-
-  const flat: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(project)) {
-    if (key === "name" || key === "path" || key === "sessionPrefix") continue;
-    flat[key] = value;
-  }
-  return flat;
-}
-
 async function ensureGitRepo(dirPath: string): Promise<void> {
   if (existsSync(join(dirPath, ".git"))) return;
 
@@ -125,7 +96,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const dirPath = assertWorkspacePathAllowed(parsed.data.path, "Project path");
+    const dirPath = await assertPathWithinHome(parsed.data.path);
     let configProjectKey = parsed.data.configProjectKey;
 
     // 1. Check for config directly in the project path (no upward walk)

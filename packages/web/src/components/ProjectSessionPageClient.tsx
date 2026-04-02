@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isOrchestratorSession } from "@composio/ao-core/types";
 import { SessionDetail } from "@/components/SessionDetail";
 import { activityIcon } from "@/lib/activity-icons";
@@ -53,6 +53,11 @@ export function ProjectSessionPageClient({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const sessionIsOrchestrator = session ? isOrchestratorSession(session) : false;
+  const sessionIsOrchestratorRef = useRef(sessionIsOrchestrator);
+
+  useEffect(() => {
+    sessionIsOrchestratorRef.current = sessionIsOrchestrator;
+  }, [sessionIsOrchestrator]);
 
   useEffect(() => {
     if (session) {
@@ -85,17 +90,23 @@ export function ProjectSessionPageClient({
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [projectId, sessionId]);
 
-  const fetchZoneCounts = useCallback(async () => {
-    if (!sessionIsOrchestrator) return;
+  const fetchProjectContext = useCallback(async () => {
     try {
-      const res = await fetch(`/api/sessions?project=${encodeURIComponent(projectId)}`);
+      const isOrchestrator = sessionIsOrchestratorRef.current;
+      const params = new URLSearchParams({ project: projectId });
+      if (!isOrchestrator) {
+        params.set("orchestratorOnly", "true");
+      }
+      const res = await fetch(`/api/sessions?${params.toString()}`);
       if (!res.ok) return;
       const body = (await res.json()) as {
         sessions: DashboardSession[];
         orchestratorId?: string | null;
       };
+      setProjectOrchestratorId(body.orchestratorId ?? null);
+      if (!isOrchestrator) return;
       const sessions = body.sessions ?? [];
       setProjectOrchestratorId(body.orchestratorId ?? null);
       const counts: ZoneCounts = {
@@ -115,23 +126,23 @@ export function ProjectSessionPageClient({
     } catch {
       // non-critical
     }
-  }, [sessionIsOrchestrator, projectId]);
+  }, [projectId]);
 
   useEffect(() => {
     void fetchSession();
     const t = setTimeout(() => {
-      void fetchZoneCounts();
+      void fetchProjectContext();
     }, 2_000);
     return () => clearTimeout(t);
-  }, [fetchSession, fetchZoneCounts]);
+  }, [fetchProjectContext, fetchSession]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       void fetchSession();
-      void fetchZoneCounts();
+      void fetchProjectContext();
     }, 5_000);
     return () => clearInterval(interval);
-  }, [fetchSession, fetchZoneCounts]);
+  }, [fetchProjectContext, fetchSession]);
 
   if (loading) {
     return (

@@ -2,8 +2,10 @@ import { resolve } from "node:path";
 import {
   getPortfolio,
   registerProject,
-  updatePreferences,
+  loadPreferences,
+  savePreferences,
 } from "@composio/ao-core";
+import { stopPortfolioBackgroundRefresh } from "./portfolio-services";
 import { invalidateServicesCache } from "./services";
 
 function normalizePath(path: string): string {
@@ -13,8 +15,10 @@ function normalizePath(path: string): string {
 export function invalidatePortfolioCache(): void {
   const globalForPortfolio = globalThis as typeof globalThis & {
     _aoPortfolioCache?: unknown;
+    _aoPortfolioRefreshTimer?: ReturnType<typeof setInterval>;
   };
   delete globalForPortfolio._aoPortfolioCache;
+  stopPortfolioBackgroundRefresh();
 }
 
 export function invalidateProjectCaches(): void {
@@ -44,13 +48,13 @@ export function registerAndResolveProject(
   }
 
   if (options?.displayName && options.displayName !== project.name) {
-    updatePreferences((preferences) => {
-      preferences.projects ??= {};
-      preferences.projects[project.id] = {
-        ...preferences.projects[project.id],
-        displayName: options.displayName,
-      };
-    });
+    const preferences = loadPreferences();
+    preferences.projects ??= {};
+    preferences.projects[project.id] = {
+      ...preferences.projects[project.id],
+      displayName: options.displayName,
+    };
+    savePreferences(preferences);
     invalidateProjectCaches();
     return {
       ...project,

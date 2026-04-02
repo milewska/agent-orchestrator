@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getPortfolio, loadPreferences, updatePreferences } from "@composio/ao-core";
+import { getPortfolio, loadPreferences, savePreferences } from "@composio/ao-core";
 import { UpdatePreferencesSchema } from "@/lib/api-schemas";
 import { invalidateProjectCaches } from "@/lib/project-registration";
 
@@ -17,28 +17,28 @@ export async function PUT(request: Request) {
     }
 
     const portfolioIds = new Set(getPortfolio().map((project) => project.id));
+    const preferences = loadPreferences();
 
-    updatePreferences((preferences) => {
-      if (parsed.data.projectOrder) {
-        const ordered = parsed.data.projectOrder.filter((id: string) => portfolioIds.has(id));
-        preferences.projectOrder = ordered.length > 0 ? ordered : undefined;
-      }
+    if (parsed.data.projectOrder) {
+      const ordered = parsed.data.projectOrder.filter((id: string) => portfolioIds.has(id));
+      preferences.projectOrder = ordered.length > 0 ? ordered : undefined;
+    }
 
-      if (parsed.data.defaultProject !== undefined) {
-        preferences.defaultProjectId =
-          parsed.data.defaultProject && portfolioIds.has(parsed.data.defaultProject)
-            ? parsed.data.defaultProject
-            : undefined;
-      }
-    });
+    if (parsed.data.defaultProject !== undefined) {
+      preferences.defaultProjectId =
+        parsed.data.defaultProject && portfolioIds.has(parsed.data.defaultProject)
+          ? parsed.data.defaultProject
+          : undefined;
+    }
+
+    savePreferences(preferences);
     invalidateProjectCaches();
 
-    const updated = loadPreferences();
     return NextResponse.json({
       ok: true,
       preferences: {
-        defaultProjectId: updated.defaultProjectId,
-        projectOrder: updated.projectOrder ?? [],
+        defaultProjectId: preferences.defaultProjectId,
+        projectOrder: preferences.projectOrder ?? [],
       },
     });
   } catch (err) {

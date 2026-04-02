@@ -10,7 +10,6 @@
 import {
   getPortfolio,
   listPortfolioSessions,
-  getPortfolioSessionCounts,
   loadConfig,
   generateSessionPrefix,
   type PortfolioProject,
@@ -39,6 +38,13 @@ const globalForPortfolio = globalThis as typeof globalThis & {
   _aoPortfolioCache?: CachedPortfolio;
   _aoPortfolioRefreshTimer?: ReturnType<typeof setInterval>;
 };
+
+export function stopPortfolioBackgroundRefresh(): void {
+  if (globalForPortfolio._aoPortfolioRefreshTimer) {
+    clearInterval(globalForPortfolio._aoPortfolioRefreshTimer);
+    globalForPortfolio._aoPortfolioRefreshTimer = undefined;
+  }
+}
 
 function isCacheFresh(): boolean {
   const cached = globalForPortfolio._aoPortfolioCache;
@@ -106,6 +112,7 @@ function ensureBackgroundRefresh(): void {
       // Background refresh failure is non-fatal
     }
   }, BACKGROUND_REFRESH_MS);
+  globalForPortfolio._aoPortfolioRefreshTimer.unref?.();
 }
 
 /** Get portfolio services (cached, non-blocking after first call). */
@@ -133,5 +140,5 @@ export async function getCachedPortfolioSessions(): Promise<PortfolioSession[]> 
 }
 
 // Re-export for direct use when cache bypass is needed
-export { listPortfolioSessions, getPortfolioSessionCounts };
+export { listPortfolioSessions };
 export type { PortfolioProject, PortfolioSession };

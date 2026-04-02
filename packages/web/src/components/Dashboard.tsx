@@ -424,15 +424,8 @@ function DashboardInner({
     }
   };
 
-  const currentProjectOrchestrator = useMemo(
-    () =>
-      projectId
-        ? activeOrchestrators.find((orchestrator) => orchestrator.projectId === projectId) ?? null
-        : null,
-    [activeOrchestrators, projectId],
-  );
-  const hasProjectSessions = sessions.length > 0;
-  const showProjectBoard = hasProjectSessions || currentProjectOrchestrator !== null;
+  const hasBoardSessions = KANBAN_LEVELS.some((level) => grouped[level].length > 0);
+  const showProjectBoard = hasBoardSessions;
 
   const anyRateLimited = useMemo(
     () => sessions.some((session) => session.pr && isPRRateLimited(session.pr)),

@@ -12,29 +12,11 @@ import {
   sanitizeProjectId,
 } from "@composio/ao-core";
 import { CloneProjectSchema } from "@/lib/api-schemas";
-import { assertWorkspacePathAllowed } from "@/lib/filesystem-access";
+import { extractFlatLocalConfig } from "@/lib/local-project-config";
+import { assertPathWithinHome } from "@/lib/path-security";
 import { registerAndResolveProject } from "@/lib/project-registration";
 
 const execFileAsync = promisify(execFile);
-
-function extractFlatLocalConfig(config: Record<string, unknown>, projectKey: string): Record<string, unknown> {
-  const projects = config["projects"];
-  if (!projects || typeof projects !== "object") {
-    return {};
-  }
-
-  const project = (projects as Record<string, unknown>)[projectKey];
-  if (!project || typeof project !== "object") {
-    return {};
-  }
-
-  const flat: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(project)) {
-    if (key === "name" || key === "path" || key === "sessionPrefix") continue;
-    flat[key] = value;
-  }
-  return flat;
-}
 
 async function ensureDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true });
@@ -67,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     const repo = parseRepoUrl(parsed.data.url);
-    const cloneRoot = assertWorkspacePathAllowed(parsed.data.location, "Clone location");
+    const cloneRoot = await assertPathWithinHome(parsed.data.location);
     const targetDir = resolve(cloneRoot, repo.repo);
     let projectKey = sanitizeProjectId(repo.repo);
 

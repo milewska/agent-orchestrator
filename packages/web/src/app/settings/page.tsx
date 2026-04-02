@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
-import { homedir } from "node:os";
 import { loadConfig } from "@composio/ao-core";
 import { DashboardShell } from "@/components/DashboardShell";
 import { AgentSettings } from "@/components/settings/AgentSettings";
 import { IntegrationSettings } from "@/components/settings/IntegrationSettings";
 import { ProjectSettings } from "@/components/settings/ProjectSettings";
+import { getDefaultCloneLocation } from "@/lib/default-location";
 import { getPortfolioServices } from "@/lib/portfolio-services";
 import type { AttentionLevel, PortfolioProjectSummary } from "@/lib/types";
 
@@ -56,7 +56,7 @@ export default async function SettingsRoute() {
   const agentDefaults = getAgentDefaults();
 
   return (
-    <DashboardShell projects={projectSummaries} defaultLocation={homedir()}>
+    <DashboardShell projects={projectSummaries} defaultLocation={getDefaultCloneLocation()}>
       <main className="min-h-screen bg-[var(--color-bg-base)] px-5 py-8 text-[var(--color-text-primary)] sm:px-6 lg:px-10">
         <div className="mx-auto max-w-[1120px]">
           <header className="rounded-[2px] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] px-6 py-6 shadow-[var(--card-shadow)]">

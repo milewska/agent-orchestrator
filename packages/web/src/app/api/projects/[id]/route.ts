@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   getPortfolio,
   loadPreferences,
-  updatePreferences,
+  savePreferences,
   unregisterProject,
 } from "@composio/ao-core";
 import { UpdateProjectPrefsSchema } from "@/lib/api-schemas";
@@ -56,23 +56,22 @@ export async function PUT(
       );
     }
 
-    updatePreferences((preferences) => {
-      preferences.projects ??= {};
-      preferences.projects[id] = {
-        ...preferences.projects[id],
-        ...(parsed.data.pinned !== undefined ? { pinned: parsed.data.pinned } : {}),
-        ...(parsed.data.enabled !== undefined ? { enabled: parsed.data.enabled } : {}),
-        ...(parsed.data.displayName !== undefined ? { displayName: parsed.data.displayName } : {}),
-      };
-    });
+    const preferences = loadPreferences();
+    preferences.projects ??= {};
+    preferences.projects[id] = {
+      ...preferences.projects[id],
+      ...(parsed.data.pinned !== undefined ? { pinned: parsed.data.pinned } : {}),
+      ...(parsed.data.enabled !== undefined ? { enabled: parsed.data.enabled } : {}),
+      ...(parsed.data.displayName !== undefined ? { displayName: parsed.data.displayName } : {}),
+    };
+    savePreferences(preferences);
     invalidateProjectCaches();
 
-    const updatedPrefs = loadPreferences();
     return NextResponse.json({
       ok: true,
       project: {
         id,
-        ...updatedPrefs.projects?.[id],
+        ...preferences.projects?.[id],
       },
     });
   } catch (err) {
@@ -97,9 +96,9 @@ export async function DELETE(
     }
 
     unregisterProject(id);
-    updatePreferences((preferences) => {
-      removeProjectFromPreferences(preferences, id);
-    });
+    const preferences = loadPreferences();
+    removeProjectFromPreferences(preferences, id);
+    savePreferences(preferences);
 
     invalidateProjectCaches();
     return NextResponse.json({ ok: true });

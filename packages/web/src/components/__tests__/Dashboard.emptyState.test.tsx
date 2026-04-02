@@ -56,7 +56,7 @@ describe("Dashboard empty state", () => {
     expect(queryByText(/No active sessions yet/i)).not.toBeInTheDocument();
   });
 
-  it("keeps the kanban shell when only done sessions exist", () => {
+  it("shows empty state when all sessions are done", () => {
     render(
       <Dashboard
         initialSessions={[
@@ -81,7 +81,20 @@ describe("Dashboard empty state", () => {
       />,
     );
 
-    expect(screen.queryByText(/No active sessions yet/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Attention Board/i)).toBeInTheDocument();
+    expect(screen.getByText(/No active sessions yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Attention Board/i)).not.toBeInTheDocument();
+  });
+
+  it("shows empty state when only an orchestrator exists", () => {
+    render(
+      <Dashboard
+        initialSessions={[]}
+        projectId="proj"
+        orchestrators={[{ id: "proj-orchestrator", projectId: "proj", projectName: "Proj" }]}
+      />,
+    );
+
+    expect(screen.getByText(/No active sessions yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Attention Board/i)).not.toBeInTheDocument();
   });
 });
