@@ -85,7 +85,6 @@ function SidebarContent({
   sessions?: DashboardSession[];
   activeProjectId?: string;
   activeSessionId?: string;
-  compact?: boolean;
   onAddProject?: () => void;
 }) {
   const router = useRouter();
@@ -583,11 +582,7 @@ function SidebarContent({
                       degraded={project.degraded}
                     />
 
-<<<<<<< HEAD
                     <div className="min-w-0 flex-1">
-=======
-                    <div className="min-w-0 flex-1">
->>>>>>> 2e8cdc27 (fix(web): harden multi-dashboard interactions)
                       <span className="block truncate text-[13px] font-medium tracking-[-0.02em]">
                         {project.name}
                       </span>
@@ -1007,7 +1002,7 @@ export function UnifiedSidebar({
                 <CloseIcon />
               </button>
             </div>
-            <SidebarContent {...contentProps} compact />
+            <SidebarContent {...contentProps} />
           </div>
         </div>
       ) : null}
