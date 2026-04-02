@@ -87,17 +87,22 @@ export function ProjectSessionPageClient({
     }
   }, [projectId, sessionId]);
 
-  const fetchZoneCounts = useCallback(async () => {
-    if (!sessionIsOrchestrator) return;
+  const fetchProjectContext = useCallback(async () => {
     try {
-      const res = await fetch(`/api/sessions?project=${encodeURIComponent(projectId)}`);
+      const params = new URLSearchParams({ project: projectId });
+      if (!sessionIsOrchestrator) {
+        params.set("orchestratorOnly", "true");
+      }
+      const res = await fetch(`/api/sessions?${params.toString()}`);
       if (!res.ok) return;
       const body = (await res.json()) as {
         sessions: DashboardSession[];
         orchestratorId?: string | null;
       };
-      const sessions = body.sessions ?? [];
       setProjectOrchestratorId(body.orchestratorId ?? null);
+      if (!sessionIsOrchestrator) return;
+
+      const sessions = body.sessions ?? [];
       const counts: ZoneCounts = {
         merge: 0,
         respond: 0,
@@ -120,18 +125,18 @@ export function ProjectSessionPageClient({
   useEffect(() => {
     void fetchSession();
     const t = setTimeout(() => {
-      void fetchZoneCounts();
+      void fetchProjectContext();
     }, 2_000);
     return () => clearTimeout(t);
-  }, [fetchSession, fetchZoneCounts]);
+  }, [fetchProjectContext, fetchSession]);
 
   useEffect(() => {
     const interval = setInterval(() => {
       void fetchSession();
-      void fetchZoneCounts();
+      void fetchProjectContext();
     }, 5_000);
     return () => clearInterval(interval);
-  }, [fetchSession, fetchZoneCounts]);
+  }, [fetchProjectContext, fetchSession]);
 
   if (loading) {
     return (
