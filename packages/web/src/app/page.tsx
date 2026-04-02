@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
-import { homedir } from "node:os";
 import { DashboardShell } from "@/components/DashboardShell";
 import { PortfolioPage } from "@/components/PortfolioPage";
+import { getDefaultCloneLocation } from "@/lib/default-location";
 import { loadPortfolioPageData } from "@/lib/portfolio-page-data";
 
 export const metadata: Metadata = {
@@ -16,7 +16,7 @@ export default async function Home() {
   return (
     <DashboardShell
       projects={projectSummaries}
-      defaultLocation={homedir()}
+      defaultLocation={getDefaultCloneLocation()}
     >
       <PortfolioPage projectSummaries={projectSummaries} />
     </DashboardShell>

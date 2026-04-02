@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
-import { homedir } from "node:os";
 import { ActivityFeedPage } from "@/components/ActivityFeedPage";
 import { DashboardShell } from "@/components/DashboardShell";
+import { getDefaultCloneLocation } from "@/lib/default-location";
 import { loadHomeActivityData } from "@/lib/home-activity-data";
 import { loadPortfolioPageData } from "@/lib/portfolio-page-data";
 
@@ -18,7 +18,7 @@ export default async function ActivityPage() {
   ]);
 
   return (
-    <DashboardShell projects={projectSummaries} defaultLocation={homedir()}>
+    <DashboardShell projects={projectSummaries} defaultLocation={getDefaultCloneLocation()}>
       <ActivityFeedPage projectSummaries={projectSummaries} activityItems={activityItems} />
     </DashboardShell>
   );
