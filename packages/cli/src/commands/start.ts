@@ -36,6 +36,9 @@ import {
   loadGlobalConfig,
   isOldConfigFormat,
   migrateToGlobalConfig,
+  registerProject,
+  refreshProject,
+  getPortfolio,
   type OrchestratorConfig,
   type ProjectConfig,
   type ParsedRepoUrl,
@@ -1147,13 +1150,12 @@ export function registerStart(program: Command): void {
 
           // Auto-register in portfolio (best-effort, never blocks startup)
           try {
-            const { registerProject: portfolioRegister, refreshProject: portfolioRefresh, getPortfolio: getPortfolioList } = await import("@composio/ao-core");
-            const portfolio = getPortfolioList();
+            const portfolio = getPortfolio();
             const existing = portfolio.find(p => p.configProjectKey === projectId && p.configPath === config.configPath);
             if (existing) {
-              portfolioRefresh(existing.id, config.configPath);
+              refreshProject(existing.id, config.configPath);
             } else {
-              portfolioRegister(project.path, projectId);
+              registerProject(project.path, projectId);
             }
           } catch {
             // Portfolio registration is best-effort

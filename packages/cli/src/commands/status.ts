@@ -14,6 +14,9 @@ import {
   loadConfig,
   loadGlobalConfig,
   isProjectShadowStale,
+  getPortfolio,
+  getPortfolioSessionCounts,
+  createPluginRegistry,
 } from "@composio/ao-core";
 import { git, getTmuxSessions, getTmuxActivity } from "../lib/shell.js";
 import {
@@ -222,7 +225,6 @@ export function registerStatus(program: Command): void {
       // Portfolio view: show cross-project summary
       if (opts.portfolio) {
         try {
-          const { getPortfolio, getPortfolioSessionCounts } = await import("@composio/ao-core");
           const portfolio = getPortfolio();
 
           if (portfolio.length === 0) {
@@ -407,7 +409,6 @@ export function registerStatus(program: Command): void {
 
         // Check for issues awaiting verification across all projects
         try {
-          const { createPluginRegistry } = await import("@composio/ao-core");
           const registry = createPluginRegistry();
           await registry.loadFromConfig(config, (pkg: string) => import(pkg));
 
