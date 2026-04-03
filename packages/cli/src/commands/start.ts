@@ -407,7 +407,6 @@ async function promptInstallAgentRuntime(available: DetectedAgent[]): Promise<De
   if (!selected) {
     return available;
   }
-
   console.log(chalk.dim(`  Installing ${selected.label}...`));
   try {
     await runInteractiveCommand(selected.cmd, selected.args);
