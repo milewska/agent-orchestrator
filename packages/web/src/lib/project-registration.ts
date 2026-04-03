@@ -33,7 +33,7 @@ export function registerAndResolveProject(
   },
 ) {
   const normalizedRepoPath = normalizePath(repoPath);
-  registerProject(normalizedRepoPath, options?.configProjectKey);
+  registerProject(normalizedRepoPath, options?.configProjectKey, options?.displayName);
   invalidateProjectCaches();
 
   const project = getPortfolio().find(

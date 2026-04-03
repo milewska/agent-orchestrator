@@ -297,7 +297,7 @@ export function getPortfolio(): PortfolioProject[] {
 }
 
 /** Register a project into the canonical global config registry. */
-export function registerProject(repoPath: string, configProjectKey?: string): void {
+export function registerProject(repoPath: string, configProjectKey?: string, displayName?: string): void {
   const normalizedRepoPath = normalizePath(repoPath);
   const localConfig = loadLocalProjectConfig(normalizedRepoPath);
   if (!localConfig) {
@@ -305,7 +305,7 @@ export function registerProject(repoPath: string, configProjectKey?: string): vo
   }
 
   const projectId = configProjectKey ?? basename(normalizedRepoPath);
-  registerProjectInGlobalConfig(projectId, projectId, normalizedRepoPath, localConfig);
+  registerProjectInGlobalConfig(projectId, displayName ?? projectId, normalizedRepoPath, localConfig);
 }
 
 /** Remove a project from the canonical global config registry. */

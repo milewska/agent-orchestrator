@@ -31,6 +31,11 @@ import {
   isOrchestratorSession,
   isTerminalSession,
   ConfigNotFoundError,
+  loadGlobalConfig,
+  loadLocalProjectConfig,
+  registerProjectInGlobalConfig,
+  isProjectShadowStale,
+  getGlobalConfigPath,
   type OrchestratorConfig,
   type ProjectConfig,
   type ParsedRepoUrl,
@@ -1498,6 +1503,40 @@ export function registerStart(program: Command): void {
             
             config = loadConfig(config.configPath);
             project = config.projects[projectId];
+          }
+
+          // ── Hybrid local+shadow sync (Option C) ──
+          // On every `ao start`, sync the final local project config into the
+          // global registry shadow so remote commands and the dashboard always
+          // have up-to-date behavior data.
+          try {
+            const localConfig = loadLocalProjectConfig(project.path);
+            if (localConfig) {
+              registerProjectInGlobalConfig(
+                projectId,
+                project.name ?? projectId,
+                project.path,
+                localConfig,
+              );
+              console.log(chalk.dim(`  ✓ Shadow synced to ${getGlobalConfigPath()}`));
+            } else {
+              const globalConfig = loadGlobalConfig();
+              if (globalConfig && !globalConfig.projects[projectId]) {
+                registerProjectInGlobalConfig(
+                  projectId,
+                  project.name ?? projectId,
+                  project.path,
+                );
+              } else if (globalConfig?.projects[projectId] && isProjectShadowStale(projectId, globalConfig)) {
+                console.log(
+                  chalk.yellow(
+                    `  ⚠ local config for "${projectId}" changed since last sync — shadow may be stale.`,
+                  ),
+                );
+              }
+            }
+          } catch {
+            // Shadow sync is best-effort — never block startup.
           }
 
           const actualPort = await runStartup(config, projectId, project, opts);
