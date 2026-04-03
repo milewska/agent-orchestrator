@@ -454,9 +454,15 @@ export function findConfigFile(startDir?: string): string | null {
   // 1. Check environment variable override
   if (process.env["AO_CONFIG_PATH"]) {
     const envPath = resolve(process.env["AO_CONFIG_PATH"]);
-    const shape = classifyConfigShape(envPath);
-    if (shape === "wrapped") {
-      return envPath;
+    try {
+      const shape = classifyConfigShape(envPath);
+      if (shape === "wrapped") {
+        return envPath;
+      }
+    } catch {
+      if (existsSync(envPath)) {
+        return envPath;
+      }
     }
   }
 
