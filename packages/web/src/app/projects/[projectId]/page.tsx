@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 export const dynamic = "force-dynamic";
 
+import { notFound } from "next/navigation";
 import { Dashboard } from "@/components/Dashboard";
 import { DashboardShell } from "@/components/DashboardShell";
 import { getAllProjects } from "@/lib/project-name";
@@ -31,7 +32,8 @@ export default async function ProjectPage(props: {
 
   const projects = getAllProjects();
   const project = projects.find(p => p.id === projectFilter);
-  const projectName = project?.name ?? projectFilter;
+  if (!project) notFound();
+  const projectName = project.name;
 
   return (
     <DashboardShell

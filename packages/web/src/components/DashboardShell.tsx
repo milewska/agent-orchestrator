@@ -93,7 +93,6 @@ export function DashboardShell({
         <AddProjectModal
           open={addProjectModal.isOpen}
           onClose={addProjectModal.close}
-          onProjectAdded={() => window.location.reload()}
         />
         <CloneFromUrlModal
           open={cloneModal.isOpen}

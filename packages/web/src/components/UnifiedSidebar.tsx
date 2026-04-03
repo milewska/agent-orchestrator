@@ -89,7 +89,7 @@ function SidebarContent({
 }) {
   const router = useRouter();
   const pathname = usePathname() ?? "/";
-  const isHome = pathname === "/activity";
+  const isHome = pathname === "/" || pathname === "/activity";
   const [availableAgents, setAvailableAgents] = useState<string[]>([]);
   const [groupBy, setGroupBy] = useState<"repo" | "status">("repo");
   const [repoFilter, setRepoFilter] = useState("all");
@@ -100,6 +100,7 @@ function SidebarContent({
   const [resourceProject, setResourceProject] = useState<PortfolioProjectSummary | null>(null);
   const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [spawnMenuProjectId, setSpawnMenuProjectId] = useState<string | null>(null);
   const [orderedProjects, setOrderedProjects] = useState(projects);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
@@ -259,7 +260,7 @@ function SidebarContent({
       }
       router.refresh();
     } catch (error) {
-      console.error(error);
+      setErrorMessage(error instanceof Error ? error.message : "Failed to remove project");
     } finally {
       setRemoving(false);
     }
@@ -280,7 +281,7 @@ function SidebarContent({
       }
       router.push(getProjectSessionHref(projectId, body.session.id));
     } catch (error) {
-      console.error(error);
+      setErrorMessage(error instanceof Error ? error.message : "Failed to spawn agent");
     }
   }
 
@@ -777,6 +778,20 @@ function SidebarContent({
           from your workspaces? The directory won&apos;t be deleted from disk.
         </p>
       </Modal>
+
+      {errorMessage && (
+        <div className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-[var(--radius-sm)] border border-[var(--color-status-error)] bg-[var(--color-bg-elevated)] px-3 py-2 text-[12px] text-[var(--color-status-error)] shadow-[var(--box-shadow-lg,0_14px_40px_rgba(0,0,0,0.18))]">
+          <span className="min-w-0 flex-1">{errorMessage}</span>
+          <button
+            type="button"
+            className="ml-2 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
+            onClick={() => setErrorMessage(null)}
+            aria-label="Dismiss error"
+          >
+            &times;
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -31,7 +31,6 @@ export default async function PullRequestsRoute(props: {
       projectName={pageData.projectName}
       projects={pageData.projects}
       orchestrators={pageData.orchestrators}
-      attentionZones={pageData.attentionZones}
     />
   );
 }
