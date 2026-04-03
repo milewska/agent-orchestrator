@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { PullRequestsPage } from "@/components/PullRequestsPage";
+import { DashboardShell } from "@/components/DashboardShell";
+import { getDefaultCloneLocation } from "@/lib/default-location";
+import { loadPortfolioPageData } from "@/lib/portfolio-page-data";
 import {
   getDashboardPageData,
   getDashboardProjectName,
@@ -22,15 +25,24 @@ export default async function PullRequestsRoute(props: {
 }) {
   const searchParams = await props.searchParams;
   const projectFilter = resolveDashboardProjectFilter(searchParams.project);
-  const pageData = await getDashboardPageData(projectFilter);
+  const [pageData, { projectSummaries, sessions }] = await Promise.all([
+    getDashboardPageData(projectFilter),
+    loadPortfolioPageData(),
+  ]);
 
   return (
-    <PullRequestsPage
-      initialSessions={pageData.sessions}
-      projectId={pageData.selectedProjectId}
-      projectName={pageData.projectName}
-      projects={pageData.projects}
-      orchestrators={pageData.orchestrators}
-    />
+    <DashboardShell
+      projects={projectSummaries}
+      sessions={sessions}
+      defaultLocation={getDefaultCloneLocation()}
+    >
+      <PullRequestsPage
+        initialSessions={pageData.sessions}
+        projectId={pageData.selectedProjectId}
+        projectName={pageData.projectName}
+        projects={pageData.projects}
+        orchestrators={pageData.orchestrators}
+      />
+    </DashboardShell>
   );
 }
