@@ -10,6 +10,8 @@ import {
   type ActivityState,
   type Tracker,
   type ProjectConfig,
+  getPortfolio,
+  getPortfolioSessionCounts,
   isOrchestratorSession,
   loadConfig,
 } from "@aoagents/ao-core";
@@ -253,62 +255,6 @@ export function registerStatus(program: Command): void {
         process.exit(1);
       }
 
-      if (opts.portfolio) {
-        try {
-          const { getPortfolio, getPortfolioSessionCounts } = await import("@aoagents/ao-core");
-          const portfolio = getPortfolio();
-
-          if (portfolio.length === 0) {
-            console.log(chalk.dim("No projects in portfolio."));
-            console.log(
-              chalk.dim("Run `ao start` in a project or `ao project add <path>` to register one."),
-            );
-            return;
-          }
-
-          const counts = await getPortfolioSessionCounts(portfolio);
-
-          if (opts.json) {
-            console.log(
-              JSON.stringify(
-                portfolio.map((p) => ({
-                  id: p.id,
-                  name: p.name,
-                  enabled: p.enabled,
-                  degraded: p.degraded,
-                  source: p.source,
-                  sessions: counts[p.id] || { total: 0, active: 0 },
-                })),
-                null,
-                2,
-              ),
-            );
-            return;
-          }
-
-          console.log(banner("PORTFOLIO STATUS"));
-          console.log();
-          for (const p of portfolio) {
-            const count = counts[p.id] || { total: 0, active: 0 };
-            const status = formatPortfolioProjectStatus(p, count);
-            const name = formatPortfolioProjectName(p);
-            const degradedReason = formatPortfolioDegradedReason(p);
-            console.log(`  ${chalk.bold(p.id)}${name}  ${status}  ${count.total} sessions`);
-            if (degradedReason) {
-              console.log(`    ${degradedReason}`);
-            }
-          }
-          console.log();
-          return;
-        } catch (err) {
-          console.error(
-            chalk.red("Failed to load portfolio:"),
-            err instanceof Error ? err.message : String(err),
-          );
-          process.exit(1);
-        }
-      }
-
       let watchIntervalSeconds = DEFAULT_WATCH_INTERVAL_SECONDS;
       if (opts.watch) {
         try {
@@ -324,6 +270,66 @@ export function registerStatus(program: Command): void {
           maybeClearScreen();
         }
 
+        if (opts.portfolio) {
+          try {
+            const portfolio = getPortfolio();
+
+            if (portfolio.length === 0) {
+              console.log(chalk.dim("No projects in portfolio."));
+              console.log(
+                chalk.dim("Run `ao start` in a project or `ao project add <path>` to register one."),
+              );
+              return;
+            }
+
+            const counts = await getPortfolioSessionCounts(portfolio);
+
+            if (opts.json) {
+              const jsonData = portfolio.map((p) => ({
+                id: p.id,
+                name: p.name,
+                enabled: p.enabled,
+                degraded: p.degraded,
+                source: p.source,
+                sessions: counts[p.id] || { total: 0, active: 0 },
+              }));
+              console.log(JSON.stringify(jsonData, null, 2));
+              return;
+            }
+
+            console.log(banner("PORTFOLIO STATUS"));
+            console.log();
+
+            for (const p of portfolio) {
+              const count = counts[p.id] || { total: 0, active: 0 };
+              const status = formatPortfolioProjectStatus(p, count);
+              const name = formatPortfolioProjectName(p);
+              const degradedReason = formatPortfolioDegradedReason(p);
+              console.log(`  ${chalk.bold(p.id)}${name}  ${status}  ${count.total} sessions`);
+              if (degradedReason) {
+                console.log(`    ${degradedReason}`);
+              }
+            }
+
+            const totalActive = Object.values(counts).reduce((sum, c) => sum + c.active, 0);
+            const totalSessions = Object.values(counts).reduce((sum, c) => sum + c.total, 0);
+            console.log();
+            console.log(
+              chalk.dim(
+                `  ${totalSessions} session${totalSessions !== 1 ? "s" : ""} across ${portfolio.length} project${portfolio.length !== 1 ? "s" : ""} (${totalActive} active)`,
+              ),
+            );
+            console.log();
+            return;
+          } catch (err) {
+            console.error(
+              chalk.red(
+                `Portfolio status failed: ${err instanceof Error ? err.message : String(err)}`,
+              ),
+            );
+            return;
+          }
+        }
         let config: ReturnType<typeof loadConfig>;
         try {
           config = loadConfig();
