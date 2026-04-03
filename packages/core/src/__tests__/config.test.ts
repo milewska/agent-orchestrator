@@ -6,9 +6,11 @@ import { findConfigFile, loadConfig } from "../config.js";
 
 describe("findConfigFile", () => {
   const originalEnv = process.env;
+  const originalCwd = process.cwd();
 
   afterEach(() => {
     process.env = originalEnv;
+    process.chdir(originalCwd);
   });
 
   it("returns AO_CONFIG_PATH even when the file has malformed YAML", () => {
@@ -28,6 +30,7 @@ describe("findConfigFile", () => {
   it("ignores AO_CONFIG_PATH when it points to a flat local config", () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "config-test-"));
     try {
+      process.chdir(tempRoot);
       const flatPath = join(tempRoot, "agent-orchestrator.yaml");
       const fallbackDir = join(tempRoot, "fallback");
       const wrappedPath = join(fallbackDir, "agent-orchestrator.yaml");
