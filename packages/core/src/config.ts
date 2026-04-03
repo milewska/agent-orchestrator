@@ -427,15 +427,25 @@ function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
  * 4. Home directory locations
  */
 export function findConfigFile(startDir?: string): string | null {
+  const classifyConfigShape = (
+    configPath: string,
+  ): "wrapped" | "flat-or-nonobject" | "missing" => {
+    if (!existsSync(configPath)) {
+      return "missing";
+    }
+
+    const raw = readFileSync(configPath, "utf-8");
+    const parsed = parseYaml(raw);
+    return parsed &&
+      typeof parsed === "object" &&
+      "projects" in (parsed as Record<string, unknown>)
+      ? "wrapped"
+      : "flat-or-nonobject";
+  };
+
   const hasProjectsWrapper = (configPath: string): boolean => {
     try {
-      const raw = readFileSync(configPath, "utf-8");
-      const parsed = parseYaml(raw);
-      return Boolean(
-        parsed &&
-          typeof parsed === "object" &&
-          "projects" in (parsed as Record<string, unknown>),
-      );
+      return classifyConfigShape(configPath) === "wrapped";
     } catch {
       return false;
     }
@@ -444,7 +454,8 @@ export function findConfigFile(startDir?: string): string | null {
   // 1. Check environment variable override
   if (process.env["AO_CONFIG_PATH"]) {
     const envPath = resolve(process.env["AO_CONFIG_PATH"]);
-    if (existsSync(envPath)) {
+    const shape = classifyConfigShape(envPath);
+    if (shape === "wrapped") {
       return envPath;
     }
   }

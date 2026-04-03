@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { existsSync } from "node:fs";
 import chalk from "chalk";
 import type { Command } from "commander";
 import {
@@ -9,6 +10,7 @@ import {
   loadPreferences,
   savePreferences,
   loadLocalProjectConfig,
+  loadConfig,
 } from "@composio/ao-core";
 import {
   formatPortfolioDegradedReason,
@@ -66,9 +68,33 @@ export function registerProject_cmd(program: Command): void {
     .option("-k, --key <key>", "Config project key (for multi-project configs)")
     .action((path: string, opts: { key?: string }) => {
       const resolvedPath = resolve(path);
+      const candidatePaths = [
+        resolve(resolvedPath, "agent-orchestrator.yaml"),
+        resolve(resolvedPath, "agent-orchestrator.yml"),
+      ];
 
       if (!loadLocalProjectConfig(resolvedPath)) {
-        console.error(chalk.red(`No agent-orchestrator.yaml found at ${resolvedPath}`));
+        const existingConfigPath = candidatePaths.find((candidate) => existsSync(candidate));
+
+        if (!existingConfigPath) {
+          console.error(chalk.red(`No agent-orchestrator.yaml found at ${resolvedPath}`));
+          process.exit(1);
+        }
+
+        try {
+          loadConfig(existingConfigPath);
+          console.error(
+            chalk.red(
+              `Found old-format config at ${existingConfigPath}. Run \`ao start\` in that project to migrate it before using \`ao project add\`.`,
+            ),
+          );
+        } catch (error) {
+          console.error(
+            chalk.red(
+              `Found agent-orchestrator config at ${existingConfigPath}, but it could not be loaded: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
+        }
         process.exit(1);
       }
 
