@@ -7,8 +7,7 @@
 
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { PortfolioProject, PortfolioSession, Session, SessionMetadata } from "./types.js";
-import { isOrchestratorSession } from "./types.js";
+import { isOrchestratorSession, type PortfolioProject, type PortfolioSession, type Session, type SessionMetadata } from "./types.js";
 import { getSessionsDir } from "./paths.js";
 import { parseKeyValueContent } from "./key-value.js";
 
