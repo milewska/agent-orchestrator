@@ -7,6 +7,7 @@ import type {
   GlobalPauseState,
   SSESnapshotEvent,
 } from "@/lib/types";
+import { getAttentionLevel } from "@/lib/types";
 
 /** Debounce before fetching full session list after membership change. */
 const MEMBERSHIP_REFRESH_DELAY_MS = 120;
@@ -176,10 +177,14 @@ export function useSessionEvents(
               if (disposed || refreshController.signal.aborted || !updated?.sessions) return;
 
               lastRefreshAtRef.current = Date.now();
+              const sseAttentionLevels = Object.fromEntries(
+                updated.sessions.map((s) => [s.id, getAttentionLevel(s)]),
+              ) as SSEAttentionMap;
               dispatch({
                 type: "reset",
                 sessions: updated.sessions,
                 globalPause: updated.globalPause ?? null,
+                sseAttentionLevels,
               });
             },
           )
