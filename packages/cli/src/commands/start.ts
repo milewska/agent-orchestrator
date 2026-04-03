@@ -77,6 +77,31 @@ const IS_TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 // HELPERS
 // =============================================================================
 
+function isPromptCancellation(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+
+  return error.message === "readline was closed"
+    || error.message === "The operation was aborted"
+    || "code" in error && (error as Error & { code?: string }).code === "ABORT_ERR";
+}
+
+async function promptWithReadline(question: string): Promise<string> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+
+  try {
+    return await rl.question(question);
+  } catch (error) {
+    if (isPromptCancellation(error)) {
+      process.stdout.write("\n");
+      process.exit(0);
+    }
+    throw error;
+  } finally {
+    rl.close();
+  }
+}
+
 /**
  * Resolve project from config.
  * If projectArg is provided, use it. If only one project exists, use that.
@@ -123,21 +148,15 @@ async function resolveProject(
     console.log(chalk.yellow(`\nMultiple projects configured. Which one would you like to ${action}?\n`));
     projectIds.forEach((id, i) => console.log(`  ${i + 1}. ${config.projects[id].name ?? id} (${id})`));
 
-    const { createInterface } = await import("node:readline/promises");
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    try {
-      while (true) {
-        const choice = await rl.question(`\n  Choose project [1-${projectIds.length}]: `);
-        const idx = Number.parseInt(choice.trim(), 10);
-        if (Number.isFinite(idx) && idx >= 1 && idx <= projectIds.length) {
-          const projectId = projectIds[idx - 1];
-          return { projectId, project: config.projects[projectId] };
-        }
-
-        console.log(chalk.yellow(`  Please enter a valid number from 1 to ${projectIds.length}.`));
+    while (true) {
+      const choice = await promptWithReadline(`\n  Choose project [1-${projectIds.length}]: `);
+      const idx = Number.parseInt(choice.trim(), 10);
+      if (Number.isFinite(idx) && idx >= 1 && idx <= projectIds.length) {
+        const projectId = projectIds[idx - 1];
+        return { projectId, project: config.projects[projectId] };
       }
-    } finally {
-      rl.close();
+
+      console.log(chalk.yellow(`  Please enter a valid number from 1 to ${projectIds.length}.`));
     }
   } else {
     throw new Error(
@@ -208,17 +227,11 @@ async function askYesNo(
 ): Promise<boolean> {
   if (!canPromptForInstall()) return nonInteractiveDefault;
 
-  const { createInterface } = await import("node:readline/promises");
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const suffix = defaultYes ? "[Y/n]" : "[y/N]";
-    const answer = await rl.question(`${question} ${suffix}: `);
-    const normalized = answer.trim().toLowerCase();
-    if (!normalized) return defaultYes;
-    return normalized === "y" || normalized === "yes";
-  } finally {
-    rl.close();
-  }
+  const suffix = defaultYes ? "[Y/n]" : "[y/N]";
+  const answer = await promptWithReadline(`${question} ${suffix}: `);
+  const normalized = answer.trim().toLowerCase();
+  if (!normalized) return defaultYes;
+  return normalized === "y" || normalized === "yes";
 }
 
 function gitInstallAttempts(): InstallAttempt[] {
@@ -385,33 +398,27 @@ async function promptInstallAgentRuntime(available: DetectedAgent[]): Promise<De
   });
   console.log(`  ${skipOption}. Skip for now\n`);
 
-  const { createInterface } = await import("node:readline/promises");
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  try {
-    const choice = await rl.question(`  Choose runtime to install [1-${skipOption}]: `);
-    const idx = Number.parseInt(choice.trim(), 10);
-    if (!Number.isFinite(idx) || idx < 1 || idx > skipOption) {
-      return available;
-    }
-    if (idx === skipOption) {
-      return available;
-    }
+  const choice = await promptWithReadline(`  Choose runtime to install [1-${skipOption}]: `);
+  const idx = Number.parseInt(choice.trim(), 10);
+  if (!Number.isFinite(idx) || idx < 1 || idx > skipOption) {
+    return available;
+  }
+  if (idx === skipOption) {
+    return available;
+  }
 
-    const selected = AGENT_INSTALL_OPTIONS[idx - 1];
-    console.log(chalk.dim(`  Installing ${selected.label}...`));
-    try {
-      await runInteractiveCommand(selected.cmd, selected.args);
-      const refreshed = await detectAvailableAgents();
-      if (refreshed.length > 0) {
-        console.log(chalk.green(`  ✓ ${selected.label} installed successfully`));
-      }
-      return refreshed;
-    } catch {
-      console.log(chalk.yellow(`  ⚠ Could not install ${selected.label} automatically.`));
-      return available;
+  const selected = AGENT_INSTALL_OPTIONS[idx - 1];
+  console.log(chalk.dim(`  Installing ${selected.label}...`));
+  try {
+    await runInteractiveCommand(selected.cmd, selected.args);
+    const refreshed = await detectAvailableAgents();
+    if (refreshed.length > 0) {
+      console.log(chalk.green(`  ✓ ${selected.label} installed successfully`));
     }
-  } finally {
-    rl.close();
+    return refreshed;
+  } catch {
+    console.log(chalk.yellow(`  ⚠ Could not install ${selected.label} automatically.`));
+    return available;
   }
 }
 
@@ -1291,14 +1298,11 @@ export function registerStart(program: Command): void {
               console.log(`  Projects: ${running.projects.join(", ")}\n`);
 
               // Interactive menu
-              const { createInterface } = await import("node:readline/promises");
-              const rl = createInterface({ input: process.stdin, output: process.stdout });
               console.log("  1. Open dashboard (keep current)");
               console.log("  2. Start new orchestrator on this project");
               console.log("  3. Override — restart everything");
               console.log("  4. Quit\n");
-              const choice = await rl.question("  Choice [1-4]: ");
-              rl.close();
+              const choice = await promptWithReadline("  Choice [1-4]: ");
 
               if (choice.trim() === "1") {
                 const url = `http://localhost:${running.port}`;
