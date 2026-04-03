@@ -14,7 +14,7 @@ import {
   isPRMergeReady,
 } from "@/lib/types";
 import { AttentionZone } from "./AttentionZone";
-import { DynamicFavicon } from "./DynamicFavicon";
+import { DynamicFavicon, countNeedingAttention } from "./DynamicFavicon";
 import { useSessionEvents } from "@/hooks/useSessionEvents";
 
 import type { ProjectInfo } from "@/lib/project-name";
@@ -70,10 +70,18 @@ function DashboardInner({
   orchestrators,
 }: DashboardProps) {
   const orchestratorLinks = orchestrators ?? EMPTY_ORCHESTRATORS;
-  const { sessions, globalPause, connectionStatus } = useSessionEvents(
+  const initialAttentionLevels = useMemo(() => {
+    const levels: Record<string, AttentionLevel> = {};
+    for (const s of initialSessions) {
+      levels[s.id] = getAttentionLevel(s);
+    }
+    return levels;
+  }, [initialSessions]);
+  const { sessions, globalPause, connectionStatus, sseAttentionLevels } = useSessionEvents(
     initialSessions,
     initialGlobalPause,
     projectId,
+    initialAttentionLevels,
   );
   const searchParams = useSearchParams();
   const activeSessionId = searchParams.get("session") ?? undefined;
@@ -122,6 +130,13 @@ function DashboardInner({
   useEffect(() => {
     setActiveOrchestrators((current) => mergeOrchestrators(current, orchestratorLinks));
   }, [orchestratorLinks]);
+
+  // Update document title with live attention counts from SSE
+  useEffect(() => {
+    const needsAttention = countNeedingAttention(sseAttentionLevels);
+    const label = projectName ?? "ao";
+    document.title = needsAttention > 0 ? `${label} (${needsAttention} need attention)` : label;
+  }, [sseAttentionLevels, projectName]);
 
   useEffect(() => {
     if (sheetState && sheetSession === null) {
@@ -464,7 +479,7 @@ function DashboardInner({
     <div className="dashboard-shell flex min-h-screen flex-col">
       <div className="dashboard-main flex-1 overflow-y-auto px-4 py-4 md:px-7 md:py-6">
         <div id="mobile-dashboard-anchor" aria-hidden="true" />
-        <DynamicFavicon sessions={sessions} projectName={projectName} />
+        <DynamicFavicon sseAttentionLevels={sseAttentionLevels} projectName={projectName} />
         <section className="dashboard-hero mb-5">
           <div className="dashboard-hero__backdrop" />
           <div className="dashboard-hero__content">
