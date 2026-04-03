@@ -431,8 +431,33 @@ export function registerStatus(program: Command): void {
           console.log();
         }
 
+        // Collect archived sessions if requested (applies to both text and JSON output)
+        let archivedEntries: ArchivedSessionEntry[] = [];
+        if (opts.showArchived) {
+          let archivedLimit = DEFAULT_ARCHIVED_LIMIT;
+          try {
+            archivedLimit = parseArchivedLimit(opts.limit);
+          } catch (err) {
+            if (!opts.json) {
+              console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+            }
+          }
+          for (const projectId of projectIds) {
+            const project: ProjectConfig | undefined = config.projects[projectId];
+            if (!project) continue;
+            const sessionsDir = getSessionsDir(config.configPath, project.path);
+            archivedEntries.push(...listAllArchivedSessions(sessionsDir, archivedLimit));
+          }
+          archivedEntries.sort((a, b) => b.archivedAt.getTime() - a.archivedAt.getTime());
+          archivedEntries = archivedEntries.slice(0, archivedLimit);
+        }
+
         if (opts.json) {
-          console.log(JSON.stringify(jsonOutput, null, 2));
+          if (opts.showArchived) {
+            console.log(JSON.stringify({ sessions: jsonOutput, archived: archivedEntries }, null, 2));
+          } else {
+            console.log(JSON.stringify(jsonOutput, null, 2));
+          }
         } else {
           console.log(
             chalk.dim(
@@ -473,26 +498,8 @@ export function registerStatus(program: Command): void {
             // Plugin registry or tracker unavailable — skip silently
           }
 
-          // Show archived sessions if requested
           if (opts.showArchived) {
-            let archivedLimit = DEFAULT_ARCHIVED_LIMIT;
-            try {
-              archivedLimit = parseArchivedLimit(opts.limit);
-            } catch (err) {
-              console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-            }
-
-            const allArchived: ArchivedSessionEntry[] = [];
-            for (const projectId of projectIds) {
-              const project: ProjectConfig | undefined = config.projects[projectId];
-              if (!project) continue;
-              const sessionsDir = getSessionsDir(config.configPath, project.path);
-              const entries = listAllArchivedSessions(sessionsDir, archivedLimit);
-              allArchived.push(...entries);
-            }
-            // Re-sort combined results and apply limit
-            allArchived.sort((a, b) => b.archivedAt.getTime() - a.archivedAt.getTime());
-            printArchivedSection(allArchived.slice(0, archivedLimit));
+            printArchivedSection(archivedEntries);
           }
 
           console.log();

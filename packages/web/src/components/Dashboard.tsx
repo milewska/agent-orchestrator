@@ -467,20 +467,25 @@ function DashboardInner({
 
   useEffect(() => {
     if (!showArchived) return;
+    const controller = new AbortController();
     setArchivedLoading(true);
     const params = new URLSearchParams({ limit: "10" });
     if (projectId) params.set("project", projectId);
-    fetch(`/api/sessions/archived?${params.toString()}`)
+    fetch(`/api/sessions/archived?${params.toString()}`, { signal: controller.signal })
       .then((res) => res.json())
       .then((data: { archived?: ArchivedSession[] }) => {
         setArchivedSessions(data.archived ?? []);
       })
-      .catch(() => {
-        // Ignore — archived data is optional
+      .catch((err: unknown) => {
+        if (err instanceof Error && err.name === "AbortError") return;
+        // Ignore other transient failures — archived data is optional
       })
       .finally(() => {
         setArchivedLoading(false);
       });
+    return () => {
+      controller.abort();
+    };
   }, [showArchived, projectId]);
 
   const hasAnySessions = KANBAN_LEVELS.some(
