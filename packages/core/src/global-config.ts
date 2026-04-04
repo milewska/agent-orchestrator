@@ -380,7 +380,7 @@ export function getShadowDir(): string {
  */
 export function getShadowFilePath(projectId: string): string {
   // Reject IDs with path separators or traversal patterns
-  if (!projectId || /[/\\]/.test(projectId) || projectId === ".." || projectId === ".") {
+  if (!projectId || /[/\\]/.test(projectId) || /\.\./.test(projectId) || projectId === ".") {
     throw new Error(`Invalid project ID for shadow file: "${projectId}"`);
   }
   return join(getShadowDir(), `${projectId}.yaml`);

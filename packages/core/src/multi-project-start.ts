@@ -52,6 +52,7 @@ export function resolveMultiProjectStart(
 
   // 3. Match CWD to a registered project
   let projectId = matchProjectByCwd(globalConfig, resolvedDir);
+  let isNewRegistration = false;
 
   if (!projectId) {
     const found = findLocalConfigUpwards(resolvedDir);
@@ -83,6 +84,7 @@ export function resolveMultiProjectStart(
         path: projectRoot,
       };
       globalConfig = registerProject(globalConfig, projectId, entry);
+      isNewRegistration = true;
 
       // Sync shadow
       try {
@@ -133,7 +135,7 @@ export function resolveMultiProjectStart(
 
   // 5. Persist only after validation passes (new registrations only — already-registered
   //    projects don't modify globalConfig so nothing to save).
-  if (!matchProjectByCwd(loadGlobalConfig()!, resolvedDir)) {
+  if (isNewRegistration) {
     saveGlobalConfig(globalConfig);
   }
 

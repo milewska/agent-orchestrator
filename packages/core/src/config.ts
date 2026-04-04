@@ -802,9 +802,11 @@ export function validateConfig(raw: unknown): OrchestratorConfig {
   // and merge them into config.plugins for loading
   const externalPluginEntries = collectExternalPluginConfigs(config);
   if (externalPluginEntries.length > 0) {
-    config.plugins = mergeExternalPlugins(config.plugins, externalPluginEntries);
-    // Store entries for manifest validation during plugin loading
-    config._externalPluginEntries = externalPluginEntries;
+    config = {
+      ...config,
+      plugins: mergeExternalPlugins(config.plugins, externalPluginEntries),
+      _externalPluginEntries: externalPluginEntries,
+    };
   }
 
   // Validate project uniqueness and prefix collisions
