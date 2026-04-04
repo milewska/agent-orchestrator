@@ -722,6 +722,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   line-height: 1;
   letter-spacing: -0.035em;
   font-weight: 680;
+  text-wrap: balance;
   color: var(--color-text-primary);
 }
 
@@ -1918,6 +1919,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   letter-spacing: normal;
   text-transform: none;
   color: var(--color-text-primary);
+  text-wrap: balance;
 }
 
 .kanban-column__count {
