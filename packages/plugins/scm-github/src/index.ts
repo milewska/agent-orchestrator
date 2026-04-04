@@ -625,17 +625,28 @@ async function fetchCheckRunsViaRest(repo: string, sha: string, cwd?: string): P
       ["api", `repos/${repo}/commits/${sha}/check-runs`, "--paginate", "--jq", ".check_runs[]"],
       cwd,
     );
-    return raw
-      .split("\n")
-      .filter((line) => line.trim() !== "")
-      .map((line) => {
-        const r = JSON.parse(line) as Record<string, unknown>;
-        return {
-          name: r.name,
-          state: mapCheckRunConclusionToState(r.conclusion, r.status),
-          detailsUrl: r.html_url,
-        };
-      });
+    // `gh` applies --jq and emits one JSON object per line (NDJSON).
+    // But when `ghRestFallback` (curl) is used, --jq is dropped and the raw
+    // GitHub response is {"total_count":N,"check_runs":[...]}. Detect which
+    // format we received and parse accordingly.
+    const trimmed = raw.trim();
+    let items: Record<string, unknown>[];
+    if (trimmed.startsWith("{") && trimmed.includes('"check_runs"')) {
+      // Raw wrapper object from curl fallback — extract the array directly.
+      const wrapper = JSON.parse(trimmed) as Record<string, unknown>;
+      items = (wrapper.check_runs ?? []) as Record<string, unknown>[];
+    } else {
+      // NDJSON from `gh` with --jq: one check-run object per line.
+      items = raw
+        .split("\n")
+        .filter((line) => line.trim() !== "")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+    }
+    return items.map((r) => ({
+      name: r.name,
+      state: mapCheckRunConclusionToState(r.conclusion, r.status),
+      detailsUrl: r.html_url,
+    }));
   } catch (err) {
     // Propagate errors so callers can fail-closed rather than treating
     // a fetch failure as "no checks" (which getMergeability treats as passing).
