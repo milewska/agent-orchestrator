@@ -782,7 +782,7 @@ export function loadConfigWithPath(configPath?: string): {
     if (!(err instanceof z.ZodError)) throw err;
 
     const effective = loadFromGlobalConfig();
-    if (effective) {
+    if (effective && Object.keys(effective.projects).length > 0) {
       return { config: effective, path: findGlobalConfigPath() };
     }
     throw err;
