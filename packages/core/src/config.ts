@@ -693,6 +693,26 @@ export function applyGlobalConfigPipeline(raw: OrchestratorConfig): Orchestrator
 }
 
 /**
+ * Returns true for errors that should be swallowed when falling back from
+ * global config to local config.
+ *
+ * Covers:
+ * - Raw ZodError (direct schema validation failure)
+ * - YAMLParseError (malformed YAML)
+ * - Plain Error wrapping a ZodError — loadGlobalConfig wraps schema errors in
+ *   `new Error("Invalid global config …", { cause: zodErr })` to include a
+ *   human-readable path. That Error has name "Error" and cause instanceof
+ *   z.ZodError, so `instanceof z.ZodError` alone would miss it.
+ */
+function isParseOrSchemaError(err: unknown): boolean {
+  return (
+    err instanceof z.ZodError ||
+    (err instanceof Error && err.name === "YAMLParseError") ||
+    (err instanceof Error && err.cause instanceof z.ZodError)
+  );
+}
+
+/**
  * Build effective config from global registry + shadow files.
  * Shared pipeline used by all multi-project loading paths.
  */
@@ -729,12 +749,10 @@ export function loadConfig(configPath?: string): OrchestratorConfig {
         const effective = loadFromGlobalConfig();
         if (effective && Object.keys(effective.projects).length > 0) return effective;
       } catch (globalErr) {
-        // Only swallow parse/schema errors (broken or schema-invalid global config file).
-        // Re-throw actionable config errors (e.g. session prefix collisions) so users
-        // see a meaningful error instead of a silent fallback.
-        if (!(globalErr instanceof z.ZodError) && !(globalErr instanceof Error && globalErr.name === "YAMLParseError")) {
-          throw globalErr;
-        }
+        // Only swallow parse/schema errors (broken or schema-invalid global config file,
+        // including wrapped ZodErrors from loadGlobalConfig). Re-throw actionable errors
+        // (e.g. session prefix collisions) so users see a meaningful message.
+        if (!isParseOrSchemaError(globalErr)) throw globalErr;
       }
       // No global config (or empty registry) — re-throw the original validation error
       throw err;
@@ -746,12 +764,11 @@ export function loadConfig(configPath?: string): OrchestratorConfig {
     const effective = loadFromGlobalConfig();
     if (effective && Object.keys(effective.projects).length > 0) return effective;
   } catch (err) {
-    // Only swallow parse/schema errors (broken or schema-invalid global config file).
-    // Re-throw actionable config errors (e.g. session prefix collisions) so users
-    // see a meaningful error rather than a misleading ConfigNotFoundError.
-    if (!(err instanceof z.ZodError) && !(err instanceof Error && err.name === "YAMLParseError")) {
-      throw err;
-    }
+    // Only swallow parse/schema errors (broken or schema-invalid global config file,
+    // including wrapped ZodErrors from loadGlobalConfig). Re-throw actionable errors
+    // (e.g. session prefix collisions) so users see a meaningful message rather than
+    // a misleading ConfigNotFoundError.
+    if (!isParseOrSchemaError(err)) throw err;
   }
 
   // 3. Fall back to local config search
@@ -781,19 +798,20 @@ export function loadConfigWithPath(configPath?: string): {
   // 2. Explicit path IS the global config — avoid an unnecessary ZodError cycle
   //    since global config doesn't match OrchestratorConfigSchema (single-file format).
   const globalPath = findGlobalConfigPath();
-  if (!configPath || configPath === globalPath) {
+  // Track whether we already tried the global pipeline so the ZodError fallback
+  // below does not make a redundant second call when the result would be identical.
+  const alreadyTriedGlobal = !configPath || configPath === globalPath;
+  if (alreadyTriedGlobal) {
     try {
       const effective = loadFromGlobalConfig();
       if (effective && Object.keys(effective.projects).length > 0) {
         return { config: effective, path: globalPath };
       }
     } catch (err) {
-      // Only swallow parse/schema errors (broken or schema-invalid global config file).
-      // Re-throw actionable config errors (e.g. session prefix collisions) so users
-      // see a meaningful error instead of a silent fallback to local config.
-      if (!(err instanceof z.ZodError) && !(err instanceof Error && err.name === "YAMLParseError")) {
-        throw err;
-      }
+      // Only swallow parse/schema errors (broken or schema-invalid global config file,
+      // including wrapped ZodErrors from loadGlobalConfig). Re-throw actionable errors
+      // (e.g. session prefix collisions) so users see a meaningful message.
+      if (!isParseOrSchemaError(err)) throw err;
     }
   }
 
@@ -811,17 +829,16 @@ export function loadConfigWithPath(configPath?: string): {
     // paths need the multi-project pipeline.
     if (!(err instanceof z.ZodError)) throw err;
 
-    try {
-      const effective = loadFromGlobalConfig();
-      if (effective && Object.keys(effective.projects).length > 0) {
-        return { config: effective, path: findGlobalConfigPath() };
-      }
-    } catch (globalErr) {
-      // Only swallow parse/schema errors (broken or schema-invalid global config file).
-      // Re-throw actionable config errors (e.g. session prefix collisions) so users
-      // see a meaningful error instead of a silent fallback.
-      if (!(globalErr instanceof z.ZodError) && !(globalErr instanceof Error && globalErr.name === "YAMLParseError")) {
-        throw globalErr;
+    // Only retry the global pipeline when we haven't already checked it above.
+    // If alreadyTriedGlobal is true, the result would be identical (nothing changed).
+    if (!alreadyTriedGlobal) {
+      try {
+        const effective = loadFromGlobalConfig();
+        if (effective && Object.keys(effective.projects).length > 0) {
+          return { config: effective, path: globalPath };
+        }
+      } catch (globalErr) {
+        if (!isParseOrSchemaError(globalErr)) throw globalErr;
       }
     }
     throw err;
