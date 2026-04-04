@@ -1281,8 +1281,10 @@ export function registerStart(program: Command): void {
                 process.exit(0);
               } else if (choice === "new") {
                 if (config.globalConfigPath) {
-                  // Multi-project mode: spawnOrchestrator auto-reserves the next available
-                  // numbered identity ({prefix}-orchestrator-N) via reserveNextOrchestratorIdentity.
+                  // Multi-project mode: override the session strategy so runStartup
+                  // forces reserveNextOrchestratorIdentity to assign a new numbered
+                  // identity ({prefix}-orchestrator-N) instead of reusing the existing one.
+                  project = { ...project, orchestratorSessionStrategy: "ignore-new" };
                   console.log(chalk.green(`\n✓ Starting new orchestrator for "${projectId}"\n`));
                 } else {
                   // Legacy single-file mode: add a new project entry with different prefix
@@ -1353,7 +1355,7 @@ export function registerStart(program: Command): void {
                   localRaw["orchestrator"] = { ...(localRaw["orchestrator"] as Record<string, unknown> ?? {}), agent: orchestratorAgent };
                   localRaw["worker"] = { ...(localRaw["worker"] as Record<string, unknown> ?? {}), agent: workerAgent };
                   writeFileSync(localConfigPath, yamlStringify(localRaw, { indent: 2 }));
-                } catch (err) {
+                } catch (_err) {
                   // Local config update failed — shadow has the values but they won't
                   // persist across `ao start` in hybrid mode (local config is source of truth).
                   console.warn(

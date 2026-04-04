@@ -35,7 +35,9 @@ export async function ensureLifecycleWorker(
   projectId: string,
 ): Promise<LifecycleWorkerStatus> {
   const key = projectId;
-  const fingerprint = JSON.stringify(config);
+  // Use configPath as the stable fingerprint for config identity.
+  // JSON.stringify(config) is non-deterministic due to property insertion order.
+  const fingerprint = config.configPath;
 
   const existing = activeManagers.get(key);
   if (existing) {

@@ -28,7 +28,7 @@ const {
   clearActiveManagers,
 } = await import("../../src/lib/lifecycle-service.js");
 
-const config = {} as OrchestratorConfig;
+const config = { configPath: "/home/user/project/agent-orchestrator.yaml" } as unknown as OrchestratorConfig;
 
 describe("lifecycle-service (in-process)", () => {
   beforeEach(() => {
@@ -78,8 +78,8 @@ describe("lifecycle-service (in-process)", () => {
       await ensureLifecycleWorker(config, "my-project");
       expect(mockGetLifecycleManager).toHaveBeenCalledTimes(1);
 
-      // Simulate config reload — new object with different content
-      const updatedConfig = { ...config, _updated: true } as unknown as OrchestratorConfig;
+      // Simulate config reload from a different config file path
+      const updatedConfig = { ...config, configPath: "/home/user/project/other.yaml" } as unknown as OrchestratorConfig;
       mockGetLifecycleManager.mockClear();
       mockLifecycleStart.mockClear();
 

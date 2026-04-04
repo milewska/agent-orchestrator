@@ -293,7 +293,6 @@ describe("ao project remove", () => {
     mockIsHumanCaller.mockReturnValue(false);
     mockSessionManager.list.mockResolvedValue([]);
     mockUnregisterProject.mockImplementation((cfg: GlobalConfig, id: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
       const { [id]: _removed, ...rest } = cfg.projects;
       const updated = { ...cfg, projects: rest };
       return updated;
