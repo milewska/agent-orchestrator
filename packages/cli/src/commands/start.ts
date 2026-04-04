@@ -41,7 +41,7 @@ import {
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { exec, execSilent, git } from "../lib/shell.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
-import { ensureLifecycleWorker, stopLifecycleWorker } from "../lib/lifecycle-service.js";
+import { ensureLifecycleWorker, stopLifecycleWorker, pinLifecycleWorker } from "../lib/lifecycle-service.js";
 import {
   findWebDir,
   buildDashboardEnv,
@@ -935,7 +935,7 @@ async function runStartup(
   config: OrchestratorConfig,
   projectId: string,
   project: ProjectConfig,
-  opts?: { dashboard?: boolean; orchestrator?: boolean; rebuild?: boolean; skipLifecycle?: boolean },
+  opts?: { dashboard?: boolean; orchestrator?: boolean; rebuild?: boolean; interactive?: boolean },
 ): Promise<number> {
   // Ensure tmux is available before doing anything — covers all entry paths
   // (normal start, URL start, retry with existing config)
@@ -960,7 +960,7 @@ async function runStartup(
   }
 
   const sessionId = `${project.sessionPrefix}-orchestrator`;
-  const shouldStartLifecycle = !opts?.skipLifecycle && (opts?.dashboard !== false || opts?.orchestrator !== false);
+  const shouldStartLifecycle = opts?.dashboard !== false || opts?.orchestrator !== false;
   let lifecycleStatus: Awaited<ReturnType<typeof ensureLifecycleWorker>> | null = null;
   let port = config.port ?? DEFAULT_PORT;
   const orchestratorSessionStrategy = normalizeOrchestratorSessionStrategy(
@@ -1008,6 +1008,9 @@ async function runStartup(
     try {
       spinner.start("Starting lifecycle worker");
       lifecycleStatus = await ensureLifecycleWorker(config, projectId);
+      // Pin the lifecycle timer so this daemon process stays alive.
+      // Short-lived callers (ao spawn, attachToRunning) never pin — they exit naturally.
+      pinLifecycleWorker(projectId);
       spinner.succeed(
         lifecycleStatus.started
           ? `Lifecycle worker started${lifecycleStatus.pid ? ` (PID ${lifecycleStatus.pid})` : ""}`
@@ -1444,9 +1447,10 @@ export function registerStart(program: Command): void {
             projectId,
             project,
             // When attaching to an existing AO instance: skip the dashboard
-            // (already running) and the lifecycle worker (the existing instance's
-            // lifecycle manager picks up the new session on its next poll cycle).
-            attachToRunning ? { ...opts, dashboard: false, skipLifecycle: true } : opts,
+            // (already running). The lifecycle timer starts unreffed by default,
+            // so this process exits naturally — the existing instance's lifecycle
+            // manager picks up the new session on its next poll cycle.
+            attachToRunning ? { ...opts, dashboard: false } : opts,
           );
 
           // ── Register in running.json (Step 11) ──

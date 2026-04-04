@@ -1333,6 +1333,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     start(intervalMs = 30_000): void {
       if (pollTimer) return; // Already running
       pollTimer = setInterval(() => void pollAll(), intervalMs);
+      // Detached by default — won't block process exit. Callers that need
+      // the process to stay alive (i.e. the ao start daemon) must call pin().
+      pollTimer.unref();
       // Run immediately on start
       void pollAll();
     },
@@ -1344,8 +1347,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       }
     },
 
-    detach(): void {
-      pollTimer?.unref();
+    pin(): void {
+      pollTimer?.ref();
     },
 
     getStates(): Map<SessionId, SessionStatus> {

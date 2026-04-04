@@ -16,7 +16,7 @@ import {
 import { exec } from "../lib/shell.js";
 import { banner } from "../lib/format.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
-import { ensureLifecycleWorker, detachLifecycleWorker } from "../lib/lifecycle-service.js";
+import { ensureLifecycleWorker } from "../lib/lifecycle-service.js";
 import { preflight } from "../lib/preflight.js";
 import { findProjectForDirectory } from "../lib/project-resolution.js";
 
@@ -250,10 +250,6 @@ export function registerSpawn(program: Command): void {
         try {
           await runSpawnPreflight(config, projectId, claimOptions);
           await ensureLifecycleWorker(config, projectId);
-          // Unref the lifecycle timer so ao spawn exits after the session is
-          // created rather than hanging indefinitely. The lifecycle manager
-          // will fire if triggered by other I/O, but won't block process exit.
-          detachLifecycleWorker(projectId);
 
           if (opts.decompose && issueId) {
             // Decompose the issue before spawning
@@ -352,7 +348,6 @@ export function registerBatchSpawn(program: Command): void {
       try {
         await runSpawnPreflight(config, projectId);
         await ensureLifecycleWorker(config, projectId);
-        detachLifecycleWorker(projectId);
       } catch (err) {
         console.error(chalk.red(`✗ ${err instanceof Error ? err.message : String(err)}`));
         process.exit(1);

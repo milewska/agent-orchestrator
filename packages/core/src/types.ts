@@ -1465,11 +1465,11 @@ export interface LifecycleManager {
   stop(): void;
 
   /**
-   * Unref the poll interval so it does not prevent the Node.js event loop
-   * from exiting. Use this in short-lived commands (e.g. `ao spawn`) that
-   * start a lifecycle manager but should not block process exit.
+   * Re-reference the poll timer so it keeps the Node.js event loop alive.
+   * Only call from the long-running daemon (`ao start`). By default the
+   * timer is unreffed and will not block process exit.
    */
-  detach(): void;
+  pin(): void;
 
   /** Get current state for all sessions */
   getStates(): Map<SessionId, SessionStatus>;

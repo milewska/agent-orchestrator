@@ -89,12 +89,12 @@ export function clearActiveManagers(): void {
 }
 
 /**
- * Unref the lifecycle poll timer for a project so it does not prevent the
- * Node.js event loop from exiting. Used by short-lived commands like
- * `ao spawn` that start a lifecycle manager but should not block process exit.
+ * Re-reference the lifecycle poll timer so it keeps the Node.js event loop
+ * alive. Only call from the long-running daemon (`ao start`). By default the
+ * timer started by ensureLifecycleWorker is unreffed and will not block exit.
  */
-export function detachLifecycleWorker(projectId: string): void {
-  activeManagers.get(projectId)?.detach();
+export function pinLifecycleWorker(projectId: string): void {
+  activeManagers.get(projectId)?.pin();
 }
 
 /**
