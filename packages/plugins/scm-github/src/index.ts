@@ -244,7 +244,7 @@ async function fetchPrViewFallbackAsJson(
   conv: PrViewRestConversion,
   cwd?: string,
 ): Promise<string> {
-  const pullRaw = await execCli("gh", ["api", `repos/${conv.repo}/pulls/${conv.prNumber}`], cwd);
+  const pullRaw = await ghWithRetry(["api", `repos/${conv.repo}/pulls/${conv.prNumber}`], cwd);
   const restObj = JSON.parse(pullRaw) as Record<string, unknown>;
 
   let reviewDecision: string | undefined;
@@ -617,8 +617,7 @@ function mapCheckRunConclusionToState(
  */
 async function fetchCheckRunsViaRest(repo: string, sha: string, cwd?: string): Promise<unknown[]> {
   try {
-    const raw = await execCli(
-      "gh",
+    const raw = await ghWithRetry(
       ["api", `repos/${repo}/commits/${sha}/check-runs`, "--paginate"],
       cwd,
     );
