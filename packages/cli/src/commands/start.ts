@@ -1355,7 +1355,7 @@ export function registerStart(program: Command): void {
                   localRaw["orchestrator"] = { ...(localRaw["orchestrator"] as Record<string, unknown> ?? {}), agent: orchestratorAgent };
                   localRaw["worker"] = { ...(localRaw["worker"] as Record<string, unknown> ?? {}), agent: workerAgent };
                   writeFileSync(localConfigPath, yamlStringify(localRaw, { indent: 2 }));
-                } catch (_err) {
+                } catch {
                   // Local config update failed — shadow has the values but they won't
                   // persist across `ao start` in hybrid mode (local config is source of truth).
                   console.warn(
