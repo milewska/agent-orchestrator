@@ -254,23 +254,10 @@ async function fetchPrViewFallbackAsJson(
 
   if (needReviews) {
     try {
-      let revRaw = "";
-      let lastErr: unknown;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          revRaw = await execCli(
-            "gh",
-            ["api", `repos/${conv.repo}/pulls/${conv.prNumber}/reviews`, "--paginate"],
-            cwd,
-          );
-          break;
-        } catch (err) {
-          lastErr = err;
-          if (!isRateLimitError(err)) throw err;
-          if (attempt < 2) await sleep(Math.min(1000 * Math.pow(2, attempt), 30000));
-        }
-      }
-      if (!revRaw && lastErr) throw lastErr;
+      const revRaw = await ghWithRetry(
+        ["api", `repos/${conv.repo}/pulls/${conv.prNumber}/reviews`, "--paginate"],
+        cwd,
+      );
       reviewsPayload = JSON.parse(revRaw);
       if (conv.jsonFields.includes("reviewDecision")) {
         reviewDecision = deriveReviewDecisionGraphqlFromReviews(reviewsPayload);
