@@ -1380,11 +1380,11 @@ export function registerStart(program: Command): void {
               }
             }
             // Reload config so the just-saved agent overrides take effect.
-            // For multi-project mode: shadow file was written above; loadConfig()
+            // Multi-project mode: shadow file was written above; loadConfig() (no args)
             // picks it up via the global config pipeline.
-            // For legacy mode: the YAML was written to config.configPath directly;
-            // loadConfig() finds the same file via normal discovery.
-            config = loadConfig();
+            // Legacy mode: the YAML was written to config.configPath directly; pass the
+            // explicit path so we reload that file even if a global config also exists.
+            config = config.globalConfigPath ? loadConfig() : loadConfig(config.configPath);
             project = config.projects[projectId];
           }
 

@@ -92,13 +92,13 @@ export function resolveMultiProjectStart(
         if (excludedSecrets.length > 0) {
           messages.push({ level: "warn", text: `Excluded secret-like fields: ${excludedSecrets.join(", ")}` });
         }
+        messages.push({ level: "success", text: "Shadow synced" });
       } catch (err) {
         messages.push({ level: "warn", text: `Could not sync local config: ${err instanceof Error ? err.message : String(err)}` });
       }
 
       saveGlobalConfig(globalConfig);
       messages.push({ level: "success", text: `Registered project "${projectId}" (hybrid mode)` });
-      messages.push({ level: "success", text: "Shadow synced" });
     } else {
       return null;
     }
