@@ -245,14 +245,6 @@ export function findGlobalConfigPath(): string {
   return resolve(homedir(), ".agent-orchestrator", "config.yaml");
 }
 
-/**
- * Get the global data directory path.
- *
- * Discovery order:
- * 1. $XDG_DATA_HOME/agent-orchestrator/ (if XDG_DATA_HOME set)
- * 2. ~/.local/share/agent-orchestrator/ (if XDG_CONFIG_HOME set but not XDG_DATA_HOME)
- * 3. ~/.agent-orchestrator/ (config and data colocated)
- */
 // =============================================================================
 // LOADING
 // =============================================================================

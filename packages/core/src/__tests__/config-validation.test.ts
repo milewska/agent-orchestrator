@@ -6,53 +6,30 @@ import { describe, it, expect } from "vitest";
 import { validateConfig } from "../config.js";
 
 describe("Config Validation - Project Uniqueness", () => {
-  it("rejects duplicate project IDs (same basename)", () => {
+  it("allows projects with the same directory basename (multi-project use case)", () => {
+    // /client1/app and /client2/app share the basename "app" — this is a
+    // legitimate multi-project setup and must not be rejected.
     const config = {
       projects: {
-        proj1: {
-          path: "/repos/integrator",
-          repo: "org/integrator",
+        client1: {
+          path: "/work/client1/app",
+          repo: "org/client1-app",
           defaultBranch: "main",
+          sessionPrefix: "c1",
         },
-        proj2: {
-          path: "/other/integrator", // Same basename!
-          repo: "org/integrator",
+        client2: {
+          path: "/work/client2/app",
+          repo: "org/client2-app",
           defaultBranch: "main",
+          sessionPrefix: "c2",
         },
       },
     };
 
-    expect(() => validateConfig(config)).toThrow(/Duplicate project ID/);
-    expect(() => validateConfig(config)).toThrow(/integrator/);
+    expect(() => validateConfig(config)).not.toThrow();
   });
 
-  it("error message shows conflicting paths", () => {
-    const config = {
-      projects: {
-        proj1: {
-          path: "/repos/integrator",
-          repo: "org/integrator",
-          defaultBranch: "main",
-        },
-        proj2: {
-          path: "/other/integrator",
-          repo: "org/integrator",
-          defaultBranch: "main",
-        },
-      },
-    };
-
-    try {
-      validateConfig(config);
-      expect.fail("Should have thrown");
-    } catch (err) {
-      const message = (err as Error).message;
-      expect(message).toContain("/repos/integrator");
-      expect(message).toContain("/other/integrator");
-    }
-  });
-
-  it("accepts unique basenames", () => {
+  it("accepts projects with unique paths", () => {
     const config = {
       projects: {
         proj1: {

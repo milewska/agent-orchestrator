@@ -481,30 +481,9 @@ export function applyProjectDefaults(config: OrchestratorConfig): OrchestratorCo
 
 /** Validate project uniqueness and session prefix collisions */
 export function validateProjectUniqueness(config: OrchestratorConfig): void {
-  // Check for duplicate project IDs (basenames)
-  const projectIds = new Set<string>();
-  const projectIdToPaths: Record<string, string[]> = {};
-
-  for (const [_configKey, project] of Object.entries(config.projects)) {
-    const projectId = basename(project.path);
-
-    if (!projectIdToPaths[projectId]) {
-      projectIdToPaths[projectId] = [];
-    }
-    projectIdToPaths[projectId].push(project.path);
-
-    if (projectIds.has(projectId)) {
-      const paths = projectIdToPaths[projectId].join(", ");
-      throw new Error(
-        `Duplicate project ID detected: "${projectId}"\n` +
-          `Multiple projects have the same directory basename:\n` +
-          `  ${paths}\n\n` +
-          `To fix this, ensure each project path has a unique directory name.\n` +
-          `Alternatively, you can use the config key as a unique identifier.`,
-      );
-    }
-    projectIds.add(projectId);
-  }
+  // Project IDs (config map keys) are inherently unique — no need to check them.
+  // Basename uniqueness is NOT enforced: two projects can legitimately share the
+  // same directory name (e.g. /client1/app and /client2/app).
 
   // Check for duplicate session prefixes
   const prefixes = new Set<string>();
