@@ -689,16 +689,16 @@ export function findConfig(startDir?: string): string | null {
 }
 
 /**
- * Build effective config from global registry + shadow files.
- * Shared pipeline used by all multi-project loading paths.
+ * Apply the shared post-build pipeline to a raw effective config.
+ *
+ * Steps: expandPaths → applyProjectDefaults → applyDefaultReactions →
+ *        collectExternalPluginConfigs/mergeExternalPlugins → validateProjectUniqueness
+ *
+ * Both `loadFromGlobalConfig` and `resolveMultiProjectStart` run the same
+ * pipeline — this function is the single source of truth so they stay in sync.
  */
-function loadFromGlobalConfig(): OrchestratorConfig | null {
-  const globalConfig = loadGlobalConfig();
-  if (!globalConfig) return null;
-
-  const globalPath = findGlobalConfigPath();
-  const config = buildEffectiveConfig(globalConfig, globalPath);
-  let effective = expandPaths(config);
+export function applyGlobalConfigPipeline(raw: OrchestratorConfig): OrchestratorConfig {
+  let effective = expandPaths(raw);
   effective = applyProjectDefaults(effective);
   effective = applyDefaultReactions(effective);
   const externalPluginEntries = collectExternalPluginConfigs(effective);
@@ -708,6 +708,19 @@ function loadFromGlobalConfig(): OrchestratorConfig | null {
   }
   validateProjectUniqueness(effective);
   return effective;
+}
+
+/**
+ * Build effective config from global registry + shadow files.
+ * Shared pipeline used by all multi-project loading paths.
+ */
+function loadFromGlobalConfig(): OrchestratorConfig | null {
+  const globalConfig = loadGlobalConfig();
+  if (!globalConfig) return null;
+
+  const globalPath = findGlobalConfigPath();
+  const config = buildEffectiveConfig(globalConfig, globalPath);
+  return applyGlobalConfigPipeline(config);
 }
 
 /**
