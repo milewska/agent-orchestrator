@@ -758,11 +758,15 @@ export function loadConfigWithPath(configPath?: string): {
   config: OrchestratorConfig;
   path: string;
 } {
-  // Try global config (multi-project mode)
-  if (!configPath) {
+  // Try global config (multi-project mode). Short-circuit when:
+  // 1. No explicit path — caller wants the default config source.
+  // 2. Explicit path IS the global config — avoid an unnecessary ZodError cycle
+  //    since global config doesn't match OrchestratorConfigSchema (single-file format).
+  const globalPath = findGlobalConfigPath();
+  if (!configPath || configPath === globalPath) {
     const effective = loadFromGlobalConfig();
     if (effective && Object.keys(effective.projects).length > 0) {
-      return { config: effective, path: findGlobalConfigPath() };
+      return { config: effective, path: globalPath };
     }
   }
 
