@@ -338,6 +338,11 @@ export function registerProject(
 ): GlobalConfig {
   const updated = structuredClone(globalConfig);
   updated.projects[projectId] = entry;
+  // Keep projectOrder consistent: if it's defined, append the new project
+  // so it appears in the portfolio UI instead of being silently omitted.
+  if (updated.projectOrder && !updated.projectOrder.includes(projectId)) {
+    updated.projectOrder = [...updated.projectOrder, projectId];
+  }
   return updated;
 }
 

@@ -130,7 +130,11 @@ export function resolveMultiProjectStart(
   // saveGlobalConfig so that a session prefix collision throws before the broken state
   // is persisted to disk.
   const globalPath = findGlobalConfigPath();
-  const built = buildEffectiveConfig(globalConfig, globalPath);
+  const buildWarnings: string[] = [];
+  const built = buildEffectiveConfig(globalConfig, globalPath, buildWarnings);
+  for (const w of buildWarnings) {
+    messages.push({ level: "warn", text: w });
+  }
   const effectiveConfig = applyGlobalConfigPipeline(built);
 
   // 5. Persist only after validation passes (new registrations only — already-registered

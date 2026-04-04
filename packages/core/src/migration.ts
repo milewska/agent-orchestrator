@@ -26,6 +26,26 @@ import {
 } from "./global-config.js";
 import { expandHome } from "./paths.js";
 
+// ---------------------------------------------------------------------------
+// Type-safe behavior field helpers
+// ---------------------------------------------------------------------------
+
+function asString(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+
+function asStringArray(v: unknown): string[] | undefined {
+  return Array.isArray(v) && v.every((x) => typeof x === "string")
+    ? (v as string[])
+    : undefined;
+}
+
+function asObject<T>(v: unknown): T | undefined {
+  return v !== null && typeof v === "object" && !Array.isArray(v)
+    ? (v as T)
+    : undefined;
+}
+
 /**
  * Build an OrchestratorConfig from global config + local/shadow configs.
  *
@@ -35,10 +55,15 @@ import { expandHome } from "./paths.js";
  *
  * The result is an OrchestratorConfig that looks exactly like the old format
  * (with all projects populated), allowing existing code to work without changes.
+ *
+ * @param warnings Optional array that receives warning messages (e.g. silent
+ *   fallbacks from broken local configs). Callers that surface messages to the
+ *   user should pass this in.
  */
 export function buildEffectiveConfig(
   globalConfig: GlobalConfig,
   globalConfigPath: string,
+  warnings?: string[],
 ): OrchestratorConfig {
   const projects: Record<string, ProjectConfig> = {};
   const mergedNotifiers: OrchestratorConfig["notifiers"] = {};
@@ -59,8 +84,14 @@ export function buildEffectiveConfig(
         try {
           const localConfig = loadLocalProjectConfig(localPath);
           behaviorFields = localConfig as Record<string, unknown>;
-        } catch {
-          // Invalid local config — fall back to shadow file
+        } catch (err) {
+          // Invalid local config — fall back to shadow file and warn the caller
+          // so the user knows their local config is NOT being applied.
+          warnings?.push(
+            `Project "${projectId}": local config at ${localPath} is invalid ` +
+              `(${err instanceof Error ? err.message : String(err)}); ` +
+              `using shadow file instead. Fix the local config and re-run \`ao start\`.`,
+          );
           behaviorFields = loadShadowOrEmpty(projectId);
         }
       } else {
@@ -74,7 +105,7 @@ export function buildEffectiveConfig(
     // Use the explicit sessionPrefix from the behavior/shadow fields if present.
     // Leave it empty otherwise — applyProjectDefaults (via applyGlobalConfigPipeline)
     // is the single source of truth for deriving the prefix from the project path.
-    const sessionPrefix = (behaviorFields["sessionPrefix"] as string | undefined) ?? "";
+    const sessionPrefix = asString(behaviorFields["sessionPrefix"]) ?? "";
     const repo = String(behaviorFields["repo"] ?? "");
 
     // Don't infer scm/tracker here — leave them for applyProjectDefaults
@@ -87,30 +118,30 @@ export function buildEffectiveConfig(
       defaultBranch: String(behaviorFields["defaultBranch"] ?? "main"),
       sessionPrefix,
       configMode: mode,
-      runtime: behaviorFields["runtime"] as string | undefined,
-      agent: behaviorFields["agent"] as string | undefined,
-      workspace: behaviorFields["workspace"] as string | undefined,
-      tracker: behaviorFields["tracker"] as TrackerConfig | undefined,
-      scm: behaviorFields["scm"] as SCMConfig | undefined,
-      symlinks: behaviorFields["symlinks"] as string[] | undefined,
-      postCreate: behaviorFields["postCreate"] as string[] | undefined,
-      agentConfig: (behaviorFields["agentConfig"] as AgentSpecificConfig | undefined) ?? {} as AgentSpecificConfig,
-      orchestrator: behaviorFields["orchestrator"] as RoleAgentConfig | undefined,
-      worker: behaviorFields["worker"] as RoleAgentConfig | undefined,
-      reactions: behaviorFields["reactions"] as Record<string, Partial<ReactionConfig>> | undefined,
-      agentRules: behaviorFields["agentRules"] as string | undefined,
-      agentRulesFile: behaviorFields["agentRulesFile"] as string | undefined,
-      orchestratorRules: behaviorFields["orchestratorRules"] as string | undefined,
+      runtime: asString(behaviorFields["runtime"]),
+      agent: asString(behaviorFields["agent"]),
+      workspace: asString(behaviorFields["workspace"]),
+      tracker: asObject<TrackerConfig>(behaviorFields["tracker"]),
+      scm: asObject<SCMConfig>(behaviorFields["scm"]),
+      symlinks: asStringArray(behaviorFields["symlinks"]),
+      postCreate: asStringArray(behaviorFields["postCreate"]),
+      agentConfig: asObject<AgentSpecificConfig>(behaviorFields["agentConfig"]) ?? ({} as AgentSpecificConfig),
+      orchestrator: asObject<RoleAgentConfig>(behaviorFields["orchestrator"]),
+      worker: asObject<RoleAgentConfig>(behaviorFields["worker"]),
+      reactions: asObject<Record<string, Partial<ReactionConfig>>>(behaviorFields["reactions"]),
+      agentRules: asString(behaviorFields["agentRules"]),
+      agentRulesFile: asString(behaviorFields["agentRulesFile"]),
+      orchestratorRules: asString(behaviorFields["orchestratorRules"]),
       orchestratorSessionStrategy: behaviorFields["orchestratorSessionStrategy"] as ProjectConfig["orchestratorSessionStrategy"],
       opencodeIssueSessionStrategy: behaviorFields["opencodeIssueSessionStrategy"] as ProjectConfig["opencodeIssueSessionStrategy"],
       decomposer: behaviorFields["decomposer"] as ProjectConfig["decomposer"],
     };
 
     if (behaviorFields["notifiers"]) {
-      Object.assign(mergedNotifiers, behaviorFields["notifiers"] as OrchestratorConfig["notifiers"]);
+      Object.assign(mergedNotifiers, asObject<OrchestratorConfig["notifiers"]>(behaviorFields["notifiers"]) ?? {});
     }
     if (behaviorFields["notificationRouting"]) {
-      Object.assign(mergedRouting, behaviorFields["notificationRouting"] as Record<string, string[]>);
+      Object.assign(mergedRouting, asObject<Record<string, string[]>>(behaviorFields["notificationRouting"]) ?? {});
     }
   }
 

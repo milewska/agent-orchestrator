@@ -117,6 +117,42 @@ describe("registerProject / unregisterProject", () => {
     expect(original.projects["ao"]).toBeUndefined(); // immutable
   });
 
+  it("appends to projectOrder when defined", () => {
+    const original: GlobalConfig = {
+      port: 3000,
+      readyThresholdMs: 300000,
+      defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+      projects: { existing: { name: "Existing", path: "/tmp/existing" } },
+      projectOrder: ["existing"],
+    };
+    const updated = registerProject(original, "new-proj", { name: "New", path: "/tmp/new" });
+    expect(updated.projectOrder).toEqual(["existing", "new-proj"]);
+    expect(original.projectOrder).toEqual(["existing"]); // immutable
+  });
+
+  it("does not duplicate in projectOrder if already present", () => {
+    const original: GlobalConfig = {
+      port: 3000,
+      readyThresholdMs: 300000,
+      defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+      projects: { ao: { name: "AO", path: "/tmp/ao" } },
+      projectOrder: ["ao"],
+    };
+    const updated = registerProject(original, "ao", { name: "AO", path: "/tmp/ao" });
+    expect(updated.projectOrder).toEqual(["ao"]);
+  });
+
+  it("leaves projectOrder undefined when not defined", () => {
+    const original: GlobalConfig = {
+      port: 3000,
+      readyThresholdMs: 300000,
+      defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+      projects: {},
+    };
+    const updated = registerProject(original, "ao", { name: "AO", path: "/tmp/ao" });
+    expect(updated.projectOrder).toBeUndefined();
+  });
+
   it("unregisters a project (shadow deletion is caller responsibility)", () => {
     saveShadowFile("ao", { repo: "org/ao" });
 
