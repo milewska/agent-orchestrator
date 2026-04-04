@@ -481,6 +481,9 @@ const PR_FIELDS = `
                 targetUrl
               }
             }
+            pageInfo {
+              hasNextPage
+            }
           }
         }
       }
@@ -768,9 +771,22 @@ function extractPREnrichment(
     | undefined;
   const statusCheckRollup = commits?.nodes?.[0]?.commit?.statusCheckRollup;
   const ciStatus = statusCheckRollup ? parseCIState(statusCheckRollup) : "none";
-  const ciChecks = statusCheckRollup?.["contexts"]
-    ? parseCheckContexts(statusCheckRollup["contexts"])
-    : undefined;
+
+  // Only include ciChecks when the list is complete (no truncation).
+  // contexts(first: 20) silently truncates PRs with >20 checks — when truncated,
+  // the failing check may be missing, so we set ciChecks to undefined to force
+  // the getCIChecks() REST fallback in maybeDispatchCIFailureDetails.
+  const contextsField = statusCheckRollup?.["contexts"] as
+    | Record<string, unknown>
+    | undefined;
+  const contextsHasNextPage =
+    contextsField &&
+    typeof contextsField["pageInfo"] === "object" &&
+    (contextsField["pageInfo"] as Record<string, unknown>)["hasNextPage"] === true;
+  const ciChecks =
+    contextsField && !contextsHasNextPage
+      ? parseCheckContexts(contextsField)
+      : undefined;
 
   // Build blockers list
   const blockers: string[] = [];

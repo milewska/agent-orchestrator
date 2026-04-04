@@ -1396,4 +1396,76 @@ describe("extractPREnrichment ciChecks", () => {
     const check = extracted?.data.ciChecks?.[0];
     expect(check?.status).toBe("skipped");
   });
+
+  it("returns undefined ciChecks when contexts list is truncated (hasNextPage=true)", () => {
+    const pullRequest = {
+      title: "Many CI checks",
+      state: "OPEN",
+      additions: 5,
+      deletions: 2,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: "FAILURE",
+                contexts: {
+                  nodes: [
+                    { name: "check-1", status: "COMPLETED", conclusion: "FAILURE", detailsUrl: null },
+                    // ... 19 more checks truncated
+                  ],
+                  pageInfo: { hasNextPage: true }, // list was truncated!
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const extracted = extractPREnrichment(pullRequest);
+    // ciChecks should be undefined when truncated — forces getCIChecks() REST fallback
+    expect(extracted?.data.ciChecks).toBeUndefined();
+  });
+
+  it("returns ciChecks when contexts list is complete (hasNextPage=false)", () => {
+    const pullRequest = {
+      title: "Few CI checks",
+      state: "OPEN",
+      additions: 5,
+      deletions: 2,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: "FAILURE",
+                contexts: {
+                  nodes: [
+                    { name: "lint", status: "COMPLETED", conclusion: "FAILURE", detailsUrl: "https://ci.example.com/lint" },
+                  ],
+                  pageInfo: { hasNextPage: false }, // complete list
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const extracted = extractPREnrichment(pullRequest);
+    expect(extracted?.data.ciChecks).toBeDefined();
+    expect(extracted?.data.ciChecks).toHaveLength(1);
+    expect(extracted?.data.ciChecks?.[0]?.name).toBe("lint");
+  });
 });
