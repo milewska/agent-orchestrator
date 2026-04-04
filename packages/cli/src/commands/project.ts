@@ -8,30 +8,21 @@
  */
 
 import chalk from "chalk";
-import { resolve, basename } from "node:path";
+import { resolve } from "node:path";
 import type { Command } from "commander";
 import {
   loadGlobalConfig,
   saveGlobalConfig,
   scaffoldGlobalConfig,
-  registerProject as registerProjectInConfig,
   unregisterProject,
   deleteShadowFile,
-  detectConfigMode,
-  findLocalConfigPath,
-  loadLocalProjectConfig,
-  syncShadow,
   findProjectByPath,
   findGlobalConfigPath,
   buildEffectiveConfig,
   applyGlobalConfigPipeline,
   loadConfig,
-  generateSessionPrefix,
-  generateProjectId,
+  registerNewProject,
   expandHome,
-  loadShadowFile,
-  saveShadowFile,
-  type GlobalProjectEntry,
 } from "@composio/ao-core";
 import { getSessionManager } from "../lib/create-session-manager.js";
 import { getRunning } from "../lib/running-state.js";
@@ -95,89 +86,35 @@ export function registerProjectCommand(program: Command): void {
           return;
         }
 
-        // Derive ID
-        let projectId = opts.id ?? generateSessionPrefix(generateProjectId(projectPath));
-        const originalProjectId = projectId;
-
-        // Handle ID collision
-        if (globalConfig.projects[projectId]) {
-          const conflicting = globalConfig.projects[projectId];
-          if (resolve(expandHome(conflicting.path)) !== projectPath) {
-            if (opts.id) {
-              // User explicitly requested this ID — don't silently reassign it.
-              console.error(
-                chalk.red(`Error: project ID "${projectId}" is already in use by ${conflicting.path}.`) +
-                "\n  Choose a different ID with --id <id> or omit --id to auto-generate one.",
-              );
-              process.exit(1);
-            }
-            let suffix = 2;
-            while (globalConfig.projects[`${projectId}${suffix}`]) suffix++;
-            const altId = `${projectId}${suffix}`;
-            console.log(chalk.yellow(`ID "${projectId}" already taken, using "${altId}"`));
-            projectId = altId;
-          }
+        // Register via shared helper — handles ID derivation, collision,
+        // shadow sync/scaffold, and session prefix writeback.
+        const reg = registerNewProject(globalConfig, projectPath, {
+          explicitId: opts.id,
+          name: opts.name,
+        });
+        for (const msg of reg.messages) {
+          if (msg.level === "warn") console.log(chalk.yellow(`  ⚠ ${msg.text}`));
+          else if (msg.level === "success") console.log(chalk.dim(`  ✓ ${msg.text}`));
         }
+        const projectId = reg.projectId;
+        globalConfig = reg.updatedGlobalConfig;
 
-        const entry: GlobalProjectEntry = {
-          name: opts.name ?? basename(projectPath),
-          path: projectPath,
-        };
-        globalConfig = registerProjectInConfig(globalConfig, projectId, entry);
-
-        // Sync shadow if hybrid; scaffold minimal shadow if global-only
-        const mode = detectConfigMode(projectPath);
-        if (mode === "hybrid") {
-          const localPath = findLocalConfigPath(projectPath);
-          if (localPath) {
-            try {
-              const localConfig = loadLocalProjectConfig(localPath);
-              const { config: synced, excludedSecrets } = syncShadow(globalConfig, projectId, localConfig);
-              globalConfig = synced;
-              if (excludedSecrets.length > 0) {
-                console.log(chalk.yellow(`  Excluded secret-like fields: ${excludedSecrets.join(", ")}`));
-              }
-            } catch (err) {
-              console.log(chalk.yellow(`  Could not sync local config: ${err instanceof Error ? err.message : String(err)}`));
-            }
-          }
-        } else {
-          // Global-only: create a minimal shadow file so buildEffectiveConfig has
-          // a file to read from. Without it, repo/defaultBranch/agent fields all
-          // fall back to empty defaults and the project cannot be started.
-          if (!loadShadowFile(projectId)) {
-            saveShadowFile(projectId, { repo: "", defaultBranch: "main" });
-          }
-        }
-
-        // If the ID was auto-suffixed to resolve a collision (e.g. "ma" → "ma2"),
-        // applyProjectDefaults would still re-derive the prefix from basename(path),
-        // producing the same prefix as the original project and causing
-        // validateProjectUniqueness to throw. Write the suffixed prefix explicitly
-        // to the shadow so applyProjectDefaults uses it instead.
-        if (projectId !== originalProjectId) {
-          const currentShadow = loadShadowFile(projectId) ?? {};
-          saveShadowFile(projectId, { ...currentShadow, sessionPrefix: generateSessionPrefix(projectId) });
-        }
-
-        // Validate before persisting — catches session prefix collisions between
-        // newly registered project and existing ones, same as resolveMultiProjectStart.
+        // Validate before persisting — catches session prefix collisions.
         const globalPath = findGlobalConfigPath();
         const built = buildEffectiveConfig(globalConfig, globalPath);
         try {
-          applyGlobalConfigPipeline(built); // throws on prefix collision
+          applyGlobalConfigPipeline(built);
         } catch (validationErr) {
-          // Clean up the shadow file we just wrote so it doesn't remain as an orphan
-          // (the global config was never saved, so the project is unregistered).
+          // Clean up the shadow file so it doesn't remain as an orphan.
           deleteShadowFile(projectId);
           throw validationErr;
         }
 
         saveGlobalConfig(globalConfig);
 
-        console.log(chalk.green(`✓ Registered "${projectId}" (${mode})`));
+        console.log(chalk.green(`✓ Registered "${projectId}" (${reg.configMode})`));
         console.log(chalk.dim(`  Path: ${projectPath}`));
-        console.log(chalk.dim(`  Name: ${entry.name}`));
+        console.log(chalk.dim(`  Name: ${reg.updatedGlobalConfig.projects[projectId]?.name ?? projectId}`));
       } catch (err) {
         console.error(chalk.red(err instanceof Error ? err.message : String(err)));
         process.exit(1);
