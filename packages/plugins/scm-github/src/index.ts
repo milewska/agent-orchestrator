@@ -617,19 +617,25 @@ function mapCheckRunConclusionToState(
  */
 async function fetchCheckRunsViaRest(repo: string, sha: string, cwd?: string): Promise<unknown[]> {
   try {
+    // Use --jq '.check_runs[]' so gh outputs one JSON object per line (NDJSON)
+    // instead of concatenating full response objects. Without --jq, --paginate
+    // on an object-returning endpoint produces "{...}{...}" which JSON.parse
+    // cannot handle when there are more than one page of results (>30 runs).
     const raw = await ghWithRetry(
-      ["api", `repos/${repo}/commits/${sha}/check-runs`, "--paginate"],
+      ["api", `repos/${repo}/commits/${sha}/check-runs`, "--paginate", "--jq", ".check_runs[]"],
       cwd,
     );
-    const data = JSON.parse(raw) as { check_runs?: unknown[] };
-    return (data.check_runs ?? []).map((run: Record<string, unknown> | unknown) => {
-      const r = run as Record<string, unknown>;
-      return {
-        name: r.name,
-        state: mapCheckRunConclusionToState(r.conclusion, r.status),
-        detailsUrl: r.html_url,
-      };
-    });
+    return raw
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => {
+        const r = JSON.parse(line) as Record<string, unknown>;
+        return {
+          name: r.name,
+          state: mapCheckRunConclusionToState(r.conclusion, r.status),
+          detailsUrl: r.html_url,
+        };
+      });
   } catch (err) {
     // Propagate errors so callers can fail-closed rather than treating
     // a fetch failure as "no checks" (which getMergeability treats as passing).

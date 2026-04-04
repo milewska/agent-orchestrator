@@ -201,11 +201,10 @@ describe("rate limit retry + REST fallback via scm plugin", () => {
       mockRateLimitError();
       // getCIChecksFromStatusRollupViaRest: gh api repos/.../pulls/42 (to get head SHA)
       mockGhSuccess({ head: { sha: "abc123sha" } });
-      // fetchCheckRunsViaRest: gh api repos/.../commits/abc123sha/check-runs --paginate
-      mockGhSuccess({
-        check_runs: [
-          { name: "build", conclusion: "success", status: "completed", html_url: "https://ci/1" },
-        ],
+      // fetchCheckRunsViaRest: gh api ...check-runs --paginate --jq '.check_runs[]'
+      // outputs NDJSON (one JSON object per line), not a wrapper object
+      ghMock.mockResolvedValueOnce({
+        stdout: '{"name":"build","conclusion":"success","status":"completed","html_url":"https://ci/1"}',
       });
 
       const status = await scm.getCISummary(pr);
