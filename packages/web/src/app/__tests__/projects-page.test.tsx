@@ -7,7 +7,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
   usePathname: () => "/projects/ao",
   useSearchParams: () => new URLSearchParams(),
-  notFound: () => mockNotFound(),
+  notFound: () => { mockNotFound(); throw new Error("NEXT_NOT_FOUND"); },
 }));
 
 vi.mock("next/link", () => ({
@@ -67,7 +67,7 @@ describe("ProjectPage", () => {
     mockGetAllProjects.mockReturnValue([{ id: "ao", name: "AO" }]);
 
     const ProjectPage = await loadPage();
-    await ProjectPage({ params: Promise.resolve({ id: "unknown" }) });
+    await expect(ProjectPage({ params: Promise.resolve({ id: "unknown" }) })).rejects.toThrow();
 
     expect(mockNotFound).toHaveBeenCalled();
   });
