@@ -1239,6 +1239,42 @@ describe("extractPREnrichment ciChecks", () => {
     expect(typecheck?.status).toBe("running");
   });
 
+  it("maps QUEUED and WAITING to pending, not running (matches REST mapRawCheckStateToStatus)", () => {
+    const pullRequest = {
+      title: "Queued checks",
+      state: "OPEN",
+      additions: 1,
+      deletions: 0,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: "PENDING",
+                contexts: {
+                  nodes: [
+                    { name: "queued-check", status: "QUEUED", conclusion: null, detailsUrl: null },
+                    { name: "waiting-check", status: "WAITING", conclusion: null, detailsUrl: null },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const extracted = extractPREnrichment(pullRequest);
+    const ciChecks = extracted?.data.ciChecks;
+    expect(ciChecks?.find((c) => c.name === "queued-check")?.status).toBe("pending");
+    expect(ciChecks?.find((c) => c.name === "waiting-check")?.status).toBe("pending");
+  });
+
   it("parses StatusContext nodes into ciChecks", () => {
     const pullRequest = {
       title: "Legacy CI",

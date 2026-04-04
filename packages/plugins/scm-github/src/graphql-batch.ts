@@ -634,9 +634,12 @@ function parseCheckContexts(contexts: unknown): CICheck[] {
           // FAILURE, TIMED_OUT, CANCELLED, ACTION_REQUIRED, STARTUP_FAILURE, etc.
           status = "failed";
         }
-      } else if (rawStatus === "IN_PROGRESS" || rawStatus === "QUEUED" || rawStatus === "WAITING") {
+      } else if (rawStatus === "IN_PROGRESS") {
+        // Only IN_PROGRESS maps to "running" — matches mapRawCheckStateToStatus() in REST path
         status = "running";
       } else {
+        // QUEUED, WAITING, and any other non-COMPLETED status → "pending"
+        // (REST path maps QUEUED/WAITING to "pending", not "running")
         status = "pending";
       }
 
