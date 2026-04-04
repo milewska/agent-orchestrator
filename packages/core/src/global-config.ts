@@ -55,7 +55,7 @@ const isInternalField = (key: string): boolean => key.startsWith("_");
  * the optional `[-_]?` separator.
  */
 const SECRET_PATTERNS = [
-  /token$/i,
+  /(?:access|auth|api|bearer|refresh|id|secret)[-_]?token$/i,
   /(?:api|secret|private|access|signing|encryption|auth)[-_]?key$/i,
   /secret$/i,
   /password$/i,

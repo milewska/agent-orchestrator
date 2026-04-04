@@ -45,13 +45,16 @@ export function buildEffectiveConfig(
   const mergedRouting: Partial<Record<EventPriority, string[]>> = {};
 
   for (const [projectId, entry] of Object.entries(globalConfig.projects)) {
-    const projectPath = expandHome(entry.path);
-    const mode = detectConfigMode(projectPath);
+    // Expand for internal use (detectConfigMode, findLocalConfigPath need an absolute path).
+    // The project stores the raw entry.path so expandPaths in applyGlobalConfigPipeline
+    // performs the single canonical expansion — avoiding double-expansion.
+    const expandedPath = expandHome(entry.path);
+    const mode = detectConfigMode(expandedPath);
 
     let behaviorFields: Record<string, unknown>;
 
     if (mode === "hybrid") {
-      const localPath = findLocalConfigPath(projectPath);
+      const localPath = findLocalConfigPath(expandedPath);
       if (localPath) {
         try {
           const localConfig = loadLocalProjectConfig(localPath);
@@ -80,7 +83,7 @@ export function buildEffectiveConfig(
     projects[projectId] = {
       name: entry.name ?? projectId,
       repo,
-      path: projectPath,
+      path: entry.path,
       defaultBranch: String(behaviorFields["defaultBranch"] ?? "main"),
       sessionPrefix,
       configMode: mode,

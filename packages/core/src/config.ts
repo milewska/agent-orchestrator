@@ -750,8 +750,7 @@ function loadConfigFromFile(path: string): OrchestratorConfig {
   const raw = readFileSync(path, "utf-8");
   const parsed = parseYaml(raw);
   const config = validateConfig(parsed);
-  config.configPath = path;
-  return config;
+  return { ...config, configPath: path };
 }
 
 /** Load config and return both config and resolved path */
