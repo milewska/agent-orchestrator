@@ -80,9 +80,9 @@ const IS_TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
  * Thin CLI wrapper around resolveMultiProjectStart from core.
  * Adds user-facing console output for migration and registration messages.
  */
-async function handleMultiProjectStart(
+function handleMultiProjectStart(
   workingDir: string,
-): Promise<{ config: OrchestratorConfig; projectId: string } | null> {
+): { config: OrchestratorConfig; projectId: string } | null {
   const result = resolveMultiProjectStart(workingDir);
   if (!result) return null;
 
@@ -935,7 +935,7 @@ async function runStartup(
   config: OrchestratorConfig,
   projectId: string,
   project: ProjectConfig,
-  opts?: { dashboard?: boolean; orchestrator?: boolean; rebuild?: boolean },
+  opts?: { dashboard?: boolean; orchestrator?: boolean; rebuild?: boolean; skipLifecycle?: boolean },
 ): Promise<number> {
   // Ensure tmux is available before doing anything — covers all entry paths
   // (normal start, URL start, retry with existing config)
@@ -960,7 +960,7 @@ async function runStartup(
   }
 
   const sessionId = `${project.sessionPrefix}-orchestrator`;
-  const shouldStartLifecycle = opts?.dashboard !== false || opts?.orchestrator !== false;
+  const shouldStartLifecycle = !opts?.skipLifecycle && (opts?.dashboard !== false || opts?.orchestrator !== false);
   let lifecycleStatus: Awaited<ReturnType<typeof ensureLifecycleWorker>> | null = null;
   let port = config.port ?? DEFAULT_PORT;
   const orchestratorSessionStrategy = normalizeOrchestratorSessionStrategy(
@@ -1241,7 +1241,7 @@ export function registerStart(program: Command): void {
             ({ projectId, project } = await resolveProject(config, projectArg));
           } else {
             // ── No arg: try multi-project flow first ──
-            const multiResult = await handleMultiProjectStart(cwd());
+            const multiResult = handleMultiProjectStart(cwd());
             if (multiResult) {
               config = multiResult.config;
               ({ projectId, project } = await resolveProject(config, multiResult.projectId));
@@ -1443,7 +1443,10 @@ export function registerStart(program: Command): void {
             config,
             projectId,
             project,
-            attachToRunning ? { ...opts, dashboard: false } : opts,
+            // When attaching to an existing AO instance: skip the dashboard
+            // (already running) and the lifecycle worker (the existing instance's
+            // lifecycle manager picks up the new session on its next poll cycle).
+            attachToRunning ? { ...opts, dashboard: false, skipLifecycle: true } : opts,
           );
 
           // ── Register in running.json (Step 11) ──

@@ -111,6 +111,12 @@ const GlobalConfigSchema = z.object({
   projectOrder: z.array(z.string()).optional(),
   /** Installed external plugins */
   plugins: z.array(z.any()).optional(),
+  /** Global notifier channel definitions */
+  notifiers: z.record(z.object({ plugin: z.string() }).passthrough()).optional(),
+  /** Global notification routing by priority level */
+  notificationRouting: z.record(z.array(z.string())).optional(),
+  /** Global reaction definitions (overridden per-project via shadow/local config) */
+  reactions: z.record(z.any()).optional(),
 });
 
 export type GlobalConfig = z.infer<typeof GlobalConfigSchema>;

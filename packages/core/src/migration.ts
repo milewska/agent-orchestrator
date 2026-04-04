@@ -67,8 +67,9 @@ export function buildEffectiveConfig(
   warnings?: string[],
 ): OrchestratorConfig {
   const projects: Record<string, ProjectConfig> = {};
-  const mergedNotifiers: OrchestratorConfig["notifiers"] = {};
-  const mergedRouting: Partial<Record<EventPriority, string[]>> = {};
+  // Seed with global-level settings; per-project shadow overrides merge on top.
+  const mergedNotifiers: OrchestratorConfig["notifiers"] = { ...(globalConfig.notifiers ?? {}) };
+  const mergedRouting: Partial<Record<EventPriority, string[]>> = { ...(globalConfig.notificationRouting ?? {}) };
 
   for (const [projectId, entry] of Object.entries(globalConfig.projects)) {
     // Expand for internal use (detectConfigMode, findLocalConfigPath need an absolute path).
@@ -175,7 +176,7 @@ export function buildEffectiveConfig(
       info: ["composio"],
       ...mergedRouting,
     } as Record<EventPriority, string[]>,
-    reactions: {},
+    reactions: globalConfig.reactions ?? {},
     plugins: globalConfig.plugins as OrchestratorConfig["plugins"],
   };
 }

@@ -1344,6 +1344,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       }
     },
 
+    detach(): void {
+      pollTimer?.unref();
+    },
+
     getStates(): Map<SessionId, SessionStatus> {
       return new Map(states);
     },

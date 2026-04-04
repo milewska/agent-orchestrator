@@ -10,6 +10,9 @@ export function registerLifecycleWorker(program: Command): void {
   program
     .command("lifecycle-worker [project]")
     .description("(Deprecated) Lifecycle worker now runs in-process inside `ao start`")
+    // Accept (and ignore) legacy flags like --interval-ms so older invocations
+    // no-op cleanly instead of failing with "unknown option" errors.
+    .allowUnknownOption(true)
     .action(() => {
       console.log("The lifecycle worker now runs in-process inside `ao start`.");
       console.log("This command is no longer needed and has no effect.");
