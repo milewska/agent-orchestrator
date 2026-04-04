@@ -307,7 +307,7 @@ async function fetchPrViewFallbackAsJson(
  */
 function writeTempCurlConfig(token: string): string {
   const configPath = join(tmpdir(), `.curl-auth-${randomUUID()}`);
-  const escapedToken = token.replace(/\\/g, "\\\\").replace(/\n/g, "\\n");
+  const escapedToken = token.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n");
   writeFileSync(configPath, `header = "Authorization: Bearer ${escapedToken}"\n`, {
     mode: 0o600,
   });
@@ -386,8 +386,17 @@ export async function ghRestFallback(args: string[]): Promise<string> {
 
   // Collect flags from ALL positions in apiArgs (except the endpoint itself).
   // Starting from 0 (not 1) ensures flags before the endpoint are included.
+  //
+  // Only --method/-X is forwarded to curl. All other gh api-specific flags
+  // (--paginate, --jq, -f, --field, --input, --raw-field, etc.) are ignored
+  // because curl doesn't understand them and they have no REST equivalent here.
   const queryParts: string[] = [];
   const curlFlags: string[] = [];
+
+  // gh api flags that take a value argument but should be ignored (not forwarded to curl)
+  const GH_API_FLAGS_WITH_VALUE = new Set(["--jq", "-q", "-f", "--field", "--raw-field", "--input"]);
+  // gh api flags that are boolean/standalone and should be ignored
+  const GH_API_FLAGS_BOOLEAN = new Set(["--paginate", "--silent", "--include"]);
 
   for (let i = 0; i < apiArgs.length; i++) {
     if (i === endpointIdx) continue; // skip the endpoint
@@ -395,14 +404,17 @@ export async function ghRestFallback(args: string[]): Promise<string> {
     if (arg.startsWith("?")) {
       queryParts.push(arg.slice(1));
     } else if (arg === "--method" || arg === "-X") {
-      curlFlags.push("-X", apiArgs[i + 1] || "GET");
-      i++;
-    } else if (arg.startsWith("-") || arg.startsWith("--")) {
-      curlFlags.push(arg);
-      if (apiArgs[i + 1] && !apiArgs[i + 1].startsWith("-")) {
-        curlFlags.push(apiArgs[i + 1]);
-        i++;
-      }
+      // Guard read-ahead: don't consume the endpoint as the method value
+      const next = i + 1 !== endpointIdx ? apiArgs[i + 1] : undefined;
+      curlFlags.push("-X", next || "GET");
+      if (next) i++;
+    } else if (GH_API_FLAGS_WITH_VALUE.has(arg)) {
+      // Skip gh-specific flag + its value (guard against consuming endpoint)
+      if (i + 1 < apiArgs.length && i + 1 !== endpointIdx) i++;
+    } else if (GH_API_FLAGS_BOOLEAN.has(arg)) {
+      // Skip gh-specific boolean flag
+    } else if (arg.startsWith("-")) {
+      // Unknown flag — skip it rather than forwarding blindly to curl
     }
   }
 
@@ -624,23 +636,19 @@ async function getCIChecksFromStatusRollupViaRest(pr: PRInfo): Promise<CICheck[]
     throw new Error(`getCIChecksFromStatusRollupViaRest: could not determine head SHA for PR #${pr.number}`);
   }
 
+  // fetchCheckRunsViaRest returns { name, state, detailsUrl } where state is
+  // already a GraphQL-style string (via mapCheckRunConclusionToState).
+  // Map state → CICheck["status"] via mapRawCheckStateToStatus.
   const rollup = await fetchCheckRunsViaRest(`${pr.owner}/${pr.repo}`, sha);
-  return (rollup as Record<string, unknown>[])
+  return (rollup as Array<{ name?: unknown; state?: unknown; detailsUrl?: unknown }>)
     .map((entry): CICheck | null => {
-      const name =
-        (typeof entry.name === "string" && entry.name) ||
-        (typeof entry.context === "string" && entry.context);
+      const name = typeof entry.name === "string" ? entry.name : null;
       if (!name) return null;
-      const rawState =
-        typeof entry.conclusion === "string"
-          ? entry.conclusion
-          : typeof entry.state === "string"
-            ? entry.state
-            : undefined;
+      const rawState = typeof entry.state === "string" ? entry.state : undefined;
       return {
         name,
         status: mapRawCheckStateToStatus(rawState),
-        conclusion: typeof rawState === "string" ? rawState.toUpperCase() : undefined,
+        conclusion: rawState?.toUpperCase(),
         url: typeof entry.detailsUrl === "string" ? entry.detailsUrl : undefined,
       };
     })
