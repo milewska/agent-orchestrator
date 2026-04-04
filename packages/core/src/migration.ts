@@ -77,10 +77,12 @@ export function buildEffectiveConfig(
     const mode = detectConfigMode(expandedPath);
 
     let behaviorFields: Record<string, unknown>;
+    let effectiveConfigPath: string | undefined;
 
     if (mode === "hybrid") {
       const localPath = findLocalConfigPath(expandedPath);
       if (localPath) {
+        effectiveConfigPath = localPath;
         try {
           const localConfig = loadLocalProjectConfig(localPath);
           behaviorFields = localConfig as Record<string, unknown>;
@@ -118,6 +120,7 @@ export function buildEffectiveConfig(
       defaultBranch: String(behaviorFields["defaultBranch"] ?? "main"),
       sessionPrefix,
       configMode: mode,
+      effectiveConfigPath,
       runtime: asString(behaviorFields["runtime"]),
       agent: asString(behaviorFields["agent"]),
       workspace: asString(behaviorFields["workspace"]),

@@ -327,38 +327,46 @@ function generateTempPluginName(pkg?: string, path?: string): string {
   return "unknown";
 }
 
+interface ProcessedExternalPlugin {
+  entry: ExternalPluginEntryRef;
+  resolvedPlugin: string;
+  resolvedPath: string | undefined;
+}
+
 /**
  * Helper to process a single external plugin config entry.
- * Expands home paths, generates temp plugin name if needed, and returns the entry ref.
+ * Expands home paths, generates temp plugin name if needed, and returns the entry ref
+ * along with resolved values — without mutating the input.
  */
 function processExternalPluginConfig(
   pluginConfig: { plugin?: string; package?: string; path?: string },
   source: string,
   location: ExternalPluginEntryRef["location"],
   slot: ExternalPluginEntryRef["slot"],
-): ExternalPluginEntryRef | null {
+): ProcessedExternalPlugin | null {
   if (!pluginConfig.package && !pluginConfig.path) return null;
 
   // Expand home paths (~/...) for consistency with config.plugins
-  if (pluginConfig.path) {
-    pluginConfig.path = expandHome(pluginConfig.path);
-  }
+  const resolvedPath = pluginConfig.path ? expandHome(pluginConfig.path) : pluginConfig.path;
 
   // Track if user explicitly specified plugin name (for validation)
   const userSpecifiedPlugin = pluginConfig.plugin;
 
   // If plugin name not specified, generate a temporary one from package/path
-  if (!pluginConfig.plugin) {
-    pluginConfig.plugin = generateTempPluginName(pluginConfig.package, pluginConfig.path);
-  }
+  const resolvedPlugin =
+    pluginConfig.plugin ?? generateTempPluginName(pluginConfig.package, resolvedPath);
 
   return {
-    source,
-    location,
-    slot,
-    package: pluginConfig.package,
-    path: pluginConfig.path,
-    expectedPluginName: userSpecifiedPlugin,
+    entry: {
+      source,
+      location,
+      slot,
+      package: pluginConfig.package,
+      path: resolvedPath,
+      expectedPluginName: userSpecifiedPlugin,
+    },
+    resolvedPlugin,
+    resolvedPath,
   };
 }
 
@@ -372,47 +380,88 @@ function processExternalPluginConfig(
  * IMPORTANT: Only sets expectedPluginName when user explicitly specified `plugin`.
  * When plugin is auto-generated, expectedPluginName is left undefined so that
  * any manifest.name is accepted and the config is updated with it.
+ *
+ * Returns both the collected entries and an updated config with resolved plugin
+ * names and paths applied immutably (no mutation of shared nested objects).
  */
-export function collectExternalPluginConfigs(config: OrchestratorConfig): ExternalPluginEntryRef[] {
+export function collectExternalPluginConfigs(config: OrchestratorConfig): {
+  entries: ExternalPluginEntryRef[];
+  updatedConfig: OrchestratorConfig;
+} {
   const entries: ExternalPluginEntryRef[] = [];
+  const updatedProjects = { ...config.projects };
 
   // Collect from project tracker and scm configs
   for (const [projectId, project] of Object.entries(config.projects)) {
+    let updatedProject = project;
+
     if (project.tracker) {
-      const entry = processExternalPluginConfig(
+      const result = processExternalPluginConfig(
         project.tracker,
         `projects.${projectId}.tracker`,
         { kind: "project", projectId, configType: "tracker" },
         "tracker",
       );
-      if (entry) entries.push(entry);
+      if (result) {
+        entries.push(result.entry);
+        updatedProject = {
+          ...updatedProject,
+          tracker: { ...project.tracker, plugin: result.resolvedPlugin, path: result.resolvedPath },
+        };
+      }
     }
 
     if (project.scm) {
-      const entry = processExternalPluginConfig(
+      const result = processExternalPluginConfig(
         project.scm,
         `projects.${projectId}.scm`,
         { kind: "project", projectId, configType: "scm" },
         "scm",
       );
-      if (entry) entries.push(entry);
+      if (result) {
+        entries.push(result.entry);
+        updatedProject = {
+          ...updatedProject,
+          scm: { ...project.scm, plugin: result.resolvedPlugin, path: result.resolvedPath },
+        };
+      }
+    }
+
+    if (updatedProject !== project) {
+      updatedProjects[projectId] = updatedProject;
     }
   }
 
   // Collect from global notifier configs
+  const updatedNotifiers = config.notifiers ? { ...config.notifiers } : config.notifiers;
   for (const [notifierId, notifierConfig] of Object.entries(config.notifiers ?? {})) {
     if (notifierConfig) {
-      const entry = processExternalPluginConfig(
+      const result = processExternalPluginConfig(
         notifierConfig,
         `notifiers.${notifierId}`,
         { kind: "notifier", notifierId },
         "notifier",
       );
-      if (entry) entries.push(entry);
+      if (result) {
+        entries.push(result.entry);
+        if (updatedNotifiers) {
+          updatedNotifiers[notifierId] = {
+            ...notifierConfig,
+            plugin: result.resolvedPlugin,
+            path: result.resolvedPath,
+          };
+        }
+      }
     }
   }
 
-  return entries;
+  const updatedConfig: OrchestratorConfig = {
+    ...config,
+    projects: updatedProjects,
+    notifiers: updatedNotifiers,
+  };
+
+  return { entries, updatedConfig };
 }
 
 /**
@@ -680,11 +729,11 @@ export function applyGlobalConfigPipeline(raw: OrchestratorConfig): Orchestrator
   let effective = expandPaths(raw);
   effective = applyProjectDefaults(effective);
   effective = applyDefaultReactions(effective);
-  const externalPluginEntries = collectExternalPluginConfigs(effective);
+  const { entries: externalPluginEntries, updatedConfig } = collectExternalPluginConfigs(effective);
   if (externalPluginEntries.length > 0) {
     effective = {
-      ...effective,
-      plugins: mergeExternalPlugins(effective.plugins, externalPluginEntries),
+      ...updatedConfig,
+      plugins: mergeExternalPlugins(updatedConfig.plugins, externalPluginEntries),
       _externalPluginEntries: externalPluginEntries,
     };
   }
@@ -856,11 +905,11 @@ export function validateConfig(raw: unknown): OrchestratorConfig {
 
   // Collect external plugin configs from inline tracker/scm/notifier configs
   // and merge them into config.plugins for loading
-  const externalPluginEntries = collectExternalPluginConfigs(config);
+  const { entries: externalPluginEntries, updatedConfig } = collectExternalPluginConfigs(config);
   if (externalPluginEntries.length > 0) {
     config = {
-      ...config,
-      plugins: mergeExternalPlugins(config.plugins, externalPluginEntries),
+      ...updatedConfig,
+      plugins: mergeExternalPlugins(updatedConfig.plugins, externalPluginEntries),
       _externalPluginEntries: externalPluginEntries,
     };
   }

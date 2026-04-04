@@ -1149,6 +1149,9 @@ export interface ProjectConfig {
   /** Config ownership mode (set at runtime, not persisted) */
   configMode?: ConfigMode;
 
+  /** Per-project config path used for hash-based session directory computation. Set to the local config path in hybrid mode to preserve backward-compatible hashes. */
+  effectiveConfigPath?: string;
+
   /** Override default runtime */
   runtime?: string;
 
