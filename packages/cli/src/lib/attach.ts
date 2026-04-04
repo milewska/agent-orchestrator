@@ -17,13 +17,8 @@ export async function runAttachCommand(
   info: AttachInfo | null | undefined,
   fallback: { program: string; args: string[] },
 ): Promise<void> {
-  const shell = process.env["SHELL"] || "/bin/sh";
-  const program = info?.program ?? (info?.command ? shell : fallback.program);
-  const args = info?.program
-    ? (info.args ?? [])
-    : info?.command
-      ? ["-lc", info.command]
-      : fallback.args;
+  const program = info?.program ?? fallback.program;
+  const args = info?.program ? (info.args ?? []) : fallback.args;
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(program, args, { stdio: "inherit" });

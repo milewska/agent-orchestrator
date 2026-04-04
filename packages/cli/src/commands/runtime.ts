@@ -6,6 +6,7 @@ import {
   loadConfigWithPath,
   type OrchestratorConfig,
   type ProjectConfig,
+  isPlainObject,
 } from "@composio/ao-core";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import {
@@ -27,10 +28,6 @@ interface RuntimeSetOptions {
   network?: string;
   capDrop?: string[];
   tmpfs?: string[];
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readRawConfig(path: string): RawConfig {
