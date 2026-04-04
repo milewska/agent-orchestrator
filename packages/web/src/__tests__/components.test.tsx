@@ -575,7 +575,7 @@ describe("AttentionZone", () => {
 
   it("renders empty state when sessions array is empty", () => {
     render(<AttentionZone level="respond" sessions={[]} />);
-    expect(screen.getByText("No sessions")).toBeInTheDocument();
+    expect(screen.getByText("No agents need your input.")).toBeInTheDocument();
   });
 
   it("shows session cards when not collapsed", () => {

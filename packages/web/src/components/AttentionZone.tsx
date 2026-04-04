@@ -34,37 +34,44 @@ const zoneConfig: Record<
     label: string;
     color: string;
     caption: string;
+    emptyMessage: string;
   }
 > = {
   merge: {
     label: "Ready",
     color: "var(--color-status-ready)",
     caption: "Cleared to land",
+    emptyMessage: "Nothing cleared to land yet.",
   },
   respond: {
     label: "Respond",
     color: "var(--color-status-error)",
     caption: "Human judgment needed",
+    emptyMessage: "No agents need your input.",
   },
   review: {
     label: "Review",
     color: "var(--color-accent-orange)",
     caption: "Code waiting on eyes",
+    emptyMessage: "No code waiting for review.",
   },
   pending: {
     label: "Pending",
     color: "var(--color-status-attention)",
     caption: "Blocked on system state",
+    emptyMessage: "Nothing blocked.",
   },
   working: {
     label: "Working",
     color: "var(--color-status-working)",
     caption: "Agents are actively moving",
+    emptyMessage: "No agents running.",
   },
   done: {
     label: "Done",
     color: "var(--color-text-tertiary)",
     caption: "Completed or exited",
+    emptyMessage: "No completed sessions.",
   },
 };
 
@@ -159,7 +166,7 @@ function AttentionZoneView({
             </div>
           ) : compactMobile ? (
             <div className="mobile-session-list">
-              <div className="mobile-session-list__empty">No sessions</div>
+              <div className="mobile-session-list__empty">{config.emptyMessage}</div>
             </div>
           ) : null}
         </div>
@@ -194,7 +201,7 @@ function AttentionZoneView({
           </div>
         ) : (
           <div className="kanban-column__empty">
-            <span className="kanban-column__empty-label">No sessions</span>
+            <span className="kanban-column__empty-label">{config.emptyMessage}</span>
           </div>
         )}
       </div>
