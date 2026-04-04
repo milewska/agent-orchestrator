@@ -13,6 +13,7 @@ import {
   type Agent,
   type AgentSessionInfo,
   type AgentLaunchConfig,
+  type AgentRuntimeHints,
   type ActivityDetection,
   type ActivityState,
   type PluginModule,
@@ -32,6 +33,9 @@ interface OpenCodeSessionListEntry {
   title?: string;
   updated?: string | number;
 }
+
+const OPENCODE_PROCESS_RE =
+  /(?:^|\/)(?:opencode|\.opencode)(?:\s|$)|(?:^|\/)node(?:\s|$).*(?:^|\s)(?:\/\S*\/opencode|\/\S*\/\.opencode)(?:\s|$)/;
 
 function parseUpdatedTimestamp(updated: string | number | undefined): Date | null {
   if (typeof updated === "number") {
@@ -72,6 +76,66 @@ function parseSessionList(raw: string): OpenCodeSessionListEntry[] {
   });
 }
 
+function extractSessionIdFromArgs(args: string): string | null {
+  const match = args.match(/(?:^|\s)--session\s+(['"]?)(ses_[A-Za-z0-9_-]+)\1(?:\s|$)/);
+  return match?.[2] ?? null;
+}
+
+async function findOpenCodeSessionIdFromRuntime(
+  handle: RuntimeHandle | null,
+): Promise<string | null> {
+  if (!handle) return null;
+
+  try {
+    if (handle.runtimeName === "docker" && handle.id) {
+      const containerName =
+        typeof handle.data["containerName"] === "string" ? handle.data["containerName"] : handle.id;
+      const { stdout } = await execFileAsync(
+        "docker",
+        ["exec", containerName, "ps", "-eo", "args"],
+        { timeout: 30_000 },
+      );
+      for (const line of stdout.split("\n").map((entry) => entry.trim()).filter(Boolean)) {
+        if (!OPENCODE_PROCESS_RE.test(line)) continue;
+        const sessionId = extractSessionIdFromArgs(line);
+        if (sessionId) return sessionId;
+      }
+      return null;
+    }
+
+    if (handle.runtimeName === "tmux" && handle.id) {
+      const { stdout: ttyOut } = await execFileAsync(
+        "tmux",
+        ["list-panes", "-t", handle.id, "-F", "#{pane_tty}"],
+        { timeout: 30_000 },
+      );
+      const ttys = ttyOut
+        .trim()
+        .split("\n")
+        .map((entry) => entry.trim().replace(/^\/dev\//, ""))
+        .filter(Boolean);
+      if (ttys.length === 0) return null;
+
+      const ttySet = new Set(ttys);
+      const { stdout: psOut } = await execFileAsync("ps", ["-eo", "pid,tty,args"], {
+        timeout: 30_000,
+      });
+      for (const line of psOut.split("\n")) {
+        const cols = line.trimStart().split(/\s+/);
+        if (cols.length < 3 || !ttySet.has(cols[1] ?? "")) continue;
+        const args = cols.slice(2).join(" ");
+        if (!OPENCODE_PROCESS_RE.test(args)) continue;
+        const sessionId = extractSessionIdFromArgs(args);
+        if (sessionId) return sessionId;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 /**
  * Parse JSON stream lines from `opencode run --format json` output.
  * Each line is a JSON object. We look for objects containing a session_id field.
@@ -80,20 +144,26 @@ function parseSessionList(raw: string): OpenCodeSessionListEntry[] {
 function buildSessionIdCaptureScript(): string {
   const script = `
 let buffer = '';
-let captured = null;
+let emitted = false;
+const emitAndExit = sid => {
+  if (emitted) return;
+  emitted = true;
+  process.stdout.write(sid);
+  process.exit(0);
+};
 process.stdin.on('data', chunk => {
   buffer += chunk;
   const lines = buffer.split('\\n');
   buffer = lines.pop() || '';
   for (const line of lines) {
-    if (captured) continue;
+    if (emitted) continue;
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
       const obj = JSON.parse(trimmed);
       const sid = (typeof obj.session_id === 'string' && obj.session_id) || (typeof obj.sessionID === 'string' && obj.sessionID);
       if (sid && /^ses_[A-Za-z0-9_-]+$/.test(sid)) {
-        captured = sid;
+        emitAndExit(sid);
       }
     } catch {}
   }
@@ -103,13 +173,9 @@ process.stdin.on('data', chunk => {
       const obj = JSON.parse(buffer.trim());
       const sid = (typeof obj.session_id === 'string' && obj.session_id) || (typeof obj.sessionID === 'string' && obj.sessionID);
       if (sid && /^ses_[A-Za-z0-9_-]+$/.test(sid)) {
-        captured = sid;
+        emitAndExit(sid);
       }
     } catch {}
-  }
-  if (captured) {
-    process.stdout.write(captured);
-    process.exit(0);
   }
   process.exit(1);
 });
@@ -160,6 +226,10 @@ process.stdin.on('data', c => input += c).on('end', () => {
 async function findOpenCodeSession(
   session: Session,
 ): Promise<OpenCodeSessionListEntry | null> {
+  const runtimeSessionId = await findOpenCodeSessionIdFromRuntime(session.runtimeHandle);
+  const mappedSessionId = asValidOpenCodeSessionId(session.metadata?.opencodeSessionId);
+  const preferredSessionId = mappedSessionId ?? runtimeSessionId ?? undefined;
+
   try {
     const { stdout } = await execFileAsync(
       "opencode",
@@ -170,15 +240,23 @@ async function findOpenCodeSession(
     const sessions = parseSessionList(stdout);
 
     // Prefer exact ID match from metadata
-    if (session.metadata?.opencodeSessionId) {
-      const match = sessions.find((s) => s.id === session.metadata.opencodeSessionId);
+    if (preferredSessionId) {
+      const match = sessions.find((s) => s.id === preferredSessionId);
       if (match) return match;
     }
 
     // Fallback: title match — pick the most recently updated session
     // to avoid binding to a stale session when titles collide.
     const titleMatches = sessions.filter((s) => s.title === `AO:${session.id}`);
-    if (titleMatches.length === 0) return null;
+    if (titleMatches.length === 0) {
+      if (runtimeSessionId) {
+        return {
+          id: runtimeSessionId,
+          title: `AO:${session.id}`,
+        };
+      }
+      return null;
+    }
     if (titleMatches.length === 1) return titleMatches[0]!;
     return titleMatches.reduce((best, s) => {
       const bestTs = parseUpdatedTimestamp(best.updated)?.getTime() ?? 0;
@@ -186,6 +264,12 @@ async function findOpenCodeSession(
       return sTs > bestTs ? s : best;
     });
   } catch {
+    if (runtimeSessionId) {
+      return {
+        id: runtimeSessionId,
+        title: `AO:${session.id}`,
+      };
+    }
     return null;
   }
 }
@@ -294,6 +378,32 @@ function createOpenCodeAgent(): Agent {
       return env;
     },
 
+    getRuntimeHints(): AgentRuntimeHints {
+      return {
+        docker: {
+          homeMounts: [
+            { path: ".opencode" },
+            { path: ".config/opencode" },
+            { path: ".local/share/opencode" },
+          ],
+          envFromHost: [
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "GOOGLE_API_KEY",
+            "GEMINI_API_KEY",
+            "ZAI_API_KEY",
+            "ZAI_CODING_PLAN_API_KEY",
+            "KIMI_API_KEY",
+            "OPENROUTER_API_KEY",
+            "GROK_API_KEY",
+            "GITHUB_TOKEN",
+            "COPILOT_API_KEY",
+            "OPENCODE_CONFIG_DIR",
+          ],
+        },
+      };
+    },
+
     detectActivity(terminalOutput: string): ActivityState {
       if (!terminalOutput.trim()) return "idle";
 
@@ -373,25 +483,15 @@ function createOpenCodeAgent(): Agent {
             typeof handle.data["containerName"] === "string"
               ? handle.data["containerName"]
               : handle.id;
-          const tmuxSessionName =
-            typeof handle.data["tmuxSessionName"] === "string"
-              ? handle.data["tmuxSessionName"]
-              : handle.id;
           const { stdout } = await execFileAsync(
             "docker",
-            [
-              "exec",
-              containerName,
-              "tmux",
-              "display-message",
-              "-p",
-              "-t",
-              tmuxSessionName,
-              "#{pane_current_command}",
-            ],
+            ["exec", containerName, "ps", "-eo", "args"],
             { timeout: 30_000 },
           );
-          return stdout.trim() === "opencode";
+          return stdout
+            .split("\n")
+            .map((line) => line.trim())
+            .some((line) => OPENCODE_PROCESS_RE.test(line));
         }
 
         if (handle.runtimeName === "tmux" && handle.id) {
@@ -411,12 +511,11 @@ function createOpenCodeAgent(): Agent {
             timeout: 30_000,
           });
           const ttySet = new Set(ttys.map((t) => t.replace(/^\/dev\//, "")));
-          const processRe = /(?:^|\/)opencode(?:\s|$)/;
           for (const line of psOut.split("\n")) {
             const cols = line.trimStart().split(/\s+/);
             if (cols.length < 3 || !ttySet.has(cols[1] ?? "")) continue;
             const args = cols.slice(2).join(" ");
-            if (processRe.test(args)) {
+            if (OPENCODE_PROCESS_RE.test(args)) {
               return true;
             }
           }

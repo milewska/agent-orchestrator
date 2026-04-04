@@ -58,7 +58,6 @@ import { buildPrompt } from "./prompt-builder.js";
 import {
   getSessionsDir,
   getWorktreesDir,
-  getProjectBaseDir,
   generateTmuxName,
   validateAndStoreOrigin,
 } from "./paths.js";
@@ -808,10 +807,23 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     sessionName: string,
     sessionsDir: string,
     effectiveAgentName: string,
+    agentPlugin: Agent | null,
     sessionListPromise?: Promise<OpenCodeSessionListEntry[]>,
   ): Promise<void> {
     if (effectiveAgentName !== "opencode") return;
     if (asValidOpenCodeSessionId(session.metadata["opencodeSessionId"])) return;
+
+    try {
+      const info = await agentPlugin?.getSessionInfo?.(session);
+      const discoveredFromAgent = asValidOpenCodeSessionId(info?.agentSessionId ?? undefined);
+      if (discoveredFromAgent) {
+        session.metadata["opencodeSessionId"] = discoveredFromAgent;
+        updateMetadata(sessionsDir, sessionName, { opencodeSessionId: discoveredFromAgent });
+        return;
+      }
+    } catch {
+      // Fall through to title-based discovery.
+    }
 
     const discovered = await discoverOpenCodeSessionIdByTitle(
       sessionName,
@@ -875,6 +887,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       sessionName,
       sessionsDir,
       effectiveAgentName,
+      plugins.agent,
       sessionListPromise,
     );
 
@@ -910,8 +923,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     plugins: ReturnType<typeof resolvePlugins>,
     handleFromMetadata: boolean,
   ): Promise<void> {
+    const wasTerminalStatus = TERMINAL_SESSION_STATUSES.has(session.status);
+
     // Skip all subprocess/IO work for sessions already known to be terminal.
-    if (TERMINAL_SESSION_STATUSES.has(session.status)) {
+    if (wasTerminalStatus && !session.runtimeHandle) {
       session.activity = "exited";
       return;
     }
@@ -958,6 +973,27 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         }
       } catch {
         // Can't get session info — keep existing values
+      }
+
+      if (wasTerminalStatus && session.runtimeHandle) {
+        try {
+          const processAlive = await plugins.agent.isProcessRunning(session.runtimeHandle);
+          if (processAlive) {
+            if (session.activity === "waiting_input") {
+              session.status = "needs_input";
+            } else if (session.activity === "blocked") {
+              session.status = "stuck";
+            } else if (session.pr) {
+              session.status = "pr_open";
+            } else {
+              session.status = "working";
+            }
+          } else {
+            session.activity = "exited";
+          }
+        } catch {
+          session.activity = "exited";
+        }
       }
     }
   }
@@ -1207,19 +1243,13 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         await plugins.agent.postLaunchSetup(session);
       }
 
-      if (
-        plugins.agent.name === "opencode" &&
-        opencodeIssueSessionStrategy === "reuse" &&
-        !session.metadata["opencodeSessionId"]
-      ) {
-        const discovered = await discoverOpenCodeSessionIdByTitle(
-          sessionId,
-          OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS,
-        );
-        if (discovered) {
-          session.metadata["opencodeSessionId"] = discovered;
-        }
-      }
+      await ensureOpenCodeSessionMapping(
+        session,
+        sessionId,
+        sessionsDir,
+        plugins.agent.name,
+        plugins.agent,
+      );
 
       if (Object.keys(session.metadata || {}).length > 0) {
         updateMetadata(sessionsDir, sessionId, session.metadata);
@@ -1405,9 +1435,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     let systemPromptFile: string | undefined;
     if (orchestratorConfig.systemPrompt) {
       try {
-        const baseDir = getProjectBaseDir(config.configPath, project.path);
-        mkdirSync(baseDir, { recursive: true });
-        systemPromptFile = join(baseDir, `orchestrator-prompt-${sessionId}.md`);
+        mkdirSync(sessionsDir, { recursive: true });
+        systemPromptFile = join(sessionsDir, `orchestrator-prompt-${sessionId}.md`);
         writeFileSync(systemPromptFile, orchestratorConfig.systemPrompt, "utf-8");
       } catch (err) {
         await cleanupWorktreeAndMetadata(systemPromptFile);
@@ -1901,20 +1930,16 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   }
 
   async function send(sessionId: SessionId, message: string): Promise<void> {
-    const { raw, sessionsDir, project } = requireSessionRecord(sessionId);
+    const { raw, sessionsDir, project, projectId } = requireSessionRecord(sessionId);
+    const pause = getProjectPause(project);
+    if (pause && !isOrchestratorSessionRecord(sessionId, raw, project.sessionPrefix)) {
+      throw new Error(
+        `Project is paused due to model rate limit until ${pause.until.toISOString()} (${pause.reason}; source: ${pause.sourceSessionId})`,
+      );
+    }
 
     const selection = resolveSelectionForSession(project, sessionId, raw);
     const selectedAgent = selection.agentName;
-    if (selectedAgent === "opencode" && !asValidOpenCodeSessionId(raw["opencodeSessionId"])) {
-      const discovered = await discoverOpenCodeSessionIdByTitle(
-        sessionId,
-        OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS,
-      );
-      if (discovered) {
-        raw["opencodeSessionId"] = discovered;
-        updateMetadata(sessionsDir, sessionId, { opencodeSessionId: discovered });
-      }
-    }
     const parsedHandle = raw["runtimeHandle"]
       ? safeJsonParse<RuntimeHandle>(raw["runtimeHandle"])
       : null;
@@ -1929,6 +1954,21 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const agentPlugin = registry.get<Agent>("agent", agentName);
     if (!agentPlugin) {
       throw new Error(`No agent plugin for session ${sessionId}`);
+    }
+
+    if (selectedAgent === "opencode" && !asValidOpenCodeSessionId(raw["opencodeSessionId"])) {
+      const discoverySession = metadataToSession(sessionId, raw, projectId);
+      const info = await agentPlugin.getSessionInfo(discoverySession).catch(() => null);
+      const discovered =
+        asValidOpenCodeSessionId(info?.agentSessionId ?? undefined) ??
+        (await discoverOpenCodeSessionIdByTitle(
+          sessionId,
+          OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS,
+        ));
+      if (discovered) {
+        raw["opencodeSessionId"] = discovered;
+        updateMetadata(sessionsDir, sessionId, { opencodeSessionId: discovered });
+      }
     }
 
     const captureOutput = async (handle: RuntimeHandle): Promise<string> => {
@@ -2281,7 +2321,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   }
 
   async function remap(sessionId: SessionId, force = false): Promise<string> {
-    const { raw, sessionsDir, project } = requireSessionRecord(sessionId);
+    const { raw, sessionsDir, project, projectId } = requireSessionRecord(sessionId);
 
     const selection = resolveSelectionForSession(project, sessionId, raw);
     const selectedAgent = selection.agentName;
@@ -2289,10 +2329,20 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       throw new Error(`Session ${sessionId} is not using the opencode agent`);
     }
 
+    const runtimeName = resolveRuntimeName(project, raw);
+    const plugins = resolvePlugins(project, selectedAgent, runtimeName);
+    const discoverySession = metadataToSession(sessionId, raw, projectId);
+    const discoveredFromAgent = force
+      ? undefined
+      : asValidOpenCodeSessionId(
+          (await plugins.agent?.getSessionInfo?.(discoverySession).catch(() => null))
+            ?.agentSessionId ?? undefined,
+        );
     const mapped = asValidOpenCodeSessionId(raw["opencodeSessionId"]);
     const discovered = force
       ? await discoverOpenCodeSessionIdByTitle(sessionId, OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS)
       : (mapped ??
+        discoveredFromAgent ??
         (await discoverOpenCodeSessionIdByTitle(
           sessionId,
           OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS,
@@ -2344,10 +2394,18 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const selection = resolveSelectionForSession(project, sessionId, raw);
     const selectedAgent = selection.agentName;
     if (selectedAgent === "opencode" && !asValidOpenCodeSessionId(raw["opencodeSessionId"])) {
-      const discovered = await discoverOpenCodeSessionIdByTitle(
-        sessionId,
-        OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS,
-      );
+      const runtimeName = resolveRuntimeName(project, raw);
+      const plugins = resolvePlugins(project, selectedAgent, runtimeName);
+      const discoverySession = metadataToSession(sessionId, raw, projectId);
+      const discovered =
+        asValidOpenCodeSessionId(
+          (await plugins.agent?.getSessionInfo?.(discoverySession).catch(() => null))
+            ?.agentSessionId ?? undefined,
+        ) ??
+        (await discoverOpenCodeSessionIdByTitle(
+          sessionId,
+          OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS,
+        ));
       if (!discovered) {
         throw new SessionNotRestorableError(sessionId, "OpenCode session mapping is missing");
       }

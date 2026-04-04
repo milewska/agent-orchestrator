@@ -304,6 +304,8 @@ export interface AgentDockerHomeMount {
 export interface AgentDockerRuntimeHints {
   /** Files or directories the agent expects under its container HOME. */
   homeMounts?: AgentDockerHomeMount[];
+  /** Host environment variables to copy into Docker sessions when present. */
+  envFromHost?: string[];
 }
 
 export interface AgentRuntimeHints {

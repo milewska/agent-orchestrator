@@ -463,6 +463,7 @@ describe("getRuntimeHints", () => {
     expect(agent.getRuntimeHints?.(makeLaunchConfig())).toEqual({
       docker: {
         homeMounts: [{ path: ".codex" }],
+        envFromHost: ["OPENAI_API_KEY"],
       },
     });
   });

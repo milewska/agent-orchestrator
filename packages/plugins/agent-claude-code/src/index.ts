@@ -7,6 +7,7 @@ import {
   type Agent,
   type AgentSessionInfo,
   type AgentLaunchConfig,
+  type AgentRuntimeHints,
   type ActivityDetection,
   type ActivityState,
   type CostEstimate,
@@ -695,6 +696,15 @@ function createClaudeCodeAgent(): Agent {
       }
 
       return env;
+    },
+
+    getRuntimeHints(): AgentRuntimeHints {
+      return {
+        docker: {
+          homeMounts: [{ path: ".claude" }, { path: ".claude.json", readOnly: true }],
+          envFromHost: ["ANTHROPIC_API_KEY"],
+        },
+      };
     },
 
     detectActivity(terminalOutput: string): ActivityState {

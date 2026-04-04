@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -21,7 +21,7 @@ const SAFE_SESSION_ID = /^[a-zA-Z0-9_-]+$/;
 const LONG_MESSAGE_THRESHOLD = 200;
 const CONTAINER_AO_BIN_DIR = "/tmp/ao/bin";
 const CONTAINER_AO_DATA_DIR = "/tmp/ao/data";
-const CONTAINER_HOME_DIR = "/home/ao";
+const CONTAINER_HOME_DIR = "/tmp/ao-home";
 const AO_METADATA_HELPER = "ao-metadata-helper.sh";
 
 export const manifest = {
@@ -64,6 +64,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function parseDockerRuntimeConfig(config?: Record<string, unknown>): DockerRuntimeConfig {
   return isPlainObject(config) ? (config as DockerRuntimeConfig) : {};
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function pathIsFile(path: string): boolean {
@@ -111,6 +115,18 @@ function dedupeMounts(mounts: VolumeMount[]): VolumeMount[] {
     deduped.set(`${mount.hostPath}->${mount.containerPath}`, mount);
   }
   return [...deduped.values()];
+}
+
+function rewriteMountedPathsInCommand(command: string, mounts: VolumeMount[]): string {
+  const rewrites = mounts
+    .filter((mount) => mount.hostPath && mount.containerPath && mount.hostPath !== mount.containerPath)
+    .sort((left, right) => right.hostPath.length - left.hostPath.length);
+
+  let rewritten = command;
+  for (const mount of rewrites) {
+    rewritten = rewritten.split(mount.hostPath).join(mount.containerPath);
+  }
+  return rewritten;
 }
 
 function findWrapperDir(pathValue?: string): string | undefined {
@@ -189,6 +205,26 @@ function getAgentHomeMounts(
   return mounts;
 }
 
+function applyHostEnvironmentHints(
+  environment: Record<string, string>,
+  hints: AgentDockerRuntimeHints | undefined,
+): Record<string, string> {
+  if (!hints?.envFromHost?.length) {
+    return environment;
+  }
+
+  const prepared = { ...environment };
+  for (const key of hints.envFromHost) {
+    if (!key || prepared[key] !== undefined) continue;
+    const value = process.env[key];
+    if (value !== undefined) {
+      prepared[key] = value;
+    }
+  }
+
+  return prepared;
+}
+
 function prepareContainerEnvironment(
   environment: Record<string, string>,
   hints?: AgentDockerRuntimeHints,
@@ -196,8 +232,10 @@ function prepareContainerEnvironment(
   environment: Record<string, string>;
   mounts: VolumeMount[];
 } {
-  const prepared = { ...environment };
+  const prepared = applyHostEnvironmentHints(environment, hints);
   const mounts: VolumeMount[] = [];
+  const containerHome = prepared["HOME"] || CONTAINER_HOME_DIR;
+  prepared["HOME"] = containerHome;
 
   const wrapperDir = findWrapperDir(prepared["PATH"]);
   if (wrapperDir && pathIsDirectory(wrapperDir)) {
@@ -221,13 +259,10 @@ function prepareContainerEnvironment(
     prepared["AO_DATA_DIR"] = CONTAINER_AO_DATA_DIR;
   }
 
-  const containerHome = prepared["HOME"] || CONTAINER_HOME_DIR;
-  let usingContainerHome = false;
   const hostHome = homedir();
   const agentHomeMounts = getAgentHomeMounts(hints, containerHome);
   if (agentHomeMounts.length > 0) {
     mounts.push(...agentHomeMounts);
-    usingContainerHome = true;
   }
 
   const hostGitConfig = join(hostHome, ".gitconfig");
@@ -237,7 +272,6 @@ function prepareContainerEnvironment(
       containerPath: join(containerHome, ".gitconfig"),
       readOnly: true,
     });
-    usingContainerHome = true;
   }
 
   const hostGitCredentials = join(hostHome, ".git-credentials");
@@ -247,7 +281,6 @@ function prepareContainerEnvironment(
       containerPath: join(containerHome, ".git-credentials"),
       readOnly: true,
     });
-    usingContainerHome = true;
   }
 
   const hostGhConfigDir = join(hostHome, ".config", "gh");
@@ -256,11 +289,6 @@ function prepareContainerEnvironment(
       hostPath: hostGhConfigDir,
       containerPath: join(containerHome, ".config", "gh"),
     });
-    usingContainerHome = true;
-  }
-
-  if (usingContainerHome) {
-    prepared["HOME"] = containerHome;
   }
 
   // GH_PATH is host-resolved by the agent plugin and often invalid in-container.
@@ -282,12 +310,25 @@ async function docker(args: string[]): Promise<string> {
   return stdout.trimEnd();
 }
 
-async function dockerExec(containerName: string, args: string[]): Promise<string> {
-  return docker(["exec", containerName, ...args]);
+async function dockerExec(
+  containerName: string,
+  args: string[],
+  execUser?: string,
+): Promise<string> {
+  const execArgs = ["exec"];
+  if (execUser) {
+    execArgs.push("--user", execUser);
+  }
+  execArgs.push(containerName, ...args);
+  return docker(execArgs);
 }
 
-async function dockerTmux(containerName: string, args: string[]): Promise<string> {
-  return dockerExec(containerName, ["tmux", ...args]);
+async function dockerTmux(
+  containerName: string,
+  args: string[],
+  execUser?: string,
+): Promise<string> {
+  return dockerExec(containerName, ["tmux", ...args], execUser);
 }
 
 function getDefaultDockerUser(): string | undefined {
@@ -307,6 +348,11 @@ function getTmuxSessionName(handle: RuntimeHandle): string {
   return typeof tmuxSessionName === "string" && tmuxSessionName.length > 0
     ? tmuxSessionName
     : handle.id;
+}
+
+function getExecUser(handle: RuntimeHandle): string | undefined {
+  const execUser = handle.data["execUser"];
+  return typeof execUser === "string" && execUser.length > 0 ? execUser : undefined;
 }
 
 function parseCpuPercent(value: unknown): number | undefined {
@@ -373,11 +419,12 @@ async function sendTextToTmux(
   containerName: string,
   tmuxSessionName: string,
   workspacePath: string,
+  execUser: string | undefined,
   text: string,
   clearInput = true,
 ): Promise<void> {
   if (clearInput) {
-    await dockerTmux(containerName, ["send-keys", "-t", tmuxSessionName, "C-u"]);
+    await dockerTmux(containerName, ["send-keys", "-t", tmuxSessionName, "C-u"], execUser);
     await sleep(200);
   }
 
@@ -386,7 +433,7 @@ async function sendTextToTmux(
     const hostTmpPath = join(workspacePath, `.ao-tmux-buffer-${randomUUID()}.txt`);
     writeFileSync(hostTmpPath, text, { encoding: "utf-8", mode: 0o600 });
     try {
-      await dockerTmux(containerName, ["load-buffer", "-b", bufferName, hostTmpPath]);
+      await dockerTmux(containerName, ["load-buffer", "-b", bufferName, hostTmpPath], execUser);
       await dockerTmux(containerName, [
         "paste-buffer",
         "-b",
@@ -394,21 +441,23 @@ async function sendTextToTmux(
         "-t",
         tmuxSessionName,
         "-d",
-      ]);
+      ], execUser);
     } finally {
       try {
         unlinkSync(hostTmpPath);
       } catch {
         // ignore cleanup failure
       }
-      await dockerTmux(containerName, ["delete-buffer", "-b", bufferName]).catch(() => undefined);
+      await dockerTmux(containerName, ["delete-buffer", "-b", bufferName], execUser).catch(
+        () => undefined,
+      );
     }
   } else {
-    await dockerTmux(containerName, ["send-keys", "-t", tmuxSessionName, "-l", text]);
+    await dockerTmux(containerName, ["send-keys", "-t", tmuxSessionName, "-l", text], execUser);
   }
 
   await sleep(300);
-  await dockerTmux(containerName, ["send-keys", "-t", tmuxSessionName, "Enter"]);
+  await dockerTmux(containerName, ["send-keys", "-t", tmuxSessionName, "Enter"], execUser);
 }
 
 export function create(): Runtime {
@@ -426,6 +475,7 @@ export function create(): Runtime {
       const containerName = config.sessionId;
       const tmuxSessionName = config.sessionId;
       const shell = runtimeConfig.shell ?? "/bin/sh";
+      const execUser = runtimeConfig.user ?? getDefaultDockerUser();
       const preparedEnvironment = prepareContainerEnvironment(
         config.environment ?? {},
         config.agentRuntimeHints?.docker,
@@ -434,16 +484,18 @@ export function create(): Runtime {
         ...getWorkspaceMounts(config.workspacePath),
         ...preparedEnvironment.mounts,
       ]);
+      const launchCommand = rewriteMountedPathsInCommand(config.launchCommand, mounts);
 
       const runArgs = ["run", "-d", "--name", containerName, "--workdir", config.workspacePath];
 
       for (const mount of mounts) {
         runArgs.push("--volume", toVolumeArg(mount));
       }
-
-      const dockerUser = runtimeConfig.user ?? getDefaultDockerUser();
-      if (dockerUser) {
-        runArgs.push("--user", dockerUser);
+      for (const [key, value] of Object.entries(preparedEnvironment.environment)) {
+        runArgs.push("--env", `${key}=${value}`);
+      }
+      if (execUser) {
+        runArgs.push("--user", execUser);
       }
       if (runtimeConfig.network) {
         runArgs.push("--network", runtimeConfig.network);
@@ -471,11 +523,18 @@ export function create(): Runtime {
         runtimeConfig.image,
         shell,
         "-lc",
-        "trap 'exit 0' TERM INT; while :; do sleep 3600; done",
+        'mkdir -p "$HOME"; trap \'exit 0\' TERM INT; while :; do sleep 3600; done',
       );
 
       try {
         await docker(runArgs);
+        const homeInitCommand = execUser
+          ? [
+            'mkdir -p "$HOME" "$HOME/.cache" "$HOME/.config" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/state"',
+            `chown ${shellQuote(execUser)} "$HOME" "$HOME/.cache" "$HOME/.config" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/state" 2>/dev/null || true`,
+          ].join("; ")
+          : 'mkdir -p "$HOME" "$HOME/.cache" "$HOME/.config" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/state"';
+        await dockerExec(containerName, [shell, "-lc", homeInitCommand], execUser ? "0:0" : undefined);
         const envArgs: string[] = [];
         for (const [key, value] of Object.entries(preparedEnvironment.environment)) {
           envArgs.push("-e", `${key}=${value}`);
@@ -488,12 +547,13 @@ export function create(): Runtime {
           "-c",
           config.workspacePath,
           ...envArgs,
-        ]);
+        ], execUser);
         await sendTextToTmux(
           containerName,
           tmuxSessionName,
           config.workspacePath,
-          config.launchCommand,
+          execUser,
+          launchCommand,
           false,
         );
       } catch (err) {
@@ -514,6 +574,7 @@ export function create(): Runtime {
           containerName,
           tmuxSessionName,
           workspacePath: config.workspacePath,
+          execUser,
           createdAt: Date.now(),
         },
       };
@@ -528,6 +589,7 @@ export function create(): Runtime {
         getContainerName(handle),
         getTmuxSessionName(handle),
         handle.data["workspacePath"] as string,
+        getExecUser(handle),
         message,
         true,
       );
@@ -542,7 +604,7 @@ export function create(): Runtime {
           "-p",
           "-S",
           `-${lines}`,
-        ]);
+        ], getExecUser(handle));
       } catch {
         return "";
       }
@@ -573,12 +635,23 @@ export function create(): Runtime {
     async getAttachInfo(handle: RuntimeHandle): Promise<AttachInfo> {
       const containerName = getContainerName(handle);
       const tmuxSessionName = getTmuxSessionName(handle);
+      const execUser = getExecUser(handle);
+      const attachArgs = [
+        "exec",
+        "-it",
+        ...(execUser ? ["--user", execUser] : []),
+        containerName,
+        "tmux",
+        "attach",
+        "-t",
+        tmuxSessionName,
+      ];
       return {
         type: "docker",
         target: containerName,
-        command: `docker exec -it ${containerName} tmux attach -t ${tmuxSessionName}`,
+        command: ["docker", ...attachArgs].join(" "),
         program: "docker",
-        args: ["exec", "-it", containerName, "tmux", "attach", "-t", tmuxSessionName],
+        args: attachArgs,
         requiresPty: true,
       };
     },

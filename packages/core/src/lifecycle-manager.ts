@@ -53,6 +53,8 @@ function resolveRuntimeNameForSession(
   );
 }
 
+const SPAWNING_KILL_GRACE_MS = 60_000;
+
 /** Parse a duration string like "10m", "30s", "1h" to milliseconds. */
 function parseDuration(str: string): number {
   const match = str.match(/^(\d+)(s|m|h)$/);
@@ -361,6 +363,17 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     return idleMs > stuckThresholdMs;
   }
 
+  function isWithinSpawnGrace(session: Session): boolean {
+    const persistedStatus = session.metadata?.["status"] as SessionStatus | undefined;
+    const effectiveStatus = persistedStatus ?? session.status;
+    if (effectiveStatus !== SESSION_STATUS.SPAWNING) {
+      return false;
+    }
+
+    const startedAt = session.restoredAt ?? session.createdAt;
+    return Date.now() - startedAt.getTime() < SPAWNING_KILL_GRACE_MS;
+  }
+
   /** Determine current status for a session by polling plugins. */
   async function determineStatus(session: Session): Promise<SessionStatus> {
     const project = config.projects[session.projectId];
@@ -374,6 +387,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     }).agentName;
     const agent = registry.get<Agent>("agent", agentName);
     const scm = project.scm?.plugin ? registry.get<SCM>("scm", project.scm.plugin) : null;
+    const withinSpawnGrace = isWithinSpawnGrace(session);
 
     // Track activity state across steps so stuck detection can run after PR checks
     let detectedIdleTimestamp: Date | null = null;
@@ -414,7 +428,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         const activityState = await agent.getActivityState(session, config.readyThresholdMs);
         if (activityState) {
           if (activityState.state === "waiting_input") return "needs_input";
-          if (activityState.state === "exited") return "killed";
+          if (activityState.state === "exited") return withinSpawnGrace ? "spawning" : "killed";
 
           if (
             (activityState.state === "idle" || activityState.state === "blocked") &&
@@ -435,7 +449,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             if (activity === "waiting_input") return "needs_input";
 
             const processAlive = await agent.isProcessRunning(session.runtimeHandle);
-            if (!processAlive) return "killed";
+            if (!processAlive) return withinSpawnGrace ? "spawning" : "killed";
           }
         }
       } catch {

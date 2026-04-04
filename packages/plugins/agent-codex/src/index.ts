@@ -480,6 +480,7 @@ function createCodexAgent(): Agent {
       return {
         docker: {
           homeMounts: [{ path: ".codex" }],
+          envFromHost: ["OPENAI_API_KEY"],
         },
       };
     },

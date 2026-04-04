@@ -58,6 +58,16 @@ function makeSession(overrides: Partial<Session> = {}): Session {
 function makeTmuxHandle(id = "test-session"): RuntimeHandle {
   return { id, runtimeName: "tmux", data: {} };
 }
+function makeDockerHandle(id = "container-1"): RuntimeHandle {
+  return {
+    id,
+    runtimeName: "docker",
+    data: {
+      containerName: id,
+      tmuxSessionName: id,
+    },
+  };
+}
 function makeProcessHandle(pid?: number | string): RuntimeHandle {
   return { id: "proc-1", runtimeName: "process", data: pid !== undefined ? { pid } : {} };
 }
@@ -456,8 +466,65 @@ describe("getEnvironment", () => {
   });
 });
 
+describe("getRuntimeHints", () => {
+  const agent = create();
+
+  it("requests OpenCode config, storage, and provider env passthrough for Docker runtimes", () => {
+    expect(agent.getRuntimeHints?.(makeLaunchConfig())).toEqual({
+      docker: {
+        homeMounts: [
+          { path: ".opencode" },
+          { path: ".config/opencode" },
+          { path: ".local/share/opencode" },
+        ],
+        envFromHost: [
+          "ANTHROPIC_API_KEY",
+          "OPENAI_API_KEY",
+          "GOOGLE_API_KEY",
+          "GEMINI_API_KEY",
+          "ZAI_API_KEY",
+          "ZAI_CODING_PLAN_API_KEY",
+          "KIMI_API_KEY",
+          "OPENROUTER_API_KEY",
+          "GROK_API_KEY",
+          "GITHUB_TOKEN",
+          "COPILOT_API_KEY",
+          "OPENCODE_CONFIG_DIR",
+        ],
+      },
+    });
+  });
+});
+
 describe("isProcessRunning", () => {
   const agent = create();
+
+  it("returns true for docker runtimes when OpenCode runs via node", async () => {
+    mockExecFileAsync.mockResolvedValue({
+      stdout: "COMMAND\nnode /usr/local/bin/opencode --session ses_123\n",
+      stderr: "",
+    });
+
+    expect(await agent.isProcessRunning(makeDockerHandle())).toBe(true);
+  });
+
+  it("returns true for docker runtimes when OpenCode runs via bundled binary", async () => {
+    mockExecFileAsync.mockResolvedValue({
+      stdout: "COMMAND\n/usr/local/lib/node_modules/opencode-ai/bin/.opencode --session ses_123\n",
+      stderr: "",
+    });
+
+    expect(await agent.isProcessRunning(makeDockerHandle())).toBe(true);
+  });
+
+  it("returns false for docker runtimes when no OpenCode process is present", async () => {
+    mockExecFileAsync.mockResolvedValue({
+      stdout: "COMMAND\n/bin/sh -lc sleep 3600\n",
+      stderr: "",
+    });
+
+    expect(await agent.isProcessRunning(makeDockerHandle())).toBe(false);
+  });
 
   it("returns true when opencode found on tmux pane TTY", async () => {
     mockTmuxWithProcess("opencode");

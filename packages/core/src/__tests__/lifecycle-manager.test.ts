@@ -236,6 +236,17 @@ describe("check (single session)", () => {
     expect(lm.getStates().get("app-1")).toBe("killed");
   });
 
+  it("keeps freshly spawned sessions in spawning when getActivityState transiently reports exited", async () => {
+    vi.mocked(plugins.agent.getActivityState).mockResolvedValue({ state: "exited" });
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "spawning", createdAt: new Date() }),
+    });
+
+    await lm.check("app-1");
+    expect(lm.getStates().get("app-1")).toBe("spawning");
+  });
+
   it("detects killed via terminal fallback when getActivityState returns null", async () => {
     vi.mocked(plugins.agent.getActivityState).mockResolvedValue(null);
     vi.mocked(plugins.agent.detectActivity).mockReturnValue("idle");
@@ -247,6 +258,19 @@ describe("check (single session)", () => {
 
     await lm.check("app-1");
     expect(lm.getStates().get("app-1")).toBe("killed");
+  });
+
+  it("keeps freshly spawned sessions in spawning when fallback process detection is briefly false", async () => {
+    vi.mocked(plugins.agent.getActivityState).mockResolvedValue(null);
+    vi.mocked(plugins.agent.detectActivity).mockReturnValue("idle");
+    vi.mocked(plugins.agent.isProcessRunning).mockResolvedValue(false);
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "spawning", createdAt: new Date() }),
+    });
+
+    await lm.check("app-1");
+    expect(lm.getStates().get("app-1")).toBe("spawning");
   });
 
   it("stays working when agent is idle but process is still running (fallback path)", async () => {

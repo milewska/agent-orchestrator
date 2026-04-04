@@ -182,6 +182,87 @@ describe("doctor command", () => {
     expect(output).toContain('defaults.notifiers: alerts (plugin: slack) -> notifier plugin "slack"');
   });
 
+  it("warns when Claude Code uses docker without ANTHROPIC_API_KEY", async () => {
+    const config = makeConfig();
+    config.projects["my-app"].runtime = "docker";
+    mockFindConfigFile.mockReturnValue(config.configPath);
+    mockLoadConfig.mockReturnValue(config);
+
+    mockRegistry.list.mockImplementation((slot: string) => {
+      switch (slot) {
+        case "runtime":
+          return [manifest("runtime", "tmux"), manifest("runtime", "docker")];
+        case "agent":
+          return [manifest("agent", "claude-code"), manifest("agent", "codex")];
+        case "workspace":
+          return [manifest("workspace", "worktree")];
+        case "tracker":
+          return [manifest("tracker", "github")];
+        case "scm":
+          return [manifest("scm", "github")];
+        case "notifier":
+          return [manifest("notifier", "slack")];
+        default:
+          return [];
+      }
+    });
+
+    const originalAnthropic = process.env["ANTHROPIC_API_KEY"];
+    delete process.env["ANTHROPIC_API_KEY"];
+    try {
+      await program.parseAsync(["node", "test", "doctor"]);
+    } finally {
+      if (originalAnthropic !== undefined) {
+        process.env["ANTHROPIC_API_KEY"] = originalAnthropic;
+      }
+    }
+
+    const output = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
+    expect(output).toContain("projects.my-app (worker) uses Claude Code with docker");
+  });
+
+  it("does not warn about Claude Docker portability when ANTHROPIC_API_KEY is set", async () => {
+    const config = makeConfig();
+    config.projects["my-app"].runtime = "docker";
+    mockFindConfigFile.mockReturnValue(config.configPath);
+    mockLoadConfig.mockReturnValue(config);
+
+    mockRegistry.list.mockImplementation((slot: string) => {
+      switch (slot) {
+        case "runtime":
+          return [manifest("runtime", "tmux"), manifest("runtime", "docker")];
+        case "agent":
+          return [manifest("agent", "claude-code"), manifest("agent", "codex")];
+        case "workspace":
+          return [manifest("workspace", "worktree")];
+        case "tracker":
+          return [manifest("tracker", "github")];
+        case "scm":
+          return [manifest("scm", "github")];
+        case "notifier":
+          return [manifest("notifier", "slack")];
+        default:
+          return [];
+      }
+    });
+
+    const originalAnthropic = process.env["ANTHROPIC_API_KEY"];
+    process.env["ANTHROPIC_API_KEY"] = "sk-ant-test";
+    try {
+      await program.parseAsync(["node", "test", "doctor"]);
+    } finally {
+      if (originalAnthropic === undefined) {
+        delete process.env["ANTHROPIC_API_KEY"];
+      } else {
+        process.env["ANTHROPIC_API_KEY"] = originalAnthropic;
+      }
+    }
+
+    const output = consoleLogSpy.mock.calls.map((call) => call[0]).join("\n");
+    expect(output).toContain("No known Docker agent portability warnings detected");
+    expect(output).not.toContain("uses Claude Code with docker");
+  });
+
   it("fails when a referenced plugin cannot be loaded", async () => {
     const config = makeConfig();
     config.projects["my-app"].scm = { plugin: "gitlab" };

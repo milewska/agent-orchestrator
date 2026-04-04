@@ -152,6 +152,7 @@ describe("runtime.create()", () => {
     mockDockerSuccess();
     mockDockerSuccess();
     mockDockerSuccess();
+    mockDockerSuccess();
 
     const runtime = create();
     const handle = await runtime.create({
@@ -181,6 +182,12 @@ describe("runtime.create()", () => {
       "/tmp/workspace",
       "--volume",
       "/tmp/workspace:/tmp/workspace",
+      "--env",
+      "AO_SESSION=docker-session",
+      "--env",
+      "FOO=bar",
+      "--env",
+      "HOME=/tmp/ao-home",
       ...(typeof process.getuid === "function" && typeof process.getgid === "function"
         ? ["--user", `${process.getuid()}:${process.getgid()}`]
         : []),
@@ -200,7 +207,7 @@ describe("runtime.create()", () => {
       "ghcr.io/example/ao:latest",
       "/bin/sh",
       "-lc",
-      "trap 'exit 0' TERM INT; while :; do sleep 3600; done",
+      'mkdir -p "$HOME"; trap \'exit 0\' TERM INT; while :; do sleep 3600; done',
     ];
 
     expect(handle).toEqual({
@@ -210,6 +217,10 @@ describe("runtime.create()", () => {
         containerName: "docker-session",
         tmuxSessionName: "docker-session",
         workspacePath: "/tmp/workspace",
+        execUser:
+          typeof process.getuid === "function" && typeof process.getgid === "function"
+            ? `${process.getuid()}:${process.getgid()}`
+            : undefined,
       }),
     });
 
@@ -225,6 +236,25 @@ describe("runtime.create()", () => {
       "docker",
       [
         "exec",
+        ...(typeof process.getuid === "function" && typeof process.getgid === "function"
+          ? ["--user", "0:0"]
+          : []),
+        "docker-session",
+        "/bin/sh",
+        "-lc",
+        expect.stringContaining('mkdir -p "$HOME" "$HOME/.cache" "$HOME/.config"'),
+      ],
+      expectedDockerOptions,
+    );
+
+    expect(mockExecFileCustom).toHaveBeenNthCalledWith(
+      3,
+      "docker",
+      [
+        "exec",
+        ...(typeof process.getuid === "function" && typeof process.getgid === "function"
+          ? ["--user", `${process.getuid()}:${process.getgid()}`]
+          : []),
         "docker-session",
         "tmux",
         "new-session",
@@ -237,15 +267,20 @@ describe("runtime.create()", () => {
         "AO_SESSION=docker-session",
         "-e",
         "FOO=bar",
+        "-e",
+        "HOME=/tmp/ao-home",
       ],
       expectedDockerOptions,
     );
 
     expect(mockExecFileCustom).toHaveBeenNthCalledWith(
-      3,
+      4,
       "docker",
       [
         "exec",
+        ...(typeof process.getuid === "function" && typeof process.getgid === "function"
+          ? ["--user", `${process.getuid()}:${process.getgid()}`]
+          : []),
         "docker-session",
         "tmux",
         "send-keys",
@@ -257,9 +292,20 @@ describe("runtime.create()", () => {
       expectedDockerOptions,
     );
     expect(mockExecFileCustom).toHaveBeenNthCalledWith(
-      4,
+      5,
       "docker",
-      ["exec", "docker-session", "tmux", "send-keys", "-t", "docker-session", "Enter"],
+      [
+        "exec",
+        ...(typeof process.getuid === "function" && typeof process.getgid === "function"
+          ? ["--user", `${process.getuid()}:${process.getgid()}`]
+          : []),
+        "docker-session",
+        "tmux",
+        "send-keys",
+        "-t",
+        "docker-session",
+        "Enter",
+      ],
       expectedDockerOptions,
     );
   });
@@ -282,6 +328,7 @@ describe("runtime.create()", () => {
     ]);
 
     mockDockerSuccess("container-id");
+    mockDockerSuccess();
     mockDockerSuccess();
     mockDockerSuccess();
     mockDockerSuccess();
@@ -322,20 +369,23 @@ describe("runtime.create()", () => {
         "--volume",
         "/host/.agent/sessions:/tmp/ao/data",
         "--volume",
-        "/host/home/.codex:/home/ao/.codex",
+        "/host/home/.codex:/tmp/ao-home/.codex",
         "--volume",
-        "/host/home/.gitconfig:/home/ao/.gitconfig:ro",
+        "/host/home/.gitconfig:/tmp/ao-home/.gitconfig:ro",
         "--volume",
-        "/host/home/.git-credentials:/home/ao/.git-credentials:ro",
+        "/host/home/.git-credentials:/tmp/ao-home/.git-credentials:ro",
         "--volume",
-        "/host/home/.config/gh:/home/ao/.config/gh",
+        "/host/home/.config/gh:/tmp/ao-home/.config/gh",
         "ao-fake-codex:latest",
       ]),
     );
 
-    const tmuxArgs = mockExecFileCustom.mock.calls[1]?.[1] as string[];
+    const tmuxArgs = mockExecFileCustom.mock.calls[2]?.[1] as string[];
     expect(tmuxArgs).toEqual([
       "exec",
+      ...(typeof process.getuid === "function" && typeof process.getgid === "function"
+        ? ["--user", `${process.getuid()}:${process.getgid()}`]
+        : []),
       "docker-session",
       "tmux",
       "new-session",
@@ -351,7 +401,7 @@ describe("runtime.create()", () => {
       "-e",
       "AO_DATA_DIR=/tmp/ao/data",
       "-e",
-      "HOME=/home/ao",
+      "HOME=/tmp/ao-home",
     ]);
   });
 
@@ -362,6 +412,7 @@ describe("runtime.create()", () => {
     ]);
 
     mockDockerSuccess("container-id");
+    mockDockerSuccess();
     mockDockerSuccess();
     mockDockerSuccess();
     mockDockerSuccess();
@@ -377,12 +428,94 @@ describe("runtime.create()", () => {
     });
 
     const runArgs = mockExecFileCustom.mock.calls[0]?.[1] as string[];
-    expect(runArgs).toContain("/host/home/.gitconfig:/home/ao/.gitconfig:ro");
-    expect(runArgs).not.toContain("/host/home/.codex:/home/ao/.codex");
+    expect(runArgs).toContain("/host/home/.gitconfig:/tmp/ao-home/.gitconfig:ro");
+    expect(runArgs).not.toContain("/host/home/.codex:/tmp/ao-home/.codex");
+  });
+
+  it("passes through requested host env vars when present", async () => {
+    const originalOpenAiKey = process.env["OPENAI_API_KEY"];
+    process.env["OPENAI_API_KEY"] = "sk-test-openai";
+    try {
+      mockDockerSuccess("container-id");
+      mockDockerSuccess();
+      mockDockerSuccess();
+      mockDockerSuccess();
+      mockDockerSuccess();
+
+      await create().create({
+        sessionId: "docker-session",
+        workspacePath: "/tmp/workspace",
+        launchCommand: "codex --model gpt-5",
+        agentRuntimeHints: {
+          docker: {
+            envFromHost: ["OPENAI_API_KEY"],
+          },
+        },
+        environment: {
+          AO_SESSION: "docker-session",
+        },
+        runtimeConfig: { image: "ao-fake-codex:latest" },
+      });
+
+      const runArgs = mockExecFileCustom.mock.calls[0]?.[1] as string[];
+      expect(runArgs).toContain("OPENAI_API_KEY=sk-test-openai");
+      const tmuxArgs = mockExecFileCustom.mock.calls[2]?.[1] as string[];
+      expect(tmuxArgs).toContain("OPENAI_API_KEY=sk-test-openai");
+    } finally {
+      if (originalOpenAiKey === undefined) {
+        delete process.env["OPENAI_API_KEY"];
+      } else {
+        process.env["OPENAI_API_KEY"] = originalOpenAiKey;
+      }
+    }
+  });
+
+  it("rewrites mounted host paths inside the launch command before sending it to tmux", async () => {
+    addFileSystemEntries([
+      { path: "/host/.agent/sessions", kind: "dir" },
+    ]);
+
+    mockDockerSuccess("container-id");
+    mockDockerSuccess();
+    mockDockerSuccess();
+    mockDockerSuccess();
+    mockDockerSuccess();
+
+    await create().create({
+      sessionId: "docker-session",
+      workspacePath: "/tmp/workspace",
+      launchCommand:
+        "claude --append-system-prompt \"$(cat '/host/.agent/sessions/orchestrator-prompt.md')\"",
+      environment: {
+        AO_SESSION: "docker-session",
+        AO_DATA_DIR: "/host/.agent/sessions",
+      },
+      runtimeConfig: { image: "ao-real-claude:latest" },
+    });
+
+    expect(mockExecFileCustom).toHaveBeenNthCalledWith(
+      4,
+      "docker",
+      [
+        "exec",
+        ...(typeof process.getuid === "function" && typeof process.getgid === "function"
+          ? ["--user", `${process.getuid()}:${process.getgid()}`]
+          : []),
+        "docker-session",
+        "tmux",
+        "send-keys",
+        "-t",
+        "docker-session",
+        "-l",
+        "claude --append-system-prompt \"$(cat '/tmp/ao/data/orchestrator-prompt.md')\"",
+      ],
+      expectedDockerOptions,
+    );
   });
 
   it("removes the container if startup fails", async () => {
     mockDockerSuccess("container-id");
+    mockDockerSuccess();
     mockDockerError("tmux missing");
     mockDockerSuccess();
 
