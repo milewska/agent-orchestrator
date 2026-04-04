@@ -505,7 +505,14 @@ async function ghWithRetry(
       console.warn(
         "Gh CLI rate limit retries exhausted, trying REST API fallback for `gh pr view` call",
       );
-      return await fetchPrViewFallbackAsJson(conv, cwd);
+      try {
+        return await fetchPrViewFallbackAsJson(conv, cwd);
+      } catch {
+        // REST fallback failed — re-throw the original rate-limit error so
+        // callers see a rate-limit error and take the correct fallback branch.
+        if (lastError instanceof Error) throw lastError;
+        throw new Error(String(lastError));
+      }
     }
   }
 
@@ -1272,7 +1279,14 @@ function createGitHubSCM(): SCM {
           try {
             checks = await getCIChecksFromStatusRollup(pr);
           } catch {
-            // If the secondary fallback also fails, fail-closed.
+            // Secondary fallback also failed. Check merged/closed before
+            // fail-closing — same as the non-rate-limit path below.
+            try {
+              const state = await this.getPRState(pr);
+              if (state === "merged" || state === "closed") return "none";
+            } catch {
+              // Can't determine state; fall through to fail-closed.
+            }
             return "failing";
           }
         } else {
