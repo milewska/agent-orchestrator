@@ -338,13 +338,16 @@ export async function ghRestFallback(args: string[]): Promise<string> {
   }
 
   // Find the first positional argument (endpoint) — skip flags like --method, -X, etc.
+  // Track the index so the flag collection loop below can skip it correctly.
   let endpoint = "";
+  let endpointIdx = -1;
   for (let i = 0; i < apiArgs.length; i++) {
     const arg = apiArgs[i];
     if (arg === "--method" || arg === "-X") {
       i++; // Skip the method value
     } else if (!arg.startsWith("-")) {
       endpoint = arg;
+      endpointIdx = i;
       break;
     }
   }
@@ -372,10 +375,13 @@ export async function ghRestFallback(args: string[]): Promise<string> {
     // No auth available — continue without token (hits lower rate limits)
   }
 
+  // Collect flags from ALL positions in apiArgs (except the endpoint itself).
+  // Starting from 0 (not 1) ensures flags before the endpoint are included.
   const queryParts: string[] = [];
   const curlFlags: string[] = [];
 
-  for (let i = 1; i < apiArgs.length; i++) {
+  for (let i = 0; i < apiArgs.length; i++) {
+    if (i === endpointIdx) continue; // skip the endpoint
     const arg = apiArgs[i];
     if (arg.startsWith("?")) {
       queryParts.push(arg.slice(1));
@@ -586,9 +592,13 @@ async function fetchCheckRunsViaRest(repo: string, sha: string, cwd?: string): P
         detailsUrl: r.html_url,
       };
     });
-  } catch {
-    // Best-effort: return empty rollup rather than failing the whole fallback
-    return [];
+  } catch (err) {
+    // Propagate errors so callers can fail-closed rather than treating
+    // a fetch failure as "no checks" (which getMergeability treats as passing).
+    throw new Error(
+      `fetchCheckRunsViaRest: failed to fetch check-runs for ${repo}@${sha}: ${(err as Error).message}`,
+      { cause: err },
+    );
   }
 }
 
@@ -597,15 +607,13 @@ async function fetchCheckRunsViaRest(repo: string, sha: string, cwd?: string): P
  * Fetches head SHA from REST PR endpoint, then retrieves check-runs.
  */
 async function getCIChecksFromStatusRollupViaRest(pr: PRInfo): Promise<CICheck[]> {
-  let sha: string | undefined;
-  try {
-    const prRaw = await gh(["api", `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`]);
-    const prData = JSON.parse(prRaw) as { head?: { sha?: unknown } };
-    sha = typeof prData.head?.sha === "string" ? prData.head.sha : undefined;
-  } catch {
-    return [];
+  // Errors propagate to the caller (getCISummary), which will fail-closed ("failing").
+  const prRaw = await gh(["api", `repos/${pr.owner}/${pr.repo}/pulls/${pr.number}`]);
+  const prData = JSON.parse(prRaw) as { head?: { sha?: unknown } };
+  const sha = typeof prData.head?.sha === "string" ? prData.head.sha : undefined;
+  if (!sha) {
+    throw new Error(`getCIChecksFromStatusRollupViaRest: could not determine head SHA for PR #${pr.number}`);
   }
-  if (!sha) return [];
 
   const rollup = await fetchCheckRunsViaRest(`${pr.owner}/${pr.repo}`, sha);
   return (rollup as Record<string, unknown>[])
