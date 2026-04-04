@@ -97,7 +97,6 @@ export function resolveMultiProjectStart(
         messages.push({ level: "warn", text: `Could not sync local config: ${err instanceof Error ? err.message : String(err)}` });
       }
 
-      saveGlobalConfig(globalConfig);
       messages.push({ level: "success", text: `Registered project "${projectId}" (hybrid mode)` });
     } else {
       return null;
@@ -124,10 +123,19 @@ export function resolveMultiProjectStart(
     }
   }
 
-  // 4. Build effective config via the shared pipeline (single source of truth in config.ts)
+  // 4. Build effective config via the shared pipeline (single source of truth in config.ts).
+  // validateProjectUniqueness runs inside applyGlobalConfigPipeline — run this BEFORE
+  // saveGlobalConfig so that a session prefix collision throws before the broken state
+  // is persisted to disk.
   const globalPath = findGlobalConfigPath();
   const built = buildEffectiveConfig(globalConfig, globalPath);
   const effectiveConfig = applyGlobalConfigPipeline(built);
+
+  // 5. Persist only after validation passes (new registrations only — already-registered
+  //    projects don't modify globalConfig so nothing to save).
+  if (!matchProjectByCwd(loadGlobalConfig()!, resolvedDir)) {
+    saveGlobalConfig(globalConfig);
+  }
 
   return { config: effectiveConfig, projectId, messages };
 }
