@@ -616,12 +616,21 @@ async function fetchCheckRunsViaRest(repo: string, sha: string, cwd?: string): P
     // But when `ghRestFallback` (curl) is used, --jq is dropped and the raw
     // GitHub response is {"total_count":N,"check_runs":[...]}. Detect which
     // format we received and parse accordingly.
-    const trimmed = raw.trim();
+    // Try to parse as JSON first: if the whole response is a single valid
+    // JSON object with a `check_runs` array, it is the curl-fallback wrapper
+    // format. Otherwise fall through to NDJSON line-by-line parsing.
+    // Avoid substring matching (e.g. includes('"check_runs"')) which would
+    // also match if a check-run's name value happens to equal "check_runs".
     let items: Record<string, unknown>[];
-    if (trimmed.startsWith("{") && trimmed.includes('"check_runs"')) {
+    let parsedWhole: Record<string, unknown> | undefined;
+    try {
+      parsedWhole = JSON.parse(raw.trim()) as Record<string, unknown>;
+    } catch {
+      // Not a single JSON object — must be multi-line NDJSON (fall through).
+    }
+    if (parsedWhole !== undefined && Array.isArray(parsedWhole.check_runs)) {
       // Raw wrapper object from curl fallback — extract the array directly.
-      const wrapper = JSON.parse(trimmed) as Record<string, unknown>;
-      items = (wrapper.check_runs ?? []) as Record<string, unknown>[];
+      items = parsedWhole.check_runs as Record<string, unknown>[];
     } else {
       // NDJSON from `gh` with --jq: one check-run object per line.
       items = raw
