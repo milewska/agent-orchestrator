@@ -46,7 +46,7 @@ import {
   findFreePort,
   MAX_PORT_SCAN,
 } from "../lib/web-dir.js";
-import { cleanNextCache } from "../lib/dashboard-rebuild.js";
+import { rebuildDashboardProductionArtifacts } from "../lib/dashboard-rebuild.js";
 import { preflight } from "../lib/preflight.js";
 import { register, unregister, isAlreadyRunning, getRunning, waitForExit } from "../lib/running-state.js";
 import { isHumanCaller } from "../lib/caller-context.js";
@@ -748,24 +748,6 @@ export async function createConfigOnly(): Promise<void> {
  * Returns the child process handle for cleanup.
  */
 /* c8 ignore start -- process-spawning startup code, tested via integration/onboarding */
-async function buildDashboard(webDir: string, env: NodeJS.ProcessEnv): Promise<void> {
-  const spinner = ora();
-  spinner.start("Building optimized dashboard (~15s)");
-  try {
-    const { spawnSync } = await import("node:child_process");
-    const result = spawnSync("pnpm", ["run", "build"], { cwd: webDir, stdio: "pipe", env });
-    if (result.status !== 0) {
-      spinner.fail("Dashboard build failed");
-      const stderr = result.stderr?.toString() ?? "";
-      throw new Error(`Dashboard build exited with code ${result.status}\n${stderr}`);
-    }
-    spinner.succeed("Dashboard built");
-  } catch (err) {
-    spinner.fail("Dashboard build failed");
-    throw err;
-  }
-}
-
 async function startDashboard(
   port: number,
   webDir: string,
@@ -781,7 +763,7 @@ async function startDashboard(
   const isMonorepo = existsSync(resolve(webDir, "server"));
 
   // In monorepo: use HMR dev server only when --dev is passed explicitly.
-  // Default is optimized mode (production build + start-all) for faster loading.
+  // Default is optimized production server for faster loading.
   const useDevServer = isMonorepo && devMode === true;
 
   let child: ChildProcess;
@@ -794,29 +776,15 @@ async function startDashboard(
       detached: false,
       env,
     });
-  } else if (isMonorepo) {
-    // Monorepo default: build optimized bundles then start production server.
-    // This reduces JS bundle from ~1.7MB (dev) to ~170KB (gzipped).
-    // Skip rebuild if assets already exist (e.g. after `pnpm build`).
-    const hasBuiltAssets =
-      existsSync(resolve(webDir, ".next", "BUILD_ID")) &&
-      existsSync(resolve(webDir, "dist-server", "start-all.js"));
-    if (hasBuiltAssets) {
-      console.log(chalk.dim("  Using existing build (run --rebuild to force)"));
-    } else {
-      await buildDashboard(webDir, env as NodeJS.ProcessEnv);
-    }
-    console.log(chalk.dim("  Mode: optimized (production bundles)"));
-    console.log(chalk.dim("  Tip: use --dev for hot reload when editing dashboard UI\n"));
-    child = spawn("node", [resolve(webDir, "dist-server", "start-all.js")], {
-      cwd: webDir,
-      stdio: "inherit",
-      detached: false,
-      env,
-    });
   } else {
-    // Production (installed from npm): use pre-built start-all script
-    child = spawn("node", [resolve(webDir, "dist-server", "start-all.js")], {
+    // Production: use pre-built start-all script.
+    // Preflight already verified .next/BUILD_ID and dist-server/start-all.js exist.
+    if (isMonorepo) {
+      console.log(chalk.dim("  Mode: optimized (production bundles)"));
+      console.log(chalk.dim("  Tip: use --dev for hot reload when editing dashboard UI\n"));
+    }
+    const startScript = resolve(webDir, "dist-server", "start-all.js");
+    child = spawn("node", [startScript], {
       cwd: webDir,
       stdio: "inherit",
       detached: false,
@@ -994,10 +962,10 @@ async function runStartup(
       port = newPort;
     }
     const webDir = findWebDir(); // throws with install-specific guidance if not found
-    await preflight.checkBuilt(webDir);
-
     if (opts?.rebuild) {
-      await cleanNextCache(webDir);
+      await rebuildDashboardProductionArtifacts(webDir);
+    } else {
+      await preflight.checkBuilt(webDir);
     }
 
     spinner.start("Starting dashboard");
