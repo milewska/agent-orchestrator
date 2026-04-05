@@ -107,6 +107,27 @@ describe("preflight.checkBuilt", () => {
       "Packages not built",
     );
   });
+
+  it("throws npm hint when web artifacts missing in global install", async () => {
+    // ao-core found at first check, dist exists, but .next/BUILD_ID missing
+    mockExistsSync
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+    await expect(
+      preflight.checkBuilt("/usr/local/lib/node_modules/@composio/ao-web"),
+    ).rejects.toThrow("npm install -g @composio/ao@latest");
+  });
+
+  it("throws npm hint when ao-core dist is missing in global install", async () => {
+    // ao-core found, but dist/index.js missing
+    mockExistsSync
+      .mockReturnValueOnce(true)
+      .mockReturnValueOnce(false);
+    await expect(
+      preflight.checkBuilt("/usr/local/lib/node_modules/@composio/ao-web"),
+    ).rejects.toThrow("npm install -g @composio/ao@latest");
+  });
 });
 
 describe("preflight.checkTmux", () => {

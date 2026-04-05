@@ -20,6 +20,7 @@ export function registerDashboard(program: Command): void {
     .option("-p, --port <port>", "Port to listen on")
     .option("--no-open", "Don't open browser automatically")
     .option("--rebuild", "Clean stale build artifacts and rebuild before starting")
+    /* c8 ignore start -- process-spawning startup code, tested via integration/onboarding */
     .action(async (opts: { port?: string; open?: boolean; rebuild?: boolean }) => {
       const config = loadConfig();
       const port = opts.port ? parseInt(opts.port, 10) : (config.port ?? 3000);
@@ -122,6 +123,7 @@ export function registerDashboard(program: Command): void {
         process.exit(code ?? 0);
       });
     });
+    /* c8 ignore stop */
 }
 
 /**

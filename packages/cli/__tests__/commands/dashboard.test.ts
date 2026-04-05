@@ -129,6 +129,46 @@ describe("assertDashboardRebuildSupported", () => {
   });
 });
 
+describe("rebuildDashboardProductionArtifacts", () => {
+  it("cleans .next and runs pnpm build on success", async () => {
+    const webDir = join(tmpDir, "packages", "web");
+    mkdirSync(webDir, { recursive: true });
+    mkdirSync(join(webDir, ".next"), { recursive: true });
+
+    mockExec.mockResolvedValue({ stdout: "", stderr: "" });
+
+    const { rebuildDashboardProductionArtifacts } = await import("../../src/lib/dashboard-rebuild.js");
+
+    await rebuildDashboardProductionArtifacts(webDir);
+
+    // .next should be cleaned
+    expect(existsSync(join(webDir, ".next"))).toBe(false);
+    // pnpm build should be called from workspace root (../../ relative to webDir)
+    expect(mockExec).toHaveBeenCalledWith("pnpm", ["build"], { cwd: tmpDir });
+  });
+
+  it("throws when pnpm build fails", async () => {
+    const webDir = join(tmpDir, "packages", "web");
+    mkdirSync(webDir, { recursive: true });
+
+    mockExec.mockRejectedValue(new Error("build failed"));
+
+    const { rebuildDashboardProductionArtifacts } = await import("../../src/lib/dashboard-rebuild.js");
+
+    await expect(rebuildDashboardProductionArtifacts(webDir)).rejects.toThrow(
+      "Failed to rebuild dashboard production artifacts",
+    );
+  });
+
+  it("throws when called from an npm-installed path", async () => {
+    const { rebuildDashboardProductionArtifacts } = await import("../../src/lib/dashboard-rebuild.js");
+
+    await expect(
+      rebuildDashboardProductionArtifacts("/usr/local/lib/node_modules/@composio/ao-web"),
+    ).rejects.toThrow("Dashboard rebuild is only available from a source checkout");
+  });
+});
+
 describe("looksLikeStaleBuild pattern matching", () => {
   // We can't import the private function directly, so we replicate the patterns
   // to ensure the detection logic catches the actual error messages seen in production.

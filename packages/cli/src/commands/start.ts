@@ -964,7 +964,9 @@ async function runStartup(
     const webDir = findWebDir(); // throws with install-specific guidance if not found
     if (opts?.rebuild) {
       await rebuildDashboardProductionArtifacts(webDir);
-    } else {
+    } else if (!opts?.dev) {
+      // Dev mode uses `pnpm run dev` (HMR) and doesn't need production artifacts.
+      // Only check for .next/BUILD_ID and dist-server/start-all.js in production mode.
       await preflight.checkBuilt(webDir);
     }
 
