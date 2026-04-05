@@ -13,12 +13,12 @@
 - **Reference sites:** Conductor.build (layout baseline), linear.app (density standard), t3.codes (terminal aesthetic)
 
 ## Typography
-- **Display/Hero:** Berkeley Mono, weight 500, letter-spacing -0.02em — monospace for headlines. In a dashboard where 40% of visible text is already monospace (agent output, branch names, commit hashes), leaning into mono for display creates a unified typographic voice instead of two competing voices. Fallback: JetBrains Mono.
+- **Display/Hero:** JetBrains Mono, weight 500, letter-spacing -0.02em — monospace for headlines. In a dashboard where 40% of visible text is already monospace (agent output, branch names, commit hashes), leaning into mono for display creates a unified typographic voice instead of two competing voices.
 - **Body:** Geist Sans, weight 400, letter-spacing -0.011em — purpose-built for dense interfaces at 13px. Better digit alignment than IBM Plex Sans, designed for exactly this density level.
 - **UI/Labels:** Geist Sans, weight 600, letter-spacing 0.06em, uppercase, 10-11px — column headers, section labels, status indicators.
-- **Data/Tables:** Berkeley Mono, weight 400, 11-13px, tabular-nums — agent IDs, branch names, timestamps, commit hashes, diff stats, PR numbers. Fallback: JetBrains Mono.
-- **Code:** Berkeley Mono, weight 400 — terminal output, code blocks, inline code. Fallback: JetBrains Mono.
-- **Loading:** Berkeley Mono via self-hosted (paid font, $75). Geist via next/font/google. CSS variables: `--font-sans` (Geist), `--font-mono` (Berkeley Mono / JetBrains Mono). Display strategy: swap.
+- **Data/Tables:** JetBrains Mono, weight 400, 11-13px, tabular-nums — agent IDs, branch names, timestamps, commit hashes, diff stats, PR numbers.
+- **Code:** JetBrains Mono, weight 400 — terminal output, code blocks, inline code.
+- **Loading:** Google Fonts via next/font/google. CSS variables: `--font-sans` (Geist), `--font-mono` (JetBrains Mono). Display strategy: swap.
 - **Scale:**
   - xs: 10px (timestamps, metadata)
   - sm: 11px (secondary text, captions, labels)
@@ -235,7 +235,7 @@
 | 2026-03-28 | 2px base border-radius | Full 0px risks looking unstyled. 2px reads as intentionally sharp while feeling designed. |
 | 2026-03-28 | Keep dot pulse, remove border heartbeat | Emil review: 4s border animation on 15+ cards is "decorative anxiety" with high perf cost. |
 | 2026-04-05 | Fresh design system: Warm Terminal | Every competitor converges on cool blue-gray. Warm charcoal with cream text and warm periwinkle accent creates instant visual distinction. |
-| 2026-04-05 | Berkeley Mono for display + data | Mono headlines in a mono-heavy dashboard create typographic cohesion instead of two competing voices. Paid font ($75). |
+| 2026-04-05 | JetBrains Mono for display + data | Mono headlines in a mono-heavy dashboard create typographic cohesion instead of two competing voices. Free, open source, already in the codebase. |
 | 2026-04-05 | Warm periwinkle #8b9cf7 accent (not gold) | Gold collides semantically with amber attention state. Blue = clickable is muscle memory. Warm periwinkle fits the palette without signal confusion. |
 | 2026-04-05 | Brown-tinted surfaces, not neutral or blue-tinted | #121110 / #1a1918 / #222120 — warm undertone sets AO apart from every Linear clone. Light mode uses warm parchment #f5f3f0. |
 | 2026-04-05 | Added accessibility section | Missing from v1. Touch targets 44px min, WCAG AA contrast, focus-visible, prefers-reduced-motion. |
