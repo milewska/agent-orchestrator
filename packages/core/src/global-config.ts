@@ -508,24 +508,16 @@ export function loadLocalProjectConfig(configPath: string): LocalProjectConfig {
 // =============================================================================
 
 /**
- * Sync local config into a per-project shadow file (hybrid mode).
+ * Compute shadow content from a local config without writing to disk.
  *
- * Writes behavior fields to ~/.agent-orchestrator/projects/{id}.yaml.
- * Does NOT modify the global config (identity stays in config.yaml).
- * Excludes secret-like fields with a warning.
+ * Pure function: excludes identity fields, internal fields, and secret-like
+ * fields. Stamps _shadowSyncedAt. Used to validate before any disk writes.
  *
- * Returns { unchanged global config, excluded secret fields }
+ * Returns { shadow, excludedSecrets }
  */
-export function syncShadow(
-  globalConfig: GlobalConfig,
-  projectId: string,
+export function computeShadow(
   localConfig: LocalProjectConfig,
-): { config: GlobalConfig; excludedSecrets: string[] } {
-  if (!globalConfig.projects[projectId]) {
-    throw new Error(`Project "${projectId}" not found in global config`);
-  }
-
-  // Build shadow from local config, excluding identity and secrets
+): { shadow: Record<string, unknown>; excludedSecrets: string[] } {
   const excludedSecrets: string[] = [];
   const shadow: Record<string, unknown> = {};
 
@@ -545,6 +537,28 @@ export function syncShadow(
   }
 
   shadow["_shadowSyncedAt"] = Math.floor(Date.now() / 1000);
+  return { shadow, excludedSecrets };
+}
+
+/**
+ * Sync local config into a per-project shadow file (hybrid mode).
+ *
+ * Writes behavior fields to ~/.agent-orchestrator/projects/{id}.yaml.
+ * Does NOT modify the global config (identity stays in config.yaml).
+ * Excludes secret-like fields with a warning.
+ *
+ * Returns { unchanged global config, excluded secret fields }
+ */
+export function syncShadow(
+  globalConfig: GlobalConfig,
+  projectId: string,
+  localConfig: LocalProjectConfig,
+): { config: GlobalConfig; excludedSecrets: string[] } {
+  if (!globalConfig.projects[projectId]) {
+    throw new Error(`Project "${projectId}" not found in global config`);
+  }
+
+  const { shadow, excludedSecrets } = computeShadow(localConfig);
 
   // Write to per-project shadow file (not inline in global config)
   saveShadowFile(projectId, shadow);

@@ -13,6 +13,7 @@ import type { Command } from "commander";
 import {
   loadGlobalConfig,
   saveGlobalConfig,
+  saveShadowFile,
   scaffoldGlobalConfig,
   unregisterProject,
   deleteShadowFile,
@@ -86,8 +87,7 @@ export function registerProjectCommand(program: Command): void {
           return;
         }
 
-        // Register via shared helper — handles ID derivation, collision,
-        // shadow sync/scaffold, and session prefix writeback.
+        // Prepare registration — pure, no disk writes yet.
         const reg = registerNewProject(globalConfig, projectPath, {
           explicitId: opts.id,
           name: opts.name,
@@ -96,21 +96,19 @@ export function registerProjectCommand(program: Command): void {
           if (msg.level === "warn") console.log(chalk.yellow(`  ⚠ ${msg.text}`));
           else if (msg.level === "success") console.log(chalk.dim(`  ✓ ${msg.text}`));
         }
-        const projectId = reg.projectId;
-        globalConfig = reg.updatedGlobalConfig;
+        const { projectId, updatedGlobalConfig, pendingShadow } = reg;
 
-        // Validate before persisting — catches session prefix collisions.
+        // Validate with the pending (not-yet-written) shadow — no cleanup needed
+        // on failure because nothing has been written to disk yet.
         const globalPath = findGlobalConfigPath();
-        const built = buildEffectiveConfig(globalConfig, globalPath);
-        try {
-          applyGlobalConfigPipeline(built);
-        } catch (validationErr) {
-          // Clean up the shadow file so it doesn't remain as an orphan.
-          deleteShadowFile(projectId);
-          throw validationErr;
-        }
+        const built = buildEffectiveConfig(updatedGlobalConfig, globalPath, undefined, {
+          [projectId]: pendingShadow,
+        });
+        applyGlobalConfigPipeline(built);
 
-        saveGlobalConfig(globalConfig);
+        // Validation passed — write both files atomically.
+        saveShadowFile(projectId, pendingShadow);
+        saveGlobalConfig(updatedGlobalConfig);
 
         console.log(chalk.green(`✓ Registered "${projectId}" (${reg.configMode})`));
         console.log(chalk.dim(`  Path: ${projectPath}`));

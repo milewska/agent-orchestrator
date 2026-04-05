@@ -60,11 +60,15 @@ function asObject<T>(v: unknown): T | undefined {
  * @param warnings Optional array that receives warning messages (e.g. silent
  *   fallbacks from broken local configs). Callers that surface messages to the
  *   user should pass this in.
+ * @param pendingShadows Optional map of projectId → shadow content to use
+ *   instead of reading from disk. Used to validate a new registration before
+ *   any files are written (validate-first, write-after pattern).
  */
 export function buildEffectiveConfig(
   globalConfig: GlobalConfig,
   globalConfigPath: string,
   warnings?: string[],
+  pendingShadows?: Record<string, Record<string, unknown>>,
 ): OrchestratorConfig {
   const projects: Record<string, ProjectConfig> = {};
   // Seed with global-level settings; per-project shadow overrides merge on top.
@@ -81,7 +85,17 @@ export function buildEffectiveConfig(
     let behaviorFields: Record<string, unknown>;
     let effectiveConfigPath: string | undefined;
 
-    if (mode === "hybrid") {
+    // If the caller supplied a pending (not-yet-written) shadow for this project,
+    // use it directly — this supports the validate-first, write-after pattern where
+    // new registrations are validated before any disk writes occur.
+    if (pendingShadows?.[projectId]) {
+      behaviorFields = pendingShadows[projectId];
+      if (mode === "hybrid") {
+        effectiveConfigPath = findLocalConfigPath(expandedPath) ?? undefined;
+      } else {
+        effectiveConfigPath = join(expandedPath, "agent-orchestrator.yaml");
+      }
+    } else if (mode === "hybrid") {
       const localPath = findLocalConfigPath(expandedPath);
       if (localPath) {
         effectiveConfigPath = localPath;

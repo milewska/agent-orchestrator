@@ -18,10 +18,9 @@ import {
   findLocalConfigPath,
   findLocalConfigUpwards,
   loadLocalProjectConfig,
+  computeShadow,
   syncShadow,
-  loadShadowFile,
   saveShadowFile,
-  deleteShadowFile,
   matchProjectByCwd,
   findGlobalConfigPath,
 } from "./global-config.js";
@@ -46,6 +45,12 @@ export interface RegisterNewProjectResult {
   updatedGlobalConfig: GlobalConfig;
   configMode: "hybrid" | "global-only";
   messages: Array<{ level: "info" | "warn" | "success"; text: string }>;
+  /**
+   * Computed shadow content — NOT yet written to disk.
+   * The caller must write this with saveShadowFile AFTER validation passes.
+   * This enables the validate-first, write-after pattern: no cleanup paths needed.
+   */
+  pendingShadow: Record<string, unknown>;
 }
 
 /**
@@ -96,42 +101,41 @@ export function registerNewProject(
     name: opts?.name ?? basename(projectPath),
     path: projectPath,
   };
-  let updatedGlobalConfig = registerProject(globalConfig, projectId, entry);
+  const updatedGlobalConfig = registerProject(globalConfig, projectId, entry);
 
-  // Shadow sync (hybrid) or scaffold (global-only)
+  // Compute shadow content (no disk writes — caller writes after validation).
   const configMode = detectConfigMode(projectPath);
+  let pendingShadow: Record<string, unknown>;
+
   if (configMode === "hybrid") {
     const localPath = findLocalConfigPath(projectPath);
     if (localPath) {
-      // Propagate sync errors — a failed sync leaves the shadow absent/empty,
-      // which produces a project with no repo/agent/tracker (broken state).
       const localConfig = loadLocalProjectConfig(localPath);
-      const { config: synced, excludedSecrets } = syncShadow(updatedGlobalConfig, projectId, localConfig);
-      updatedGlobalConfig = synced;
+      const { shadow, excludedSecrets } = computeShadow(localConfig);
+      pendingShadow = shadow;
       if (excludedSecrets.length > 0) {
         messages.push({ level: "warn", text: `Excluded secret-like fields: ${excludedSecrets.join(", ")}` });
       }
       messages.push({ level: "success", text: "Shadow synced" });
+    } else {
+      pendingShadow = { repo: "", defaultBranch: "main" };
     }
   } else {
-    // Global-only: scaffold a minimal shadow so buildEffectiveConfig has a file
-    // to read — without it repo/defaultBranch/agent all fall back to empty defaults.
-    if (!loadShadowFile(projectId)) {
-      saveShadowFile(projectId, { repo: "", defaultBranch: "main" });
-    }
+    // Global-only: scaffold a minimal shadow so buildEffectiveConfig has values
+    // for repo/defaultBranch/agent rather than falling back to empty defaults.
+    pendingShadow = { repo: "", defaultBranch: "main" };
   }
 
   // If the ID was auto-suffixed to resolve a collision (e.g. "ao" → "ao2"),
-  // applyProjectDefaults would re-derive the prefix from basename(path), producing
-  // the same prefix as the original project and causing a prefix collision.
-  // Write the suffixed prefix explicitly to the shadow so applyProjectDefaults
-  // uses it instead of re-deriving from the path.
+  // applyProjectDefaults would re-derive the session prefix from basename(path),
+  // producing the same prefix as the original project and causing a collision.
+  // Store the suffixed prefix in the pending shadow so buildEffectiveConfig
+  // picks it up and applyProjectDefaults uses it instead of re-deriving.
   if (projectId !== originalProjectId) {
-    const currentShadow = loadShadowFile(projectId) ?? {};
-    saveShadowFile(projectId, { ...currentShadow, sessionPrefix: generateSessionPrefix(projectId) });
+    pendingShadow = { ...pendingShadow, sessionPrefix: generateSessionPrefix(projectId) };
   }
 
-  return { projectId, updatedGlobalConfig, configMode, messages };
+  return { projectId, updatedGlobalConfig, configMode, messages, pendingShadow };
 }
 
 // ---------------------------------------------------------------------------
@@ -167,16 +171,21 @@ export function resolveMultiProjectStart(
   let projectId = matchProjectByCwd(globalConfig, resolvedDir);
   let isNewRegistration = false;
 
+  // pendingShadow is set for new registrations; used in buildEffectiveConfig
+  // so validation runs against the correct config before any writes occur.
+  let pendingShadow: Record<string, unknown> | undefined;
+
   if (!projectId) {
     const found = findLocalConfigUpwards(resolvedDir);
     const projectRoot = found?.projectRoot ?? resolvedDir;
 
     if (found) {
-      // Auto-register via shared helper — handles ID derivation, collision,
-      // shadow sync, and session prefix writeback.
+      // Auto-register via shared helper — pure, no disk writes.
+      // Returns pendingShadow with the computed shadow content.
       const reg = registerNewProject(globalConfig, projectRoot);
       projectId = reg.projectId;
       globalConfig = reg.updatedGlobalConfig;
+      pendingShadow = reg.pendingShadow;
       isNewRegistration = true;
       messages.push(...reg.messages);
       messages.push({ level: "success", text: `Registered project "${projectId}" (${reg.configMode} mode)` });
@@ -184,7 +193,9 @@ export function resolveMultiProjectStart(
       return null;
     }
   } else {
-    // Already registered — sync shadow if hybrid
+    // Already registered — sync shadow if hybrid.
+    // syncShadow writes immediately here: the project already exists in the registry,
+    // so there's no risk of leaving an orphaned shadow on validation failure.
     const registeredPath = expandHome(globalConfig.projects[projectId].path);
     const mode = detectConfigMode(registeredPath);
     if (mode === "hybrid") {
@@ -192,8 +203,6 @@ export function resolveMultiProjectStart(
       if (localPath) {
         try {
           const localConfig = loadLocalProjectConfig(localPath);
-          // syncShadow writes to the shadow file and returns globalConfig unchanged.
-          // No need to saveGlobalConfig — the global registry entry is unmodified.
           const { excludedSecrets } = syncShadow(globalConfig, projectId, localConfig);
           if (excludedSecrets.length > 0) {
             messages.push({ level: "warn", text: `Excluded secret-like fields: ${excludedSecrets.join(", ")}` });
@@ -206,31 +215,22 @@ export function resolveMultiProjectStart(
   }
 
   // 4. Build effective config via the shared pipeline (single source of truth in config.ts).
-  // validateProjectUniqueness runs inside applyGlobalConfigPipeline — run this BEFORE
-  // saveGlobalConfig so that a session prefix collision throws before the broken state
-  // is persisted to disk.
+  // For new registrations, pass pendingShadow so validation uses the correct session prefix
+  // before anything is written to disk — no cleanup path needed on failure.
   const globalPath = findGlobalConfigPath();
   const buildWarnings: string[] = [];
-  const built = buildEffectiveConfig(globalConfig, globalPath, buildWarnings);
+  const pendingShadows = pendingShadow && projectId ? { [projectId]: pendingShadow } : undefined;
+  const built = buildEffectiveConfig(globalConfig, globalPath, buildWarnings, pendingShadows);
   for (const w of buildWarnings) {
     messages.push({ level: "warn", text: w });
   }
-  let effectiveConfig: ReturnType<typeof applyGlobalConfigPipeline>;
-  try {
-    effectiveConfig = applyGlobalConfigPipeline(built);
-  } catch (validationErr) {
-    // Validation failed (e.g. session prefix collision) — clean up any shadow
-    // file written during this registration so it doesn't remain as an orphan.
-    // The global config was never saved, so the project is unregistered.
-    if (isNewRegistration) {
-      deleteShadowFile(projectId);
-    }
-    throw validationErr;
-  }
+  // applyGlobalConfigPipeline throws on validation error (e.g. session prefix collision).
+  // Because no files have been written yet for new registrations, no cleanup is needed.
+  const effectiveConfig = applyGlobalConfigPipeline(built);
 
-  // 5. Persist only after validation passes (new registrations only — already-registered
-  //    projects don't modify globalConfig so nothing to save).
-  if (isNewRegistration) {
+  // 5. Persist only after validation passes (new registrations only).
+  if (isNewRegistration && pendingShadow) {
+    saveShadowFile(projectId, pendingShadow);
     saveGlobalConfig(globalConfig);
   }
 

@@ -31,6 +31,7 @@ export {
   findLocalConfigPath,
   findLocalConfigUpwards,
   loadLocalProjectConfig,
+  computeShadow,
   syncShadow,
   getShadowDir,
   getShadowFilePath,
