@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promisify } from "node:util";
 import type {
@@ -322,6 +322,29 @@ function toVolumeArg(mount: VolumeMount): string {
     : `${mount.hostPath}:${mount.containerPath}`;
 }
 
+function collectContainerHomeDirs(containerHome: string, mounts: VolumeMount[]): string[] {
+  const dirs = new Set<string>([
+    containerHome,
+    join(containerHome, ".cache"),
+    join(containerHome, ".config"),
+    join(containerHome, ".local"),
+    join(containerHome, ".local", "share"),
+    join(containerHome, ".local", "state"),
+  ]);
+
+  for (const mount of mounts) {
+    if (!mount.containerPath.startsWith(containerHome)) continue;
+    let current = dirname(mount.containerPath);
+    while (current.startsWith(containerHome) && current.length >= containerHome.length) {
+      dirs.add(current);
+      if (current === containerHome) break;
+      current = dirname(current);
+    }
+  }
+
+  return [...dirs].sort();
+}
+
 async function docker(args: string[]): Promise<string> {
   const { stdout } = await execFileAsync("docker", args, {
     timeout: DOCKER_COMMAND_TIMEOUT_MS,
@@ -547,12 +570,17 @@ export function create(): Runtime {
 
       try {
         await docker(runArgs);
+        const homeDirs = collectContainerHomeDirs(
+          preparedEnvironment.environment["HOME"] || CONTAINER_HOME_DIR,
+          mounts,
+        );
+        const mkdirArgs = homeDirs.map((dir) => shellQuote(dir)).join(" ");
         const homeInitCommand = execUser
           ? [
-            'mkdir -p "$HOME" "$HOME/.cache" "$HOME/.config" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/state"',
-            `chown ${shellQuote(execUser)} "$HOME" "$HOME/.cache" "$HOME/.config" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/state" 2>/dev/null || true`,
+            `mkdir -p ${mkdirArgs}`,
+            `chown ${shellQuote(execUser)} ${mkdirArgs} 2>/dev/null || true`,
           ].join("; ")
-          : 'mkdir -p "$HOME" "$HOME/.cache" "$HOME/.config" "$HOME/.local" "$HOME/.local/share" "$HOME/.local/state"';
+          : `mkdir -p ${mkdirArgs}`;
         await dockerExec(containerName, [shell, "-lc", homeInitCommand], execUser ? "0:0" : undefined);
         const envArgs: string[] = [];
         for (const [key, value] of Object.entries(preparedEnvironment.environment)) {

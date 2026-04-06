@@ -242,7 +242,7 @@ describe("runtime.create()", () => {
         "docker-session",
         "/bin/sh",
         "-lc",
-        expect.stringContaining('mkdir -p "$HOME" "$HOME/.cache" "$HOME/.config"'),
+        expect.stringContaining("mkdir -p '/tmp/ao-home' '/tmp/ao-home/.cache'"),
       ],
       expectedDockerOptions,
     );
