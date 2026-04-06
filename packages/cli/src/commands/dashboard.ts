@@ -5,7 +5,6 @@ import type { Command } from "commander";
 import { loadConfig } from "@composio/ao-core";
 import { findWebDir, buildDashboardEnv, waitForPortAndOpen } from "../lib/web-dir.js";
 import {
-  assertDashboardRebuildSupported,
   findRunningDashboardPid,
   isInstalledUnderNodeModules,
   rebuildDashboardProductionArtifacts,
@@ -33,8 +32,6 @@ export function registerDashboard(program: Command): void {
       const localWebDir = findWebDir(); // throws with install-specific guidance if not found
 
       if (opts.rebuild) {
-        assertDashboardRebuildSupported(localWebDir);
-
         // Check if a dashboard is already running on this port.
         const runningPid = await findRunningDashboardPid(port);
 
@@ -109,7 +106,7 @@ export function registerDashboard(program: Command): void {
           const stderr = stderrChunks.join("");
           if (looksLikeStaleBuild(stderr)) {
             const recoveryCommand = isInstalledUnderNodeModules(webDir)
-              ? "ao update"
+              ? "npm install -g @composio/ao@latest"
               : "ao dashboard --rebuild";
             console.error(
               chalk.yellow(
