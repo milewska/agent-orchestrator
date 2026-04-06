@@ -121,16 +121,14 @@ describe("getSessionTitle", () => {
     expect(getSessionTitle(session)).toBe("feat: add auth");
   });
 
-  it("returns agent summary over issue title", () => {
+  it("returns issue title over agent summary", () => {
     const session = makeSession({
       summary: "Implementing OAuth2 authentication with JWT tokens",
       summaryIsFallback: false,
       issueTitle: "Add user authentication",
       branch: "feat/auth",
     });
-    expect(getSessionTitle(session)).toBe(
-      "Implementing OAuth2 authentication with JWT tokens",
-    );
+    expect(getSessionTitle(session)).toBe("Add user authentication");
   });
 
   it("skips fallback summaries in favor of issue title", () => {
@@ -143,16 +141,14 @@ describe("getSessionTitle", () => {
     expect(getSessionTitle(session)).toBe("Add authentication to API");
   });
 
-  it("uses fallback summary when no issue title is available", () => {
+  it("uses branch before fallback summary when no issue title is available", () => {
     const session = makeSession({
       summary: "You are working on GitHub issue #42: Add authentication to API...",
       summaryIsFallback: true,
       issueTitle: null,
       branch: "feat/issue-42",
     });
-    expect(getSessionTitle(session)).toBe(
-      "You are working on GitHub issue #42: Add authentication to API...",
-    );
+    expect(getSessionTitle(session)).toBe("Issue 42");
   });
 
   it("returns issue title when no summary exists", () => {
@@ -182,15 +178,23 @@ describe("getSessionTitle", () => {
     expect(getSessionTitle(session)).toBe("working");
   });
 
-  it("prefers fallback summary over branch when no issue title", () => {
+  it("returns branch before summary when no issue title exists", () => {
     const session = makeSession({
       summary: "You are working on Linear ticket INT-1327: Refactor session manager",
       summaryIsFallback: true,
       issueTitle: null,
       branch: "feat/INT-1327",
     });
-    expect(getSessionTitle(session)).toBe(
-      "You are working on Linear ticket INT-1327: Refactor session manager",
-    );
+    expect(getSessionTitle(session)).toBe("INT 1327");
+  });
+
+  it("returns quality summary when neither issue title nor branch exists", () => {
+    const session = makeSession({
+      summary: "Investigating flaky PR enrichment",
+      summaryIsFallback: false,
+      issueTitle: null,
+      branch: null,
+    });
+    expect(getSessionTitle(session)).toBe("Investigating flaky PR enrichment");
   });
 });

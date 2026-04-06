@@ -191,6 +191,47 @@ describe("sessionToDashboard", () => {
     expect(dashboard.summaryIsFallback).toBe(false);
   });
 
+  it("should prefer pinnedSummary over agentInfo summary", () => {
+    const coreSession = createCoreSession({
+      agentInfo: {
+        summary: "Latest live summary from agent",
+        summaryIsFallback: false,
+        agentSessionId: "abc123",
+      },
+      metadata: { pinnedSummary: "First pinned summary" },
+    });
+    const dashboard = sessionToDashboard(coreSession);
+
+    expect(dashboard.summary).toBe("First pinned summary");
+    expect(dashboard.summaryIsFallback).toBe(false);
+  });
+
+  it("should prefer pinnedSummary over metadata summary", () => {
+    const coreSession = createCoreSession({
+      agentInfo: null,
+      metadata: { pinnedSummary: "Pinned summary", summary: "Metadata summary" },
+    });
+    const dashboard = sessionToDashboard(coreSession);
+
+    expect(dashboard.summary).toBe("Pinned summary");
+    expect(dashboard.summaryIsFallback).toBe(false);
+  });
+
+  it("should fall through to agentInfo when pinnedSummary is empty", () => {
+    const coreSession = createCoreSession({
+      agentInfo: {
+        summary: "Agent summary",
+        summaryIsFallback: false,
+        agentSessionId: "abc123",
+      },
+      metadata: { pinnedSummary: "" },
+    });
+    const dashboard = sessionToDashboard(coreSession);
+
+    expect(dashboard.summary).toBe("Agent summary");
+    expect(dashboard.summaryIsFallback).toBe(false);
+  });
+
   it("should convert PRInfo to DashboardPR with defaults", () => {
     const pr = createPRInfo();
     const coreSession = createCoreSession({ pr });
