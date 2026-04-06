@@ -13,6 +13,8 @@ interface ProjectSidebarProps {
   sessions: DashboardSession[];
   activeProjectId: string | undefined;
   activeSessionId: string | undefined;
+  projectHrefBuilder?: (projectId?: string) => string;
+  sessionHrefBuilder?: (projectId: string, sessionId: string) => string;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   mobileOpen?: boolean;
@@ -102,6 +104,8 @@ function ProjectSidebarInner({
   sessions,
   activeProjectId,
   activeSessionId,
+  projectHrefBuilder,
+  sessionHrefBuilder,
   collapsed = false,
   onToggleCollapsed,
   mobileOpen = false,
@@ -109,6 +113,14 @@ function ProjectSidebarInner({
 }: ProjectSidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const buildProjectHref = (projectId?: string) =>
+    projectHrefBuilder?.(projectId) ??
+    `${pathname}?project=${encodeURIComponent(projectId ?? "all")}`;
+  const buildSessionSelectionHref = (projectId: string, sessionId: string) =>
+    sessionHrefBuilder?.(projectId, sessionId) ??
+    `${pathname}?project=${encodeURIComponent(projectId)}&session=${encodeURIComponent(sessionId)}`;
+  const buildSessionDetailHref = (projectId: string, sessionId: string) =>
+    sessionHrefBuilder?.(projectId, sessionId) ?? `/sessions/${encodeURIComponent(sessionId)}`;
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     () => new Set(activeProjectId && activeProjectId !== "all" ? [activeProjectId] : []),
@@ -134,7 +146,7 @@ function ProjectSidebarInner({
 
   const handleProjectHeaderClick = (projectId: string) => {
     toggleExpand(projectId);
-    router.push(pathname + `?project=${encodeURIComponent(projectId)}`);
+    router.push(buildProjectHref(projectId));
   };
 
   const prefixByProject = useMemo(
@@ -191,7 +203,7 @@ function ProjectSidebarInner({
                 <button
                   key={project.id}
                   type="button"
-                  onClick={() => router.push(pathname + `?project=${encodeURIComponent(project.id)}`)}
+                  onClick={() => router.push(buildProjectHref(project.id))}
                   className={cn(
                     "project-sidebar__collapsed-project",
                     isActive && "project-sidebar__collapsed-project--active",
@@ -277,7 +289,7 @@ function ProjectSidebarInner({
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         <button
-          onClick={() => router.push(pathname + "?project=all")}
+          onClick={() => router.push(buildProjectHref())}
           className={cn(
             "project-sidebar__item mb-1 flex w-full items-center gap-2 px-2.5 py-[9px] text-left text-[12px] font-medium transition-colors",
             activeProjectId === undefined || activeProjectId === "all"
@@ -351,16 +363,10 @@ function ProjectSidebarInner({
                         key={session.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() =>
-                          router.push(
-                            `${pathname}?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}`,
-                          )
-                        }
+                        onClick={() => router.push(buildSessionSelectionHref(project.id, session.id))}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
-                            router.push(
-                              `${pathname}?project=${encodeURIComponent(project.id)}&session=${encodeURIComponent(session.id)}`,
-                            );
+                            router.push(buildSessionSelectionHref(project.id, session.id));
                           }
                         }}
                         className={cn(
@@ -376,7 +382,7 @@ function ProjectSidebarInner({
                           {sessionToneLabel[level]}
                         </span>
                         <a
-                          href={`/sessions/${encodeURIComponent(session.id)}`}
+                          href={buildSessionDetailHref(project.id, session.id)}
                           onClick={(e) => e.stopPropagation()}
                           className="project-sidebar__session-id shrink-0 font-mono text-[9px] hover:underline"
                           title={session.id}

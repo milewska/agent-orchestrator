@@ -4,6 +4,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { DashboardSession } from "@/lib/types";
 
 const sessionDetailSpy = vi.fn();
+const projectSidebarSpy = vi.fn();
 const notFoundError = new Error("NEXT_NOT_FOUND");
 const notFoundSpy = vi.fn(() => {
   throw notFoundError;
@@ -21,6 +22,13 @@ vi.mock("@/components/SessionDetail", () => ({
   },
 }));
 
+vi.mock("@/components/ProjectSidebar", () => ({
+  ProjectSidebar: (props: unknown) => {
+    projectSidebarSpy(props);
+    return <div data-testid="project-sidebar" />;
+  },
+}));
+
 function makeWorkerSession(): DashboardSession {
   return {
     id: "worker-1",
@@ -31,6 +39,7 @@ function makeWorkerSession(): DashboardSession {
     issueId: "https://linear.app/test/issue/INT-100",
     issueUrl: "https://linear.app/test/issue/INT-100",
     issueLabel: "INT-100",
+    issueTitle: null,
     summary: "Test worker session",
     summaryIsFallback: false,
     createdAt: new Date().toISOString(),
@@ -71,6 +80,7 @@ describe("SessionPage project polling", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     sessionDetailSpy.mockClear();
+    projectSidebarSpy.mockClear();
     vi.spyOn(console, "error").mockImplementation(() => {});
 
     const eventSourceMock = {
@@ -103,6 +113,27 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
+      if (url === "/api/projects") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            projects: [
+              { id: "my-app", name: "My App", sessionPrefix: "my-app" },
+              { id: "docs", name: "Docs", sessionPrefix: "docs" },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url === "/api/sessions") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ sessions: [workerSession] }),
+        } as Response;
+      }
+
       if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
         return {
           ok: true,
@@ -129,6 +160,13 @@ describe("SessionPage project polling", () => {
     await flushAsyncWork();
 
     expect(fetch).toHaveBeenCalledWith("/api/sessions/worker-1");
+    expect(screen.getByTestId("project-sidebar")).toBeInTheDocument();
+    expect(projectSidebarSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activeProjectId: "my-app",
+        activeSessionId: "worker-1",
+      }),
+    );
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_000);
@@ -166,6 +204,14 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
+      if (url === "/api/sessions") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ sessions: [] }),
+        } as Response;
+      }
+
       if (url === "/api/sessions/worker-1") {
         return {
           ok: false,
@@ -194,6 +240,14 @@ describe("SessionPage project polling", () => {
           ok: true,
           status: 200,
           json: async () => ({ projects: [] }),
+        } as Response;
+      }
+
+      if (url === "/api/sessions") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ sessions: [] }),
         } as Response;
       }
 

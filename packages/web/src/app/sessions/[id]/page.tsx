@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { notFound, useParams } from "next/navigation";
 import { isOrchestratorSession } from "@composio/ao-core/types";
+import { ProjectSidebar } from "@/components/ProjectSidebar";
 import { SessionDetail } from "@/components/SessionDetail";
 import { type DashboardSession, type ActivityState, getAttentionLevel, type AttentionLevel } from "@/lib/types";
 import { activityIcon } from "@/lib/activity-icons";
@@ -62,6 +63,10 @@ export default function SessionPage() {
   const [session, setSession] = useState<DashboardSession | null>(null);
   const [zoneCounts, setZoneCounts] = useState<ZoneCounts | null>(null);
   const [projectOrchestratorId, setProjectOrchestratorId] = useState<string | null | undefined>(undefined);
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
+  const [sidebarSessions, setSidebarSessions] = useState<DashboardSession[]>([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [routeError, setRouteError] = useState<Error | null>(null);
   const [sessionMissing, setSessionMissing] = useState(false);
@@ -83,18 +88,34 @@ export default function SessionPage() {
   }, [prefixByProject]);
 
   // Fetch project prefix map once on mount so isOrchestratorSession can use the correct prefix
-  useEffect(() => {
-    fetch("/api/projects")
-      .then((res) => res.ok ? res.json() : null)
-      .then((data: { projects?: ProjectInfo[] } | null) => {
-        if (data?.projects) {
-          setPrefixByProject(
-            new Map(data.projects.map((p) => [p.id, p.sessionPrefix ?? p.id])),
-          );
-        }
-      })
-      .catch(() => {/* non-critical — falls back to role metadata check */});
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await fetch("/api/projects");
+      if (!res.ok) return;
+      const data = (await res.json()) as { projects?: ProjectInfo[] } | null;
+      if (!data?.projects) return;
+      setProjects(data.projects);
+      setPrefixByProject(new Map(data.projects.map((p) => [p.id, p.sessionPrefix ?? p.id])));
+    } catch {
+      // Non-critical - sidebar just won't render if projects fail to load.
+    }
   }, []);
+
+  const fetchSidebarSessions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/sessions");
+      if (!res.ok) return;
+      const data = (await res.json()) as { sessions?: DashboardSession[] } | null;
+      setSidebarSessions(data?.sessions ?? []);
+    } catch {
+      // Non-critical - session page still works without sidebar data.
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchProjects();
+    void fetchSidebarSessions();
+  }, [fetchProjects, fetchSidebarSessions]);
 
   // Subscribe to SSE for real-time activity updates (title emoji)
   const sseActivity = useSSESessionActivity(id);
@@ -207,9 +228,10 @@ export default function SessionPage() {
     const interval = setInterval(() => {
       fetchSession();
       fetchProjectSessions();
+      fetchSidebarSessions();
     }, 5000);
     return () => clearInterval(interval);
-  }, [fetchSession, fetchProjectSessions]);
+  }, [fetchSession, fetchProjectSessions, fetchSidebarSessions]);
 
   if (loading) {
     return (
@@ -233,11 +255,51 @@ export default function SessionPage() {
   }
 
   return (
-    <SessionDetail
-      session={session}
-      isOrchestrator={sessionIsOrchestrator}
-      orchestratorZones={zoneCounts ?? undefined}
-      projectOrchestratorId={projectOrchestratorId}
-    />
+    <div className="dashboard-shell flex h-screen">
+      {projects.length > 1 ? (
+        <ProjectSidebar
+          projects={projects}
+          sessions={sidebarSessions}
+          activeProjectId={session.projectId}
+          activeSessionId={session.id}
+          projectHrefBuilder={(projectId) => `/?project=${encodeURIComponent(projectId ?? "all")}`}
+          sessionHrefBuilder={(_projectId, sessionId) =>
+            `/sessions/${encodeURIComponent(sessionId)}`
+          }
+          collapsed={sidebarCollapsed}
+          onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
+          mobileOpen={mobileMenuOpen}
+          onMobileClose={() => setMobileMenuOpen(false)}
+        />
+      ) : null}
+      <div className="dashboard-main flex-1 overflow-y-auto">
+        {projects.length > 1 ? (
+          <div className="mb-3 flex md:hidden">
+            <button
+              type="button"
+              className="mobile-menu-toggle"
+              onClick={() => setMobileMenuOpen(true)}
+              aria-label="Open menu"
+            >
+              <svg
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                className="h-5 w-5"
+              >
+                <path d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          </div>
+        ) : null}
+        <SessionDetail
+          session={session}
+          isOrchestrator={sessionIsOrchestrator}
+          orchestratorZones={zoneCounts ?? undefined}
+          projectOrchestratorId={projectOrchestratorId}
+        />
+      </div>
+    </div>
   );
 }

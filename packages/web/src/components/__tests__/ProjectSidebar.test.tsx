@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { ProjectSidebar } from "@/components/ProjectSidebar";
+import { makeSession } from "@/__tests__/helpers";
 
 const mockPush = vi.fn();
 const mockPathname = "/";
@@ -74,5 +75,31 @@ describe("ProjectSidebar", () => {
     render(<ProjectSidebar projects={projectsWithSpecialChars} sessions={[]} activeProjectId="my-app" activeSessionId={undefined} />);
     fireEvent.click(screen.getByRole("button", { name: "Other Project" }));
     expect(mockPush).toHaveBeenCalledWith("/?project=other-project");
+  });
+
+  it("uses custom href builders when provided", () => {
+    render(
+      <ProjectSidebar
+        projects={projects}
+        sessions={[
+          makeSession({
+            id: "worker-1",
+            projectId: "project-1",
+            summary: "Investigate failing test",
+          }),
+        ]}
+        activeProjectId="project-1"
+        activeSessionId="worker-1"
+        projectHrefBuilder={(projectId) => `/projects/${projectId ?? "all"}`}
+        sessionHrefBuilder={(projectId, sessionId) => `/projects/${projectId}/sessions/${sessionId}`}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Project Two" }));
+    expect(mockPush).toHaveBeenCalledWith("/projects/project-2");
+    expect(screen.getByRole("link", { name: "worker-1" })).toHaveAttribute(
+      "href",
+      "/projects/project-1/sessions/worker-1",
+    );
   });
 });
