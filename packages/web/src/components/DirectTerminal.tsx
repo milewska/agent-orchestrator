@@ -338,7 +338,7 @@ export function DirectTerminal({
         terminalInstance.current = terminal;
 
         // Fit terminal to container
-        fit.fit();
+        try { fit.fit(); } catch { /* dimensions not ready yet */ }
 
         // Runtime WS config cache. We do not rely on build-time NEXT_PUBLIC_* here
         // because `ao start` can choose terminal ports dynamically at runtime.
@@ -408,7 +408,7 @@ export function DirectTerminal({
         const handleResize = () => {
           const currentWs = ws.current;
           if (fit && currentWs?.readyState === WebSocket.OPEN) {
-            fit.fit();
+            try { fit.fit(); } catch { /* dimensions not ready yet */ }
             currentWs.send(
               JSON.stringify({
                 type: "resize",
@@ -621,7 +621,7 @@ export function DirectTerminal({
 
       // Container is at target size, now resize terminal
       terminal.refresh(0, terminal.rows - 1);
-      fit.fit();
+      try { fit.fit(); } catch { /* dimensions not ready yet */ }
       terminal.refresh(0, terminal.rows - 1);
 
       // Send new size to server (use ws.current in case WebSocket reconnected)
