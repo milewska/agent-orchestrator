@@ -10,7 +10,7 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY tsconfig.base.json ./
 
 # Copy postinstall script required by root package.json
-COPY scripts/ scripts/
+COPY scripts/rebuild-node-pty.js scripts/rebuild-node-pty.js
 
 # Copy all package.json files needed by CLI and its workspace dependencies
 COPY packages/core/package.json packages/core/package.json

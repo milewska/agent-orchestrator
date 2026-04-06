@@ -8,8 +8,8 @@ WORKDIR /app
 # Copy workspace config and lockfile first for layer caching
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 
-# Copy postinstall script (rebuild-node-pty.js) required by root package.json
-COPY scripts/ scripts/
+# Copy postinstall script required by root package.json
+COPY scripts/rebuild-node-pty.js scripts/rebuild-node-pty.js
 
 # Copy all package.json files to resolve workspace dependencies
 COPY packages/core/package.json packages/core/package.json
