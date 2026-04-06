@@ -474,7 +474,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         return b.sessionName.localeCompare(a.sessionName);
       });
 
-      void owner;
+      if (owner.raw["prOwnership"] === "stale") {
+        const updates = { prOwnership: "" };
+        updateMetadataPreservingMtime(sessionsDir, owner.sessionName, updates, owner.modifiedAt);
+        owner.raw = applyMetadataUpdatesToRaw(owner.raw, updates);
+      }
 
       for (const record of staleRecords) {
         const updates: Partial<Record<string, string>> = {
