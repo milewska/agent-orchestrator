@@ -618,7 +618,7 @@ function parseCheckContexts(contexts: unknown): CICheck[] {
 
       let status: CICheck["status"];
       if (rawStatus === "COMPLETED") {
-        if (!rawConclusion || rawConclusion === "SUCCESS") {
+        if (rawConclusion === "SUCCESS") {
           status = "passed";
         } else if (
           rawConclusion === "SKIPPED" ||

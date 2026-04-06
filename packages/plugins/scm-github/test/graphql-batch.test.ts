@@ -1624,6 +1624,47 @@ describe("extractPREnrichment ciChecks", () => {
     expect(extracted?.data.ciChecks?.[0]?.name).toBe("lint");
   });
 
+  it("maps COMPLETED with null conclusion to skipped (matches REST mapRawCheckStateToStatus empty-string branch)", () => {
+    // REST path: mapRawCheckStateToStatus(undefined) → state="" → "skipped"
+    // GraphQL path must match: COMPLETED + null conclusion → "skipped", not "passed"
+    const pullRequest = {
+      title: "Null conclusion check",
+      state: "OPEN",
+      additions: 1,
+      deletions: 0,
+      isDraft: false,
+      mergeable: "MERGEABLE",
+      mergeStateStatus: "CLEAN",
+      reviewDecision: "NONE",
+      reviews: { nodes: [] },
+      commits: {
+        nodes: [
+          {
+            commit: {
+              statusCheckRollup: {
+                state: "SUCCESS",
+                contexts: {
+                  nodes: [
+                    {
+                      name: "some-check",
+                      status: "COMPLETED",
+                      conclusion: null, // null conclusion — shouldn't map to "passed"
+                      detailsUrl: null,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    const extracted = extractPREnrichment(pullRequest);
+    const check = extracted?.data.ciChecks?.[0];
+    expect(check?.status).toBe("skipped");
+  });
+
   it("maps COMPLETED+STARTUP_FAILURE to skipped (matches REST mapRawCheckStateToStatus default fallback)", () => {
     const pullRequest = {
       title: "Startup failure check",
