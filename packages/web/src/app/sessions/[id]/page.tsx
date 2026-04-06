@@ -76,6 +76,7 @@ export default function SessionPage() {
   const resolvedProjectSessionsKeyRef = useRef<string | null>(null);
   const prefixByProjectRef = useRef<Map<string, string>>(new Map());
   const hasLoadedSessionRef = useRef(false);
+  const fetchFailCountRef = useRef(0);
 
   // Keep prefixByProjectRef in sync so fetchProjectSessions (stable [] dep) reads latest map
   useEffect(() => {
@@ -133,10 +134,21 @@ export default function SessionPage() {
       setRouteError(null);
       setSessionMissing(false);
       hasLoadedSessionRef.current = true;
+      fetchFailCountRef.current = 0;
     } catch (err) {
-      console.error("Failed to fetch session:", err);
+      const isNetworkError = err instanceof TypeError;
+      fetchFailCountRef.current++;
+      // Only log the first consecutive failure to avoid console spam during polling
+      if (fetchFailCountRef.current === 1) {
+        console.error("Failed to fetch session:", err);
+      }
       if (!hasLoadedSessionRef.current) {
-        setRouteError(err instanceof Error ? err : new Error("Failed to load session"));
+        // For network errors (e.g. proxy misconfiguration, offline), give the
+        // polling loop a few attempts before surfacing a fatal error — the
+        // failure may be transient.
+        if (!isNetworkError || fetchFailCountRef.current >= 3) {
+          setRouteError(err instanceof Error ? err : new Error("Failed to load session"));
+        }
       }
     } finally {
       setLoading(false);
