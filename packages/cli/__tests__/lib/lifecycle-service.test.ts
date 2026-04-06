@@ -8,7 +8,10 @@ import type { LifecycleManager, OrchestratorConfig } from "@composio/ao-core";
 const { mockLifecycleStart, mockLifecycleStop, mockGetLifecycleManager } = vi.hoisted(() => {
   const mockLifecycleStart = vi.fn();
   const mockLifecycleStop = vi.fn();
-  const mockInstance: LifecycleManager = { start: mockLifecycleStart, stop: mockLifecycleStop } as unknown as LifecycleManager;
+  const mockInstance: LifecycleManager = {
+    start: mockLifecycleStart,
+    stop: mockLifecycleStop,
+  } as unknown as LifecycleManager;
   const mockGetLifecycleManager = vi.fn().mockResolvedValue(mockInstance);
   return { mockLifecycleStart, mockLifecycleStop, mockGetLifecycleManager, mockInstance };
 });
@@ -24,7 +27,13 @@ vi.mock("../../src/lib/create-session-manager.js", () => ({
 const config = {
   configPath: "/home/user/project/agent-orchestrator.yaml",
   projects: {
-    "my-project": { path: "/home/user/project", agent: "claude-code", runtime: "tmux", sessionPrefix: "mp", name: "P" },
+    "my-project": {
+      path: "/home/user/project",
+      agent: "claude-code",
+      runtime: "tmux",
+      sessionPrefix: "mp",
+      name: "P",
+    },
   },
 } as unknown as OrchestratorConfig;
 
@@ -82,11 +91,42 @@ describe("lifecycle-service (in-process)", () => {
       expect(mockGetLifecycleManager).toHaveBeenCalledWith(config, "project-a");
       expect(mockGetLifecycleManager).toHaveBeenCalledWith(config, "project-b");
     });
+
+    it("propagates start failures to concurrent callers instead of reporting running", async () => {
+      const { ensureLifecycleWorker, getLifecycleWorkerStatus } = await freshModule();
+      let resolveManager: ((value: LifecycleManager) => void) | undefined;
+      mockGetLifecycleManager.mockImplementationOnce(
+        () =>
+          new Promise<LifecycleManager>((resolve) => {
+            resolveManager = resolve;
+          }),
+      );
+      mockLifecycleStart.mockImplementation(() => {
+        throw new Error("start failed");
+      });
+
+      const firstCall = ensureLifecycleWorker(config, "my-project");
+      const secondCall = ensureLifecycleWorker(config, "my-project");
+
+      resolveManager?.({
+        start: mockLifecycleStart,
+        stop: mockLifecycleStop,
+      } as unknown as LifecycleManager);
+
+      await expect(firstCall).rejects.toThrow("start failed");
+      await expect(secondCall).rejects.toThrow("start failed");
+      expect(getLifecycleWorkerStatus(config, "my-project")).toEqual({
+        running: false,
+        started: false,
+        pid: null,
+      });
+    });
   });
 
   describe("stopLifecycleWorker", () => {
     it("stops and removes an active manager", async () => {
-      const { ensureLifecycleWorker, stopLifecycleWorker, getLifecycleWorkerStatus } = await freshModule();
+      const { ensureLifecycleWorker, stopLifecycleWorker, getLifecycleWorkerStatus } =
+        await freshModule();
 
       await ensureLifecycleWorker(config, "my-project");
 
@@ -125,6 +165,7 @@ describe("lifecycle-service (in-process)", () => {
 
       const status = getLifecycleWorkerStatus(config, "active-project");
       expect(status.running).toBe(true);
+      expect(status.started).toBe(true);
       expect(status.pid).toBe(process.pid);
     });
   });

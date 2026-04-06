@@ -235,6 +235,33 @@ describe("Config Validation - Session Prefix Uniqueness", () => {
 
     expect(() => validateConfig(config)).not.toThrow();
   });
+
+  it("avoids auto-generated prefixes reserved by later explicit prefixes", () => {
+    const validated = validateConfig({
+      projects: {
+        "client-app": {
+          path: "/client/app",
+          repo: "org/app",
+          defaultBranch: "main",
+        },
+        client: {
+          path: "/repos/client-service",
+          repo: "org/client-service",
+          defaultBranch: "main",
+          sessionPrefix: "ca2",
+        },
+        "client-app-2": {
+          path: "/client-2/app",
+          repo: "org/app-2",
+          defaultBranch: "main",
+        },
+      },
+    });
+
+    expect(validated.projects["client-app"].sessionPrefix).toBe("ca");
+    expect(validated.projects["client-app-2"].sessionPrefix).toBe("ca22");
+    expect(validated.projects.client.sessionPrefix).toBe("ca2");
+  });
 });
 
 describe("Config Validation - Session Prefix Regex", () => {
@@ -543,6 +570,21 @@ describe("Config Defaults", () => {
 
     const validated = validateConfig(config);
     expect(validated.projects.proj1.tracker).toEqual({ plugin: "github" });
+  });
+
+  it("does not infer tracker or scm defaults when repo is absent", () => {
+    const validated = validateConfig({
+      projects: {
+        proj1: {
+          path: "/repos/test",
+          repo: "",
+          defaultBranch: "main",
+        },
+      },
+    });
+
+    expect(validated.projects.proj1.scm).toBeUndefined();
+    expect(validated.projects.proj1.tracker).toBeUndefined();
   });
 
   it("infers GitLab tracker default from scm plugin", () => {
@@ -1105,9 +1147,7 @@ describe("mergeExternalPlugins — immutability (C-1)", () => {
           tracker: { plugin: "npm:my-tracker" },
         },
       },
-      plugins: [
-        { name: "my-tracker", source: "npm", package: "npm:my-tracker", enabled: false },
-      ],
+      plugins: [{ name: "my-tracker", source: "npm", package: "npm:my-tracker", enabled: false }],
     };
 
     // Capture the original plugin object reference

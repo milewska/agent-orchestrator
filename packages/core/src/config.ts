@@ -551,9 +551,9 @@ function applyProjectDefaults(config: OrchestratorConfig): OrchestratorConfig {
 
   // Helper: find the first unused variant of `base` (base, base2, base3, …).
   const nextFreePrefix = (base: string): string => {
-    if (!assignedPrefixes.has(base)) return base;
+    if (!assignedPrefixes.has(base) && !explicitPrefixes.has(base)) return base;
     let n = 2;
-    while (assignedPrefixes.has(`${base}${n}`)) n++;
+    while (assignedPrefixes.has(`${base}${n}`) || explicitPrefixes.has(`${base}${n}`)) n++;
     return `${base}${n}`;
   };
 
@@ -597,10 +597,11 @@ function applyProjectDefaults(config: OrchestratorConfig): OrchestratorConfig {
     }
     assignedPrefixes.add(sessionPrefix);
     const inferredPlugin = inferScmPlugin(project);
-    const scm =
-      project.scm ??
-      (project.repo && project.repo.includes("/") ? { plugin: inferredPlugin } : undefined);
-    const tracker = project.tracker ?? { plugin: inferredPlugin };
+    const hasRepoReference = typeof project.repo === "string" && project.repo.includes("/");
+    const scm = project.scm ?? (hasRepoReference ? { plugin: inferredPlugin } : undefined);
+    const tracker =
+      project.tracker ??
+      (scm !== undefined || hasRepoReference ? { plugin: inferredPlugin } : undefined);
     projects[id] = {
       ...project,
       name,
@@ -801,13 +802,14 @@ export function applyGlobalConfigPipeline(raw: OrchestratorConfig): Orchestrator
   // Merge in one step: updatedConfig carries resolved plugin names/paths from
   // inline package/path references (always needed); externalPluginEntries and
   // merged plugins are only added when there are external entries.
-  effective = externalPluginEntries.length > 0
-    ? {
-        ...updatedConfig,
-        plugins: mergeExternalPlugins(updatedConfig.plugins, externalPluginEntries),
-        _externalPluginEntries: externalPluginEntries,
-      }
-    : updatedConfig;
+  effective =
+    externalPluginEntries.length > 0
+      ? {
+          ...updatedConfig,
+          plugins: mergeExternalPlugins(updatedConfig.plugins, externalPluginEntries),
+          _externalPluginEntries: externalPluginEntries,
+        }
+      : updatedConfig;
   validateProjectUniqueness(effective);
   return effective;
 }

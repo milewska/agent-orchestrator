@@ -27,7 +27,7 @@ const activeManagers = new Map<string, LifecycleManager>();
  * the second `set` silently overwrites the first — leaking the first manager's
  * polling timer with no way to stop it.
  */
-const pendingManagers = new Map<string, Promise<LifecycleManager>>();
+const pendingManagers = new Map<string, Promise<void>>();
 
 /**
  * Ensure a lifecycle manager is running for the given project.
@@ -51,19 +51,25 @@ export async function ensureLifecycleWorker(
     return { running: true, started: false, pid: process.pid };
   }
 
-  const promise = getLifecycleManager(config, projectId);
-  pendingManagers.set(key, promise);
-  try {
-    const lifecycle = await promise;
+  const promise = (async (): Promise<void> => {
+    const lifecycle = await getLifecycleManager(config, projectId);
     try {
       lifecycle.start(30_000);
     } catch (startErr) {
       // start() failed — stop the manager to release any partially-initialized
       // state (timers, connections) before propagating the error.
-      try { lifecycle.stop(); } catch { /* best effort */ }
+      try {
+        lifecycle.stop();
+      } catch {
+        /* best effort */
+      }
       throw startErr;
     }
     activeManagers.set(key, lifecycle);
+  })();
+  pendingManagers.set(key, promise);
+  try {
+    await promise;
   } finally {
     pendingManagers.delete(key);
   }
@@ -95,7 +101,7 @@ export function getLifecycleWorkerStatus(
   projectId: string,
 ): LifecycleWorkerStatus {
   const running = activeManagers.has(projectId);
-  return { running, started: false, pid: running ? process.pid : null };
+  return { running, started: running, pid: running ? process.pid : null };
 }
 
 /**
