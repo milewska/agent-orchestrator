@@ -253,7 +253,7 @@ function makeConfig(projects: Record<string, Record<string, unknown>>): Record<s
       runtime: "tmux",
       agent: "claude-code",
       workspace: "worktree",
-      notifiers: ["desktop"],
+      notifiers: [],
     },
     projects,
     notifiers: {},

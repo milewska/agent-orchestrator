@@ -211,7 +211,7 @@ const DefaultPluginsSchema = z.object({
   runtime: z.string().default("tmux"),
   agent: z.string().default("claude-code"),
   workspace: z.string().default("worktree"),
-  notifiers: z.array(z.string()).default(["composio", "desktop"]),
+  notifiers: z.array(z.string()).default(["composio"]),
   orchestrator: RoleAgentDefaultsSchema,
   worker: RoleAgentDefaultsSchema,
 });
