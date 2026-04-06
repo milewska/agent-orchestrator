@@ -386,6 +386,7 @@ function createOpenCodeAgent(): Agent {
             { path: ".config/opencode" },
             { path: ".local/share/opencode" },
           ],
+          envDefaults: { OPENCODE_CONFIG_DIR: ".config/opencode" },
           envFromHost: [
             "ANTHROPIC_API_KEY",
             "OPENAI_API_KEY",
@@ -398,7 +399,6 @@ function createOpenCodeAgent(): Agent {
             "GROK_API_KEY",
             "GITHUB_TOKEN",
             "COPILOT_API_KEY",
-            "OPENCODE_CONFIG_DIR",
           ],
         },
       };

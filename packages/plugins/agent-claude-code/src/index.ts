@@ -701,8 +701,13 @@ function createClaudeCodeAgent(): Agent {
     getRuntimeHints(): AgentRuntimeHints {
       return {
         docker: {
-          homeMounts: [{ path: ".claude" }, { path: ".claude.json", readOnly: true }],
-          envFromHost: ["ANTHROPIC_API_KEY"],
+          // Claude's devcontainer/docs model is a Linux-side config home, not
+          // host macOS login-state transfer. We mount ~/.claude read-write and
+          // point CLAUDE_CONFIG_DIR there so Docker sessions can persist their
+          // own auth/config state without depending on the host keychain.
+          homeMounts: [{ path: ".claude" }],
+          envDefaults: { CLAUDE_CONFIG_DIR: ".claude" },
+          envFromHost: ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"],
         },
       };
     },

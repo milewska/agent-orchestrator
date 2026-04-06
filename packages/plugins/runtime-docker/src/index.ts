@@ -225,6 +225,24 @@ function applyHostEnvironmentHints(
   return prepared;
 }
 
+function applyContainerEnvironmentDefaults(
+  environment: Record<string, string>,
+  hints: AgentDockerRuntimeHints | undefined,
+  containerHome: string,
+): Record<string, string> {
+  if (!hints?.envDefaults || Object.keys(hints.envDefaults).length === 0) {
+    return environment;
+  }
+
+  const prepared = { ...environment };
+  for (const [key, value] of Object.entries(hints.envDefaults)) {
+    if (!key || !value || prepared[key] !== undefined) continue;
+    prepared[key] = value.startsWith("/") ? value : resolveHomePath(containerHome, value);
+  }
+
+  return prepared;
+}
+
 function prepareContainerEnvironment(
   environment: Record<string, string>,
   hints?: AgentDockerRuntimeHints,
@@ -236,8 +254,9 @@ function prepareContainerEnvironment(
   const mounts: VolumeMount[] = [];
   const containerHome = prepared["HOME"] || CONTAINER_HOME_DIR;
   prepared["HOME"] = containerHome;
+  const containerEnv = applyContainerEnvironmentDefaults(prepared, hints, containerHome);
 
-  const wrapperDir = findWrapperDir(prepared["PATH"]);
+  const wrapperDir = findWrapperDir(containerEnv["PATH"]);
   if (wrapperDir && pathIsDirectory(wrapperDir)) {
     mounts.push({
       hostPath: wrapperDir,
@@ -245,18 +264,18 @@ function prepareContainerEnvironment(
       readOnly: true,
     });
     const rewrittenPath = rewritePathEntries(
-      prepared["PATH"],
+      containerEnv["PATH"],
       new Map([[wrapperDir, CONTAINER_AO_BIN_DIR]]),
     );
     if (rewrittenPath) {
-      prepared["PATH"] = rewrittenPath;
+      containerEnv["PATH"] = rewrittenPath;
     }
   }
 
-  const aoDataDir = prepared["AO_DATA_DIR"];
+  const aoDataDir = containerEnv["AO_DATA_DIR"];
   if (aoDataDir && pathIsDirectory(aoDataDir)) {
     mounts.push({ hostPath: aoDataDir, containerPath: CONTAINER_AO_DATA_DIR });
-    prepared["AO_DATA_DIR"] = CONTAINER_AO_DATA_DIR;
+    containerEnv["AO_DATA_DIR"] = CONTAINER_AO_DATA_DIR;
   }
 
   const hostHome = homedir();
@@ -292,9 +311,9 @@ function prepareContainerEnvironment(
   }
 
   // GH_PATH is host-resolved by the agent plugin and often invalid in-container.
-  delete prepared["GH_PATH"];
+  delete containerEnv["GH_PATH"];
 
-  return { environment: prepared, mounts: dedupeMounts(mounts) };
+  return { environment: containerEnv, mounts: dedupeMounts(mounts) };
 }
 
 function toVolumeArg(mount: VolumeMount): string {

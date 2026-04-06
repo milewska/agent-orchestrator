@@ -340,6 +340,7 @@ describe("runtime.create()", () => {
       agentRuntimeHints: {
         docker: {
           homeMounts: [{ path: ".codex" }],
+          envDefaults: { CODEX_HOME: ".codex" },
         },
       },
       environment: {
@@ -402,6 +403,8 @@ describe("runtime.create()", () => {
       "AO_DATA_DIR=/tmp/ao/data",
       "-e",
       "HOME=/tmp/ao-home",
+      "-e",
+      "CODEX_HOME=/tmp/ao-home/.codex",
     ]);
   });
 

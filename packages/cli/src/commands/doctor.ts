@@ -372,11 +372,17 @@ function checkDockerAgentWarnings(config: OrchestratorConfig): void {
     for (const role of roles) {
       const agent = resolveProjectAgent(config, projectId, role);
       if (agent !== "claude-code") continue;
-      if (process.env["ANTHROPIC_API_KEY"]) continue;
+      if (
+        process.env["ANTHROPIC_API_KEY"] ||
+        process.env["ANTHROPIC_AUTH_TOKEN"] ||
+        process.env["CLAUDE_CODE_OAUTH_TOKEN"]
+      ) {
+        continue;
+      }
 
       warn(
-        `projects.${projectId} (${role}) uses Claude Code with docker, but ANTHROPIC_API_KEY is not set. ` +
-          "Claude host login may not carry into containers; prefer ANTHROPIC_API_KEY or container-native auth.",
+        `projects.${projectId} (${role}) uses Claude Code with docker, but no portable Claude auth is configured. ` +
+          "Claude host login may not carry into containers; prefer ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or a prior Docker-side Claude login persisted in the mounted ~/.claude Docker config home.",
       );
       warned = true;
     }

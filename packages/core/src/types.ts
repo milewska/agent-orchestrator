@@ -306,6 +306,12 @@ export interface AgentDockerRuntimeHints {
   homeMounts?: AgentDockerHomeMount[];
   /** Host environment variables to copy into Docker sessions when present. */
   envFromHost?: string[];
+  /**
+   * Container environment defaults for Docker sessions.
+   * Relative values are resolved against the container HOME directory.
+   * Existing environment variables take precedence over these defaults.
+   */
+  envDefaults?: Record<string, string>;
 }
 
 export interface AgentRuntimeHints {
