@@ -397,14 +397,22 @@ export function SessionDetail({
                 Live Terminal
               </span>
             </div>
-            <DirectTerminal
-              sessionId={session.id}
-              startFullscreen={startFullscreen}
-              variant={terminalVariant}
-              height={terminalHeight}
-              isOpenCodeSession={isOpenCodeSession}
-              reloadCommand={isOpenCodeSession ? reloadCommand : undefined}
-            />
+            {session.activity === "exited" ? (
+              <div className="terminal-exited-placeholder" style={{ height: terminalHeight }}>
+                <span className="terminal-exited-placeholder__text">
+                  Terminal session has ended
+                </span>
+              </div>
+            ) : (
+              <DirectTerminal
+                sessionId={session.id}
+                startFullscreen={startFullscreen}
+                variant={terminalVariant}
+                height={terminalHeight}
+                isOpenCodeSession={isOpenCodeSession}
+                reloadCommand={isOpenCodeSession ? reloadCommand : undefined}
+              />
+            )}
           </section>
 
           {pr ? (

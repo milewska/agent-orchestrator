@@ -258,8 +258,9 @@ export function DirectTerminal({
     let cleanup: (() => void) | null = null;
     let inputDisposable: { dispose(): void } | null = null;
 
-    const PERMANENT_CLOSE_CODES = new Set([4001, 4004]); // auth failure, session not found
+    const PERMANENT_CLOSE_CODES = new Set([1008, 4001, 4004]); // policy violation, auth failure, session not found
     const MAX_RECONNECT_DELAY = 15_000;
+    const MAX_RECONNECT_ATTEMPTS = 8;
 
     Promise.all([
       import("xterm").then((mod) => mod.Terminal),
@@ -531,10 +532,17 @@ export function DirectTerminal({
 
             // Transient failure — schedule reconnect with exponential backoff
             const attempt = reconnectAttemptRef.current;
-            const delay = Math.min(1000 * Math.pow(2, attempt), MAX_RECONNECT_DELAY);
             reconnectAttemptRef.current = attempt + 1;
 
-            console.log(`[DirectTerminal] Reconnecting in ${delay}ms (attempt ${attempt + 1})`);
+            if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+              permanentErrorRef.current = true;
+              setStatus("error");
+              setError("Session unavailable — terminal process may have exited");
+              return;
+            }
+
+            const delay = Math.min(1000 * Math.pow(2, attempt), MAX_RECONNECT_DELAY);
+            console.log(`[DirectTerminal] Reconnecting in ${delay}ms (attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
             setStatus("connecting");
             setError(null);
 

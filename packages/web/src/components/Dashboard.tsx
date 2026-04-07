@@ -95,7 +95,7 @@ function DashboardInner({
   const [hasMounted, setHasMounted] = useState(false);
   const [expandedLevel, setExpandedLevel] = useState<MobileAttentionLevel | null>(null);
   const [mobileFilter, setMobileFilter] = useState<MobileFilterValue>("all");
-  const showSidebar = projects.length > 1;
+  const showSidebar = projects.length >= 1;
   const { showToast } = useToast();
   const [sheetState, setSheetState] = useState<{
     sessionId: string;
@@ -106,7 +106,7 @@ function DashboardInner({
   const sessionsRef = useRef(sessions);
   const hasSeededMobileExpansionRef = useRef(false);
   sessionsRef.current = sessions;
-  const allProjectsView = showSidebar && projectId === undefined;
+  const allProjectsView = projects.length > 1 && showSidebar && projectId === undefined;
   const currentProjectOrchestrator = useMemo(
     () =>
       projectId

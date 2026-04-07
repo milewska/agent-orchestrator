@@ -26,6 +26,7 @@ export async function GET(request: Request): Promise<Response> {
   let updates: ReturnType<typeof setInterval> | undefined;
   let observerProjectId: string | undefined;
   let observer: ProjectObserver | null = null;
+  let closed = false;
 
   const ensureObserver = (config: ServicesConfig): ProjectObserver | null => {
     if (!observerProjectId) {
@@ -93,7 +94,9 @@ export async function GET(request: Request): Promise<Response> {
               lastActivityAt: s.lastActivityAt,
             })),
           };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(initialEvent)}\n\n`));
+          if (!closed) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(initialEvent)}\n\n`));
+          }
           if (projectObserver && observerProjectId) {
             projectObserver.recordOperation({
               metric: "sse_snapshot",
@@ -107,16 +110,23 @@ export async function GET(request: Request): Promise<Response> {
           }
         } catch {
           // If services aren't available, send empty snapshot
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "snapshot", correlationId, emittedAt: new Date().toISOString(), sessions: [] })}\n\n`,
-            ),
-          );
+          if (!closed) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({ type: "snapshot", correlationId, emittedAt: new Date().toISOString(), sessions: [] })}\n\n`,
+              ),
+            );
+          }
         }
       })();
 
       // Send periodic heartbeat
       heartbeat = setInterval(() => {
+        if (closed) {
+          clearInterval(heartbeat);
+          clearInterval(updates);
+          return;
+        }
         try {
           controller.enqueue(encoder.encode(`: heartbeat\n\n`));
         } catch {
@@ -127,6 +137,11 @@ export async function GET(request: Request): Promise<Response> {
 
       // Poll for session state changes every 5 seconds
       updates = setInterval(() => {
+        if (closed) {
+          clearInterval(updates);
+          clearInterval(heartbeat);
+          return;
+        }
         void (async () => {
           let dashboardSessions;
           try {
@@ -155,6 +170,7 @@ export async function GET(request: Request): Promise<Response> {
             }
 
             try {
+              if (closed) return;
               const event = {
                 type: "snapshot",
                 correlationId,
@@ -192,6 +208,7 @@ export async function GET(request: Request): Promise<Response> {
       }, 5000);
     },
     cancel() {
+      closed = true;
       clearInterval(heartbeat);
       clearInterval(updates);
       void (async () => {

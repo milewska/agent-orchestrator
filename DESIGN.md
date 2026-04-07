@@ -76,14 +76,16 @@
 | border-strong | rgba(255, 240, 220, 0.18) | Hover states, focus indicators. |
 
 ### Status Colors
-| Status | Dark Mode | Light Mode | Usage |
-|--------|-----------|------------|-------|
-| Working | #22c55e | #16a34a | Agent actively coding. Green dot with pulse ring animation. |
-| Ready | #8b9cf7 | #6b73c4 | Queued, awaiting start or CI pending. |
-| Respond | #e2a336 | #b8860b | Needs human input. Amber = attention without panic. |
-| Review | #06b6d4 | #0891b2 | Code ready for review. Cyan = "look when ready." |
-| Error | #ef4444 | #dc2626 | CI failed, agent crashed. Red = broken. |
-| Done | #57534e | #d6d3d1 | Completed. Fades to stone. Done items recede. |
+| Status | Dark Mode | Light Mode | CSS Token | Usage |
+|--------|-----------|------------|-----------|-------|
+| Working | #22c55e | #16a34a | `--status-working` | Agent actively coding. Green dot with pulse ring animation. |
+| Ready | #8b9cf7 | #6b73c4 | `--status-ready` | Queued, awaiting start or CI pending. |
+| Respond | #e2a336 | #b8860b | `--status-respond` | Needs human input. Amber = attention without panic. **NOT red** — "respond" is a normal workflow state. |
+| Review | #06b6d4 | #0891b2 | `--status-review` | Code ready for review. Cyan = "look when ready." |
+| Error | #ef4444 | #dc2626 | `--status-error` | CI failed, agent crashed. Red = broken. Distinct from Respond. |
+| Done | #57534e | #d6d3d1 | `--status-done` | Completed. Fades to stone. Done items recede. |
+
+**Critical:** `--status-respond` and `--status-error` are separate tokens with different semantic meanings. Respond = human decision needed (amber). Error = something broke (red). Never conflate them.
 
 - **Dark mode strategy:** Warm charcoal palette (brown-tinted, not neutral or blue-tinted gray). Reduce font weight by one step in dark mode (semibold becomes 500, bold becomes 600). Inset highlights on elevated surfaces: `inset 0 1px 0 rgba(255,255,255,0.03)`. Subtle radial gradients on body for ambient depth.
 
@@ -243,3 +245,10 @@
 | 2026-04-05 | Added accessibility section | Missing from v1. Touch targets 44px min, WCAG AA contrast, focus-visible, prefers-reduced-motion. |
 | 2026-04-05 | Added component anatomy section | Missing from v1. Button states, input states, card structure, status pill, alert anatomy. |
 | 2026-04-05 | Added light mode rationale | v1 listed values without explaining why. Warm parchment base, white card float, desaturated accent. |
+| 2026-04-07 | `--status-respond` is amber, never red | Critique found Respond column using `--status-error` (red). Respond = human decision needed, not error. Separate token. See status colors table. |
+| 2026-04-07 | Two-stage delete confirmation pattern | P0 safety: trash button first click enters amber "kill?" state for 2s; second click confirms. No modal. In-place via CSS `::after` + JS class toggle. Prevents accidental agent termination. |
+| 2026-04-07 | Working card titles at full weight | P2: Working state is the primary operational state. Never dim active card titles. Dimming is reserved for Done/archived cards only. |
+| 2026-04-07 | No current-project group label in sidebar sessions | P2: Current project label in the sessions list is redundant — the project switcher chip 12px above already names the project. Only other projects need group labels. |
+| 2026-04-07 | Remove column shadows | P3: `18px/42px` column box-shadow created competing depth layers with card shadows. Border + background contrast does separation. No column-level shadow needed. |
+| 2026-04-07 | Topbar shows page name only, not project name | Minor: Topbar "vinesight-rn / kanban" duplicated project name visible in sidebar. Topbar now shows "Kanban" + freshness. |
+| 2026-04-07 | Diff size badges use `<abbr>` with tooltip | Minor: S/M/L diff badges were opaque. `<abbr title="Small (<100 lines)">` gives meaning on hover without adding visual noise. |
