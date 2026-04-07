@@ -7,6 +7,7 @@ import { type DashboardSession, type DashboardPR, isPRMergeReady } from "@/lib/t
 import { CI_STATUS } from "@composio/ao-core/types";
 import { cn } from "@/lib/cn";
 import dynamic from "next/dynamic";
+import { getSessionTitle } from "@/lib/format";
 import { CICheckList } from "./CIBadge";
 import { MobileBottomNav } from "./MobileBottomNav";
 
@@ -46,10 +47,6 @@ const activityMeta: Record<string, { label: string; color: string }> = {
   blocked: { label: "Blocked", color: "var(--color-status-error)" },
   exited: { label: "Exited", color: "var(--color-status-error)" },
 };
-
-function getSessionHeadline(session: DashboardSession): string {
-  return session.issueTitle ?? session.summary ?? session.id;
-}
 
 function cleanBugbotComment(body: string): { title: string; description: string } {
   const isBugbot = body.includes("<!-- DESCRIPTION START -->") || body.includes("### ");
@@ -339,7 +336,7 @@ export function SessionDetail({
     label: session.activity ?? "unknown",
     color: "var(--color-text-muted)",
   };
-  const headline = getSessionHeadline(session);
+  const headline = getSessionTitle(session);
 
   const accentColor = "var(--color-accent)";
   const terminalVariant = isOrchestrator ? "orchestrator" : "agent";
