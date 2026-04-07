@@ -182,6 +182,10 @@ describe("preflight.checkRuntime", () => {
       'Unknown runtime "dokcer"',
     );
   });
+
+  it("allows custom runtime plugins when explicitly registered", async () => {
+    await expect(preflight.checkRuntime("kubernetes", undefined, ["tmux", "docker", "kubernetes"])).resolves.toBeUndefined();
+  });
 });
 
 describe("preflight.checkGhAuth", () => {

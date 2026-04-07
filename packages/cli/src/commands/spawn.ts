@@ -15,7 +15,7 @@ import {
 } from "@composio/ao-core";
 import { DEFAULT_PORT } from "../lib/constants.js";
 import { banner } from "../lib/format.js";
-import { getSessionManager } from "../lib/create-session-manager.js";
+import { getPluginRegistry, getSessionManager } from "../lib/create-session-manager.js";
 import { ensureLifecycleWorker } from "../lib/lifecycle-service.js";
 import { preflight } from "../lib/preflight.js";
 import { findProjectForDirectory } from "../lib/project-resolution.js";
@@ -78,9 +78,12 @@ async function runSpawnPreflight(
   options?: SpawnClaimOptions,
 ): Promise<void> {
   const project = config.projects[projectId];
+  const registry = await getPluginRegistry(config);
+  const knownRuntimeNames = registry.list("runtime").map((plugin) => plugin.name);
   await preflight.checkRuntime(
     runtimeOverride.effectiveRuntime,
     runtimeOverride.effectiveRuntimeConfig,
+    knownRuntimeNames,
   );
   const needsGitHubAuth =
     project?.tracker?.plugin === "github" ||

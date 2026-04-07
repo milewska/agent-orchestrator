@@ -55,6 +55,12 @@ vi.mock("@composio/ao-core", async (importOriginal) => {
 
 vi.mock("../../src/lib/create-session-manager.js", () => ({
   getSessionManager: async (): Promise<SessionManager> => mockSessionManager as SessionManager,
+  getPluginRegistry: async () => ({
+    list: (slot: string) =>
+      slot === "runtime"
+        ? [{ name: "tmux" }, { name: "docker" }, { name: "process" }]
+        : [],
+  }),
 }));
 
 vi.mock("../../src/lib/lifecycle-service.js", () => ({

@@ -14,6 +14,7 @@ import { exec } from "./shell.js";
 import { isInstalledUnderNodeModules } from "./dashboard-rebuild.js";
 
 type RuntimeConfig = Record<string, unknown>;
+type KnownRuntimes = Iterable<string> | undefined;
 
 /**
  * Check that the dashboard port is free.
@@ -122,7 +123,11 @@ async function checkDocker(runtimeConfig?: RuntimeConfig): Promise<void> {
   }
 }
 
-async function checkRuntime(runtime: string, runtimeConfig?: RuntimeConfig): Promise<void> {
+async function checkRuntime(
+  runtime: string,
+  runtimeConfig?: RuntimeConfig,
+  knownRuntimes?: KnownRuntimes,
+): Promise<void> {
   if (runtime === "tmux") {
     await checkTmux();
     return;
@@ -133,6 +138,13 @@ async function checkRuntime(runtime: string, runtimeConfig?: RuntimeConfig): Pro
   }
   if (runtime === "process") {
     return;
+  }
+
+  if (knownRuntimes) {
+    const known = new Set([...knownRuntimes].filter(Boolean));
+    if (known.has(runtime)) {
+      return;
+    }
   }
 
   throw new Error(

@@ -37,7 +37,7 @@ import {
 } from "@composio/ao-core";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { exec, execSilent, git } from "../lib/shell.js";
-import { getSessionManager } from "../lib/create-session-manager.js";
+import { getPluginRegistry, getSessionManager } from "../lib/create-session-manager.js";
 import { ensureLifecycleWorker, stopLifecycleWorker } from "../lib/lifecycle-service.js";
 import {
   findWebDir,
@@ -946,6 +946,8 @@ async function runStartup(
 
   // Only require runtime dependencies when we are actually starting the orchestrator.
   if (opts?.orchestrator !== false) {
+    const registry = await getPluginRegistry(config);
+    const knownRuntimeNames = registry.list("runtime").map((plugin) => plugin.name);
     if (runtimeOverride.effectiveRuntime === "tmux") {
       await ensureTmux();
     } else if (runtimeOverride.effectiveRuntime === "docker") {
@@ -954,6 +956,7 @@ async function runStartup(
       await preflight.checkRuntime(
         runtimeOverride.effectiveRuntime,
         runtimeOverride.effectiveRuntimeConfig,
+        knownRuntimeNames,
       );
     }
   }
