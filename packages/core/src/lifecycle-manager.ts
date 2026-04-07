@@ -1272,6 +1272,22 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       states.set(session.id, newStatus);
     }
 
+    // Pin first quality summary for title stability
+    if (
+      session.agentInfo?.summary &&
+      !session.agentInfo.summaryIsFallback &&
+      !session.metadata["pinnedSummary"]
+    ) {
+      const trimmed = session.agentInfo.summary.replace(/[\n\r]/g, " ").trim();
+      if (trimmed.length >= 5) {
+        try {
+          updateSessionMetadata(session, { pinnedSummary: trimmed });
+        } catch {
+          // Non-critical: title just won't be pinned this cycle
+        }
+      }
+    }
+
     // For stale PR owners: skip dispatches for non-terminal states (no duplicate
     // notifications), but allow terminal transitions (merged/killed) through so
     // dispatch helpers can run their cleanup paths (clearing CI fingerprints,
