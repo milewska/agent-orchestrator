@@ -5,6 +5,7 @@ import type { Command } from "commander";
 import { loadConfig } from "@composio/ao-core";
 import { findWebDir, buildDashboardEnv, waitForPortAndOpen } from "../lib/web-dir.js";
 import {
+  clearStaleCacheIfNeeded,
   findRunningDashboardPid,
   isInstalledUnderNodeModules,
   rebuildDashboardProductionArtifacts,
@@ -53,6 +54,7 @@ export function registerDashboard(program: Command): void {
         // Fall through to start the dashboard on this port.
       } else {
         await preflight.checkBuilt(localWebDir);
+        await clearStaleCacheIfNeeded(localWebDir);
       }
 
       const webDir = localWebDir;
