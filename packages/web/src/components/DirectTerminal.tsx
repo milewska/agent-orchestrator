@@ -813,7 +813,11 @@ export function DirectTerminal({
         <div
           ref={terminalRef}
           style={{
-            width: "100%",
+            /* Slightly narrower than parent so FitAddon calculates cols
+               with a small buffer — prevents sub-pixel rounding from
+               making the canvas 1-2px wider than the visible area. */
+            width: "calc(100% - 4px)",
+            margin: "0 auto",
             height: "100%",
             overflow: "hidden",
           }}

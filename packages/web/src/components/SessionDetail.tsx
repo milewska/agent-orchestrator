@@ -393,7 +393,7 @@ export function SessionDetail({
           <div id="session-terminal-section" aria-hidden="true" />
           {(!isOrchestrator || isMobile) && (
             <div className="mb-2">
-              {/* Breadcrumbs */}
+              {/* Breadcrumbs — headline omitted on mobile to avoid duplicate with h1 */}
               <div className="mb-2 flex items-center gap-1.5">
                 <a
                   href={crumbHref}
@@ -404,10 +404,14 @@ export function SessionDetail({
                   </svg>
                   {crumbLabel}
                 </a>
-                <span className="text-[11px] text-[var(--color-border-strong)]">/</span>
-                <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
-                  {headline}
-                </span>
+                {!isMobile ? (
+                  <>
+                    <span className="text-[11px] text-[var(--color-border-strong)]">/</span>
+                    <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
+                      {headline}
+                    </span>
+                  </>
+                ) : null}
               </div>
               {/* Title + badges row */}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
