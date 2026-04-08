@@ -142,15 +142,15 @@ describe("LandingVideo", () => {
 describe("LandingFeatures", () => {
   it("renders all four feature titles", () => {
     render(<LandingFeatures />);
-    expect(screen.getByText("Parallel Execution")).toBeInTheDocument();
-    expect(screen.getByText("Autonomous Recovery")).toBeInTheDocument();
-    expect(screen.getByText("Plugin Architecture")).toBeInTheDocument();
-    expect(screen.getByText("Live Dashboard")).toBeInTheDocument();
+    expect(screen.getByText("Multi-agent execution")).toBeInTheDocument();
+    expect(screen.getByText(/Autonomous CI/)).toBeInTheDocument();
+    expect(screen.getByText("7 swappable slots")).toBeInTheDocument();
+    expect(screen.getByText(/Real-time Kanban/)).toBeInTheDocument();
   });
 
   it("renders section heading", () => {
     render(<LandingFeatures />);
-    expect(screen.getByText(/orchestrate/)).toBeInTheDocument();
+    expect(screen.getByText("What it does")).toBeInTheDocument();
   });
 });
 
