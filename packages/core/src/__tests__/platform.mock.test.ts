@@ -129,12 +129,26 @@ describe("resolveWindowsShell", () => {
 // ---------------------------------------------------------------------------
 
 describe("killProcessTree", () => {
-  it("calls taskkill with /T /F /PID on Windows", async () => {
+  it("calls taskkill with /T /PID (no /F) for SIGTERM on Windows", async () => {
     setPlatform("win32");
     resolveExecFile(""); // taskkill succeeds
 
     const mod = await import("../platform.js");
-    await mod.killProcessTree(1234);
+    await mod.killProcessTree(1234, "SIGTERM");
+
+    expect(mockExecFile).toHaveBeenCalledWith(
+      "taskkill",
+      ["/T", "/PID", "1234"],
+      expect.any(Function),
+    );
+  });
+
+  it("calls taskkill with /T /F /PID for SIGKILL on Windows", async () => {
+    setPlatform("win32");
+    resolveExecFile(""); // taskkill succeeds
+
+    const mod = await import("../platform.js");
+    await mod.killProcessTree(1234, "SIGKILL");
 
     expect(mockExecFile).toHaveBeenCalledWith(
       "taskkill",
