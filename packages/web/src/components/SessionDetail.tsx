@@ -167,7 +167,7 @@ function OrchestratorStatusStrip({
             color: "var(--color-accent)",
             background: "color-mix(in srgb, var(--color-accent) 10%, transparent)",
             border: "1px solid color-mix(in srgb, var(--color-accent) 20%, transparent)",
-            borderRadius: 3,
+            borderRadius: 6,
           }}
         >
           orchestrator
@@ -336,7 +336,7 @@ export function SessionDetail({
                     style={{
                       background: `color-mix(in srgb, ${activity.color} 12%, transparent)`,
                       border: `1px solid color-mix(in srgb, ${activity.color} 20%, transparent)`,
-                      borderRadius: 3,
+                      borderRadius: 6,
                     }}
                   >
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: activity.color }} />
