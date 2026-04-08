@@ -548,39 +548,33 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
         )}
 
         {!rateLimited && alerts.length > 0 && (
-          <div className="card__alerts flex flex-col items-start gap-1 px-3 pb-2">
+          <div className="card__alerts flex flex-col gap-1 px-3 pb-2">
             {alerts.slice(0, 3).map((alert) => (
-              <span
+              <div
                 key={alert.key}
-                className="alert-pill inline-flex items-stretch overflow-hidden border font-[var(--font-mono)] text-[11px]"
-                style={{
-                  borderColor: alert.borderColor ?? alert.color ?? "var(--color-border-default)",
-                }}
+                className={cn("alert-row", `alert-row--${alert.type}`)}
               >
-                <a
-                  href={alert.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className={cn(
-                    "alert-pill__label min-w-0 flex-1 truncate whitespace-nowrap px-2 py-[3px] font-medium !underline [text-decoration-skip-ink:none] [text-underline-offset:2px] hover:brightness-125",
-                    alert.className,
-                  )}
-                  style={alert.color ? { color: alert.color } : undefined}
-                >
-                  {alert.count !== undefined && (
-                    <>
-                      <span className="font-bold">{alert.count}</span>{" "}
-                    </>
-                  )}
-                  {alert.label}
+                <span className="alert-row__icon">{alert.icon}</span>
+                <span className="alert-row__text">
+                  <a
+                    href={alert.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {alert.count !== undefined && (
+                      <>
+                        <span className="font-bold">{alert.count}</span>{" "}
+                      </>
+                    )}
+                    {alert.label}
+                  </a>
                   {alert.notified && (
-                    <span className="ml-1 opacity-60" title="Agent has been notified">
-                      {" "}
-                      · notified
+                    <span className="alert-row__notified" title="Agent has been notified">
+                      {" "}&middot; notified
                     </span>
                   )}
-                </a>
+                </span>
                 {alert.actionLabel && (
                   <button
                     onClick={(e) => {
@@ -588,16 +582,7 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
                       void handleAction(alert.key, alert.actionMessage ?? "");
                     }}
                     disabled={sendingAction === alert.key}
-                    className={cn(
-                      "alert-pill__action border-l px-2 py-[3px] font-medium text-[10px] uppercase tracking-[0.04em] transition-transform-[160ms] disabled:opacity-50",
-                      failedAction === alert.key &&
-                        "bg-[var(--color-tint-red)] text-[var(--color-status-error)]",
-                      alert.actionClassName,
-                    )}
-                    style={{
-                      borderColor:
-                        alert.borderColor ?? alert.color ?? "var(--color-border-default)",
-                    }}
+                    className="alert-row__action"
                   >
                     {sendingAction === alert.key
                       ? "sent!"
@@ -606,7 +591,7 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
                         : alert.actionLabel}
                   </button>
                 )}
-              </span>
+              </div>
             ))}
           </div>
         )}
@@ -748,16 +733,14 @@ export const SessionCard = memo(SessionCardView, areSessionCardPropsEqual);
 
 interface Alert {
   key: string;
+  type: "ci" | "changes" | "review" | "conflict" | "comment";
+  icon: string;
   label: string;
-  className: string;
-  color?: string;
-  borderColor?: string;
   url: string;
   count?: number;
   notified?: boolean;
   actionLabel?: string;
   actionMessage?: string;
-  actionClassName?: string;
 }
 
 function getAlerts(session: DashboardSession): Alert[] {
@@ -786,36 +769,32 @@ function getAlerts(session: DashboardSession): Alert[] {
       // Lifecycle says ci_failed but PR enrichment hasn't caught up — show generic alert
       alerts.push({
         key: "ci-fail",
+        type: "ci",
+        icon: "\u2717",
         label: "CI failing",
-        className: "",
-        color: "var(--color-alert-ci)",
-        borderColor: "var(--color-alert-ci)",
         url: pr.url + "/checks",
         notified: Boolean(meta["lastCIFailureDispatchHash"]),
-        actionLabel: "ask to fix",
+        actionLabel: "Fix",
         actionMessage: `Please fix the failing CI checks on ${pr.url}`,
-        actionClassName: "bg-[var(--color-alert-ci-bg)] hover:brightness-110",
       });
     } else if (failCount === 0) {
       alerts.push({
         key: "ci-unknown",
+        type: "ci",
+        icon: "?",
         label: "CI unknown",
-        className: "",
-        color: "var(--color-alert-ci-unknown)",
         url: pr.url + "/checks",
       });
     } else {
       alerts.push({
         key: "ci-fail",
-        label: `${failCount} CI check${failCount > 1 ? "s" : ""} failing`,
-        className: "",
-        color: "var(--color-alert-ci)",
-        borderColor: "var(--color-alert-ci)",
+        type: "ci",
+        icon: "\u2717",
+        label: `CI failing \u2014 ${failCount} check${failCount > 1 ? "s" : ""}`,
         url: failedCheck?.url ?? pr.url + "/checks",
         notified: Boolean(meta["lastCIFailureDispatchHash"]),
-        actionLabel: "ask to fix",
+        actionLabel: "Fix",
         actionMessage: `Please fix the failing CI checks on ${pr.url}`,
-        actionClassName: "bg-[var(--color-alert-ci-bg)] hover:brightness-110",
       });
     }
   }
@@ -823,39 +802,36 @@ function getAlerts(session: DashboardSession): Alert[] {
   if (hasChangesRequested) {
     alerts.push({
       key: "changes",
+      type: "changes",
+      icon: "\u21BB",
       label: "changes requested",
-      className: "",
-      color: "var(--color-alert-changes)",
       url: pr.url,
       notified: Boolean(meta["lastPendingReviewDispatchHash"]),
-      actionLabel: "ask to address",
+      actionLabel: "Address",
       actionMessage: `Please address the requested changes on ${pr.url}`,
-      actionClassName: "bg-[var(--color-alert-changes-bg)] hover:brightness-110",
     });
   } else if (!pr.isDraft && (pr.reviewDecision === "pending" || pr.reviewDecision === "none")) {
     alerts.push({
       key: "review",
+      type: "review",
+      icon: "\uD83D\uDC41",
       label: "needs review",
-      className: "",
-      color: "var(--color-alert-review)",
       url: pr.url,
-      actionLabel: "ask to post",
+      actionLabel: "Post",
       actionMessage: `Post ${pr.url} on slack asking for a review.`,
-      actionClassName: "bg-[var(--color-alert-review-bg)] hover:brightness-110",
     });
   }
 
   if (hasConflicts) {
     alerts.push({
       key: "conflict",
+      type: "conflict",
+      icon: "\u26A0",
       label: "merge conflict",
-      className: "",
-      color: "var(--color-alert-conflict)",
       url: pr.url,
       notified: meta["lastMergeConflictDispatched"] === "true",
-      actionLabel: "ask to fix",
+      actionLabel: "Fix",
       actionMessage: `Please resolve the merge conflicts on ${pr.url} by rebasing on the base branch`,
-      actionClassName: "bg-[var(--color-alert-conflict-bg)] hover:brightness-110",
     });
   }
 
@@ -863,15 +839,13 @@ function getAlerts(session: DashboardSession): Alert[] {
     const firstUrl = pr.unresolvedComments[0]?.url ?? pr.url + "/files";
     alerts.push({
       key: "comments",
+      type: "comment",
+      icon: "\uD83D\uDCAC",
       label: "unresolved comments",
       count: pr.unresolvedThreads,
-      className: "",
-      color: "var(--color-alert-comment)",
-      borderColor: "var(--color-alert-comment)",
       url: firstUrl,
-      actionLabel: "ask to resolve",
+      actionLabel: "Resolve",
       actionMessage: `Please address all unresolved review comments on ${pr.url}`,
-      actionClassName: "bg-[var(--color-alert-comment-bg)] hover:brightness-110",
     });
   }
 

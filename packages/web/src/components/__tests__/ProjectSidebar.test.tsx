@@ -51,9 +51,9 @@ describe("ProjectSidebar", () => {
     );
 
     expect(screen.getByText("Projects")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Project One" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Project Two" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /switch to dark mode/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Project One/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Project Two/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new project/i })).toBeInTheDocument();
   });
 
   it("marks the active project row as the current page", () => {
@@ -66,11 +66,13 @@ describe("ProjectSidebar", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Project Two" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /Project Two/ })).toHaveAttribute(
       "aria-current",
       "page",
     );
-    expect(screen.getByRole("button", { name: "Project One" })).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("button", { name: /Project One/ })).not.toHaveAttribute(
+      "aria-current",
+    );
   });
 
   it("navigates to the project query param when clicking a project", () => {
@@ -83,7 +85,7 @@ describe("ProjectSidebar", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Project Two" }));
+    fireEvent.click(screen.getByRole("button", { name: /Project Two/ }));
 
     expect(mockPush).toHaveBeenCalledWith("/?project=project-2");
   });

@@ -26,7 +26,10 @@ beforeEach(() => {
 describe("Dashboard empty state", () => {
   it("shows empty state when there are no sessions (single-project view)", () => {
     render(<Dashboard initialSessions={[]} />);
-    expect(screen.getByText(/No active sessions/i)).toBeInTheDocument();
+    expect(screen.getByText(/Ready to orchestrate/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Start a session to spawn parallel agents across your codebase/i),
+    ).toBeInTheDocument();
   });
 
   it("does not show empty state when sessions exist", () => {
@@ -53,6 +56,6 @@ describe("Dashboard empty state", () => {
         ]}
       />,
     );
-    expect(queryByText(/No active sessions/i)).not.toBeInTheDocument();
+    expect(queryByText(/Ready to orchestrate/i)).not.toBeInTheDocument();
   });
 });

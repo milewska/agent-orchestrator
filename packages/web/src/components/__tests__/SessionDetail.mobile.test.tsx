@@ -54,8 +54,8 @@ describe("SessionDetail mobile navbar", () => {
 
     const nav = screen.getByRole("navigation", { name: /session navigation/i });
     expect(nav).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/?project=my-app");
-    expect(screen.getByRole("link", { name: "PRs" })).toHaveAttribute("href", "/prs?project=my-app");
+    expect(within(nav).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/?project=my-app");
+    expect(within(nav).getByRole("link", { name: "PRs" })).toHaveAttribute("href", "/prs?project=my-app");
     expect(screen.getAllByRole("link", { name: "Orchestrator" }).at(-1)).toHaveAttribute(
       "aria-current",
       "page",
@@ -124,7 +124,7 @@ describe("SessionDetail mobile navbar", () => {
       />,
     );
 
-    expect(screen.getByText("Compact header polish")).toBeInTheDocument();
+    expect(screen.getAllByText("Compact header polish")).toHaveLength(1);
     expect(screen.getByText("feat/compact-header")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "PR #77" })).toHaveClass(
       "session-detail-link-pill--link",
@@ -148,7 +148,7 @@ describe("SessionDetail mobile navbar", () => {
       />,
     );
 
-    expect(screen.getByText("Fix stable session titles")).toBeInTheDocument();
+    expect(screen.getAllByText("Fix stable session titles")).toHaveLength(1);
     expect(screen.queryByText("Responding to latest review comment")).not.toBeInTheDocument();
   });
 
@@ -190,13 +190,13 @@ describe("SessionDetail mobile navbar", () => {
       />,
     );
 
-    expect(screen.getByText(/CI failing/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 check failing/i)).toBeInTheDocument();
     expect(screen.getByText(/Changes requested/i)).toBeInTheDocument();
-    expect(screen.getByText(/2 unresolved comments/i)).toBeInTheDocument();
     expect(screen.getByText("Unresolved Comments")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("Fix null handling")).toBeInTheDocument();
-    expect(screen.getByText("build")).toBeInTheDocument();
-    expect(screen.getByText("lint")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "\u2717 build")).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === "\u2713 lint")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Ask Agent to Fix" })).toBeInTheDocument();
   });
 
@@ -219,9 +219,6 @@ describe("SessionDetail mobile navbar", () => {
 
     const mergedBadge = screen.getByText("Merged");
     expect(mergedBadge).toBeInTheDocument();
-    expect(mergedBadge).toHaveStyle({
-      color: "var(--color-text-secondary)",
-      background: "var(--color-chip-bg)",
-    });
+    expect(mergedBadge).toHaveClass("session-detail-pr-card__diff-label");
   });
 });

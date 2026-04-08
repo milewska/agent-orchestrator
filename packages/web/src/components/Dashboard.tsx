@@ -514,11 +514,209 @@ function DashboardInner({
   };
 
   const hasAnySessions = KANBAN_LEVELS.some((level) => grouped[level].length > 0);
+  const showEmptyState = !allProjectsView && !hasAnySessions && grouped.done.length === 0;
 
   const anyRateLimited = useMemo(
     () => sessions.some((session) => session.pr && isPRRateLimited(session.pr)),
     [sessions],
   );
+
+  if (!isMobile) {
+    return (
+      <>
+        <ConnectionBar status={connectionStatus} />
+        <div className="dashboard-app-shell">
+          <header className="dashboard-app-header">
+            {showSidebar ? (
+              <button
+                type="button"
+                className="dashboard-app-sidebar-toggle"
+                onClick={() => setSidebarCollapsed((current) => !current)}
+                aria-label="Toggle sidebar"
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 3v18" />
+                </svg>
+              </button>
+            ) : null}
+            <div className="dashboard-app-header__brand">
+              <span className="dashboard-app-header__live-dot" aria-hidden="true" />
+              <span>Agent Orchestrator</span>
+            </div>
+            <span className="dashboard-app-header__sep" aria-hidden="true" />
+            <span className="dashboard-app-header__project">
+              {projectName ?? (allProjectsView ? "All projects" : "Dashboard")}
+            </span>
+            <div className="dashboard-app-header__spacer" />
+            <div className="dashboard-app-header__actions">
+              {!allProjectsView && orchestratorHref ? (
+                <a
+                  href={orchestratorHref}
+                  className="dashboard-app-btn dashboard-app-btn--amber"
+                  aria-label="Orchestrator"
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="5" r="2" fill="currentColor" stroke="none" />
+                    <path d="M12 7v4M12 11H6M12 11h6M6 11v3M12 11v3M18 11v3" />
+                    <circle cx="6" cy="17" r="2" />
+                    <circle cx="12" cy="17" r="2" />
+                    <circle cx="18" cy="17" r="2" />
+                  </svg>
+                  Orchestrator
+                </a>
+              ) : null}
+            </div>
+          </header>
+
+          <div className="dashboard-shell dashboard-shell--desktop">
+            {showSidebar && (
+              <ProjectSidebar
+                projects={projects}
+                sessions={sessions}
+                activeProjectId={projectId}
+                activeSessionId={activeSessionId}
+                collapsed={sidebarCollapsed}
+                onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
+                mobileOpen={mobileMenuOpen}
+                onMobileClose={() => setMobileMenuOpen(false)}
+              />
+            )}
+
+            <main className="dashboard-main dashboard-main--desktop">
+              <DynamicFavicon sseAttentionLevels={sseAttentionLevels} projectName={projectName} />
+              <div className="dashboard-main__subhead">
+                <h1 className="dashboard-main__title">Dashboard</h1>
+                <p className="dashboard-main__subtitle">
+                  Live agent sessions, pull requests, and merge status.
+                </p>
+              </div>
+
+              <div className="dashboard-main__body">
+                {anyRateLimited && !rateLimitDismissed && (
+                  <div className="dashboard-alert mb-4 flex items-center gap-2.5 border border-[color-mix(in_srgb,var(--color-status-attention)_25%,transparent)] bg-[var(--color-tint-yellow)] px-3.5 py-2.5 text-[11px] text-[var(--color-status-attention)]">
+                    <svg
+                      className="h-3.5 w-3.5 shrink-0"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 8v4M12 16h.01" />
+                    </svg>
+                    <span className="flex-1">
+                      GitHub API rate limited — PR data (CI status, review state, sizes) may be
+                      stale. Will retry automatically on next refresh.
+                    </span>
+                    <button
+                      onClick={() => setRateLimitDismissed(true)}
+                      className="ml-1 shrink-0 opacity-60 hover:opacity-100"
+                      aria-label="Dismiss"
+                    >
+                      <svg
+                        className="h-3.5 w-3.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                      >
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+
+                {allProjectsView && (
+                  <ProjectOverviewGrid
+                    overviews={projectOverviews}
+                    onSpawnOrchestrator={handleSpawnOrchestrator}
+                    spawningProjectIds={spawningProjectIds}
+                    spawnErrors={spawnErrors}
+                  />
+                )}
+
+                {!allProjectsView && hasAnySessions && (
+                  <div className="kanban-board-wrap">
+                    <div className="kanban-board">
+                      {KANBAN_LEVELS.map((level) => (
+                        <AttentionZone
+                          key={level}
+                          level={level}
+                          sessions={grouped[level]}
+                          onSend={handleSend}
+                          onKill={handleKill}
+                          onMerge={handleMerge}
+                          onRestore={handleRestore}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!allProjectsView && grouped.done.length > 0 && (
+                  <div className="done-bar mt-6">
+                    <button
+                      type="button"
+                      className="done-bar__toggle"
+                      onClick={() => setDoneExpanded((v) => !v)}
+                      aria-expanded={doneExpanded}
+                    >
+                      <svg
+                        className={`done-bar__chevron${doneExpanded ? " done-bar__chevron--open" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                      <span>Done / Terminated</span>
+                      <span className="done-bar__count">{grouped.done.length}</span>
+                      <span className="done-bar__rule" aria-hidden="true" />
+                    </button>
+                    {doneExpanded && (
+                      <div className="done-bar__cards">
+                        {grouped.done.map((session) => (
+                          <SessionCard
+                            key={session.id}
+                            session={session}
+                            onSend={handleSend}
+                            onKill={handleKill}
+                            onMerge={handleMerge}
+                            onRestore={handleRestore}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {showEmptyState ? <EmptyState orchestratorHref={orchestratorHref} /> : null}
+              </div>
+            </main>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -742,7 +940,9 @@ function DashboardInner({
               </div>
             )}
 
-            {!allProjectsView && !hasAnySessions && grouped.done.length === 0 && <EmptyState />}
+            {!allProjectsView && !hasAnySessions && grouped.done.length === 0 && (
+              <EmptyState orchestratorHref={orchestratorHref} />
+            )}
           </div>
         </div>
       </div>

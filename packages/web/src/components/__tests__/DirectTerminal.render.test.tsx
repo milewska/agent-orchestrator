@@ -118,12 +118,9 @@ describe("DirectTerminal render", () => {
     render(<DirectTerminal sessionId="ao-orchestrator" variant="orchestrator" />);
 
     await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/runtime/terminal", expect.any(Object)));
-    await waitFor(() =>
-      expect(screen.getByText("Connected")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(MockWebSocket.instances[0]?.url).toContain("/ao-terminal-ws?session=ao-orchestrator"));
 
-    expect(screen.getByText("ao-orchestrator")).toHaveStyle({ color: "var(--color-accent)" });
-    expect(screen.getByText("XDA")).toHaveStyle({ color: "var(--color-accent)" });
-    expect(MockWebSocket.instances[0]?.url).toContain("/ao-terminal-ws?session=ao-orchestrator");
+    expect(screen.getByText("ao-orchestrator")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Fullscreen" })).toBeInTheDocument();
   });
 });

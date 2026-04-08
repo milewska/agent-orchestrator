@@ -8,8 +8,10 @@ import { CI_STATUS } from "@composio/ao-core/types";
 import { cn } from "@/lib/cn";
 import dynamic from "next/dynamic";
 import { getSessionTitle } from "@/lib/format";
+import type { ProjectInfo } from "@/lib/project-name";
 
 import { MobileBottomNav } from "./MobileBottomNav";
+import { ProjectSidebar } from "./ProjectSidebar";
 
 const DirectTerminal = dynamic(
   () => import("./DirectTerminal").then((m) => ({ default: m.DirectTerminal })),
@@ -35,6 +37,8 @@ interface SessionDetailProps {
   isOrchestrator?: boolean;
   orchestratorZones?: OrchestratorZones;
   projectOrchestratorId?: string | null;
+  projects?: ProjectInfo[];
+  sidebarSessions?: DashboardSession[];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -80,6 +84,7 @@ function activityStateClass(activityLabel: string): string {
 
 function SessionTopStrip({
   headline,
+  crumbId,
   activityLabel,
   activityColor,
   branch,
@@ -92,6 +97,7 @@ function SessionTopStrip({
   onKill,
 }: {
   headline: string;
+  crumbId: string;
   activityLabel: string;
   activityColor: string;
   branch: string | null;
@@ -104,12 +110,12 @@ function SessionTopStrip({
   onKill?: () => void;
 }) {
   return (
-    <div>
+    <div className="session-detail-top-strip">
       {/* Breadcrumbs */}
-      <div className="flex items-center gap-1.5 pb-3">
+      <div className="session-detail-crumbs">
         <a
           href={crumbHref}
-          className="flex items-center gap-1 text-[11px] font-medium text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)] hover:no-underline"
+          className="session-detail-crumb-back"
         >
           <svg
             className="h-3 w-3 opacity-60"
@@ -122,37 +128,31 @@ function SessionTopStrip({
           </svg>
           {crumbLabel}
         </a>
-        <span className="text-[10px] text-[var(--color-border-strong)]">/</span>
-        <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
-          {headline}
-        </span>
+        <span className="session-detail-crumb-sep">/</span>
+        <span className="session-detail-crumb-id">{crumbId}</span>
         {isOrchestrator ? (
           <span className="session-page-header__mode">orchestrator</span>
         ) : null}
       </div>
 
       {/* Identity strip */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[17px] font-semibold tracking-[-0.03em] text-[var(--color-text-primary)]">
+      <div className="session-detail-identity">
+        <div className="session-detail-identity__info">
+          <h1 className="session-detail-identity__title">
             {headline}
           </h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className="session-detail-identity__pills">
             <div
               className={cn(
-                "session-detail-status-pill flex items-center gap-1.5 border px-2.5 py-1",
+                "session-detail-status-pill",
                 activityStateClass(activityLabel),
               )}
-              style={{
-                background: `color-mix(in srgb, ${activityColor} 12%, transparent)`,
-                border: `1px solid color-mix(in srgb, ${activityColor} 20%, transparent)`,
-              }}
             >
               <span
-                className="session-detail-status-pill__dot h-1.5 w-1.5 shrink-0"
+                className="session-detail-status-pill__dot"
                 style={{ background: activityColor }}
               />
-              <span className="text-[11px] font-semibold" style={{ color: activityColor }}>
+              <span className="session-detail-status-pill__label">
                 {activityLabel}
               </span>
             </div>
@@ -162,12 +162,12 @@ function SessionTopStrip({
                   href={buildGitHubBranchUrl(pr)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="session-detail-link-pill session-detail-link-pill--link font-[var(--font-mono)] text-[10px] hover:no-underline"
+                  className="session-detail-link-pill session-detail-link-pill--link session-detail-link-pill--branch hover:no-underline"
                 >
                   {branch}
                 </a>
               ) : (
-                <span className="session-detail-link-pill font-[var(--font-mono)] text-[10px]">
+                <span className="session-detail-link-pill session-detail-link-pill--branch">
                   {branch}
                 </span>
               )
@@ -183,7 +183,7 @@ function SessionTopStrip({
               </a>
             ) : null}
             {pr && (pr.additions > 0 || pr.deletions > 0) ? (
-              <span className="session-detail-link-pill font-[var(--font-mono)] text-[10px]">
+              <span className="session-detail-link-pill session-detail-link-pill--diff">
                 <span className="session-detail-diff--add">+{pr.additions}</span>
                 {" "}
                 <span className="session-detail-diff--del">-{pr.deletions}</span>
@@ -193,9 +193,11 @@ function SessionTopStrip({
         </div>
 
         {rightSlot ? (
-          <div className="flex flex-wrap items-center gap-3 lg:justify-end">{rightSlot}</div>
+          <div className="session-detail-identity__actions session-detail-identity__actions--custom">
+            {rightSlot}
+          </div>
         ) : (
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="session-detail-identity__actions">
             {onMessage ? (
               <button
                 type="button"
@@ -251,7 +253,7 @@ async function askAgentToFix(
 
 // ── Orchestrator status strip ─────────────────────────────────────────
 
-function OrchestratorStatusStrip({
+function _OrchestratorStatusStrip({
   zones,
   createdAt,
   headline,
@@ -302,6 +304,7 @@ function OrchestratorStatusStrip({
     <div className="mx-auto max-w-[1180px] px-5 pt-5 lg:px-8">
       <SessionTopStrip
         headline={headline}
+        crumbId={headline}
         activityLabel={activityLabel}
         activityColor={activityColor}
         branch={branch}
@@ -367,10 +370,14 @@ export function SessionDetail({
   isOrchestrator = false,
   orchestratorZones,
   projectOrchestratorId = null,
+  projects = [],
+  sidebarSessions = [],
 }: SessionDetailProps) {
   const searchParams = useSearchParams();
   const isMobile = useMediaQuery(MOBILE_BREAKPOINT);
   const startFullscreen = searchParams.get("fullscreen") === "true";
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
   const pr = session.pr;
   const activity = (session.activity && activityMeta[session.activity]) ?? {
     label: session.activity ?? "unknown",
@@ -381,7 +388,9 @@ export function SessionDetail({
   const accentColor = "var(--color-accent)";
   const terminalVariant = isOrchestrator ? "orchestrator" : "agent";
 
-  const terminalHeight = isOrchestrator ? "clamp(560px, 76vh, 920px)" : "clamp(520px, 72vh, 860px)";
+  const terminalHeight = isOrchestrator
+    ? "clamp(400px, 52vh, 620px)"
+    : "clamp(380px, 48vh, 560px)";
   const isOpenCodeSession = session.metadata["agent"] === "opencode";
   const opencodeSessionId =
     typeof session.metadata["opencodeSessionId"] === "string" &&
@@ -394,34 +403,173 @@ export function SessionDetail({
   const dashboardHref = session.projectId ? `/?project=${encodeURIComponent(session.projectId)}` : "/";
   const prsHref = session.projectId ? `/prs?project=${encodeURIComponent(session.projectId)}` : "/prs";
   const crumbHref = dashboardHref;
-  const crumbLabel = isOrchestrator ? "Orchestrator" : "Dashboard";
+  const crumbLabel = "Dashboard";
   const orchestratorHref = useMemo(() => {
     if (isOrchestrator) return `/sessions/${encodeURIComponent(session.id)}`;
     if (!projectOrchestratorId) return null;
     return `/sessions/${encodeURIComponent(projectOrchestratorId)}`;
   }, [isOrchestrator, projectOrchestratorId, session.id]);
 
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => setShowTerminal(true));
+    return () => {
+      window.cancelAnimationFrame(frame);
+      setShowTerminal(false);
+    };
+  }, [session.id]);
+
+  if (!isMobile) {
+    return (
+      <div className="dashboard-app-shell">
+        <header className="dashboard-app-header">
+          {projects.length > 0 ? (
+            <button
+              type="button"
+              className="dashboard-app-sidebar-toggle"
+              onClick={() => setSidebarCollapsed((current) => !current)}
+              aria-label="Toggle sidebar"
+            >
+              <svg
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.75"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M9 3v18" />
+              </svg>
+            </button>
+          ) : null}
+          <div className="dashboard-app-header__brand">
+            <span className="dashboard-app-header__live-dot" aria-hidden="true" />
+            <span>Agent Orchestrator</span>
+          </div>
+          <span className="dashboard-app-header__sep" aria-hidden="true" />
+          <span className="dashboard-app-header__project">
+            {projects.find((project) => project.id === session.projectId)?.name ?? session.projectId}
+          </span>
+          <div className="dashboard-app-header__spacer" />
+          <div className="dashboard-app-header__actions">
+            {orchestratorHref ? (
+              <a
+                href={orchestratorHref}
+                className="dashboard-app-btn dashboard-app-btn--amber"
+                aria-label="Orchestrator"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="5" r="2" fill="currentColor" stroke="none" />
+                  <path d="M12 7v4M12 11H6M12 11h6M6 11v3M12 11v3M18 11v3" />
+                  <circle cx="6" cy="17" r="2" />
+                  <circle cx="12" cy="17" r="2" />
+                  <circle cx="18" cy="17" r="2" />
+                </svg>
+                Orchestrator
+              </a>
+            ) : null}
+          </div>
+        </header>
+
+        <div className="dashboard-shell dashboard-shell--desktop">
+          {projects.length > 0 ? (
+            <ProjectSidebar
+              projects={projects}
+              sessions={sidebarSessions}
+              activeProjectId={session.projectId}
+              activeSessionId={session.id}
+              collapsed={sidebarCollapsed}
+              onToggleCollapsed={() => setSidebarCollapsed((current) => !current)}
+            />
+          ) : null}
+
+          <div className="dashboard-main dashboard-main--desktop">
+            <main className="session-detail-page min-h-0 flex-1 overflow-y-auto bg-[var(--color-bg-base)]">
+              <div className="session-detail-layout">
+                <main className="min-w-0">
+                  {(!isOrchestrator || (isOrchestrator && orchestratorZones)) && (
+                    <SessionTopStrip
+                      headline={headline}
+                      crumbId={session.id}
+                      activityLabel={activity.label}
+                      activityColor={activity.color}
+                      branch={session.branch}
+                      pr={pr}
+                      isOrchestrator={isOrchestrator}
+                      crumbHref={crumbHref}
+                      crumbLabel={crumbLabel}
+                      onMessage={isOrchestrator ? undefined : () => {}}
+                      onKill={isOrchestrator ? undefined : () => {}}
+                    />
+                  )}
+
+                  {pr ? (
+                    <section id="session-pr-section" className="session-detail-pr-section">
+                      <SessionDetailPRCard
+                        pr={pr}
+                        sessionId={session.id}
+                        metadata={session.metadata}
+                      />
+                    </section>
+                  ) : null}
+
+                  <section className="session-detail-terminal-wrap">
+                    <div id="session-terminal-section" aria-hidden="true" />
+                    <div className="session-detail-section-label">
+                      <div
+                        className="session-detail-section-label__bar"
+                        style={{ background: isOrchestrator ? accentColor : activity.color }}
+                      />
+                      <span className="session-detail-section-label__text">
+                        Live Terminal
+                      </span>
+                    </div>
+                    {!showTerminal ? (
+                      <div className="session-detail-terminal-placeholder" style={{ height: terminalHeight }} />
+                    ) : session.activity === "exited" ? (
+                      <div className="terminal-exited-placeholder" style={{ height: terminalHeight }}>
+                        <span className="terminal-exited-placeholder__text">
+                          Terminal session has ended
+                        </span>
+                      </div>
+                    ) : (
+                      <DirectTerminal
+                        sessionId={session.id}
+                        startFullscreen={startFullscreen}
+                        variant={terminalVariant}
+                        appearance="dark"
+                        height={terminalHeight}
+                        isOpenCodeSession={isOpenCodeSession}
+                        reloadCommand={isOpenCodeSession ? reloadCommand : undefined}
+                      />
+                    )}
+                  </section>
+                </main>
+              </div>
+            </main>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="session-detail-page min-h-screen bg-[var(--color-bg-base)]">
-      {isOrchestrator && orchestratorZones && !isMobile && (
-        <OrchestratorStatusStrip
-          zones={orchestratorZones}
-          createdAt={session.createdAt}
-          headline={headline}
-          activityLabel={activity.label}
-          activityColor={activity.color}
-          branch={session.branch}
-          pr={pr}
-          crumbHref={crumbHref}
-          crumbLabel={crumbLabel}
-        />
-      )}
-
-      <div className="dashboard-main mx-auto max-w-[1180px] px-5 py-5 lg:px-8">
+      <div className="session-detail-layout">
         <main className="min-w-0">
-          {(!isOrchestrator || isMobile) && (
+          {(!isOrchestrator || isMobile || (isOrchestrator && orchestratorZones)) && (
             <SessionTopStrip
               headline={headline}
+              crumbId={session.id}
               activityLabel={activity.label}
               activityColor={activity.color}
               branch={session.branch}
@@ -429,29 +577,31 @@ export function SessionDetail({
               isOrchestrator={isOrchestrator}
               crumbHref={crumbHref}
               crumbLabel={crumbLabel}
-              onMessage={() => {}}
-              onKill={() => {}}
+              onMessage={isOrchestrator ? undefined : () => {}}
+              onKill={isOrchestrator ? undefined : () => {}}
             />
           )}
 
           {pr ? (
-            <section id="session-pr-section" className="mt-5">
+            <section id="session-pr-section" className="session-detail-pr-section">
               <SessionDetailPRCard pr={pr} sessionId={session.id} metadata={session.metadata} />
             </section>
           ) : null}
 
-          <section className="mt-5">
+          <section className="session-detail-terminal-wrap">
             <div id="session-terminal-section" aria-hidden="true" />
-            <div className="mb-3 flex items-center gap-2">
+            <div className="session-detail-section-label">
               <div
-                className="h-3 w-0.5"
-                style={{ background: isOrchestrator ? accentColor : activity.color, opacity: 0.75 }}
+                className="session-detail-section-label__bar"
+                style={{ background: isOrchestrator ? accentColor : activity.color }}
               />
-              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--color-text-tertiary)]">
+              <span className="session-detail-section-label__text">
                 Live Terminal
               </span>
             </div>
-            {session.activity === "exited" ? (
+            {!showTerminal ? (
+              <div className="session-detail-terminal-placeholder" style={{ height: terminalHeight }} />
+            ) : session.activity === "exited" ? (
               <div className="terminal-exited-placeholder" style={{ height: terminalHeight }}>
                 <span className="terminal-exited-placeholder__text">
                   Terminal session has ended
@@ -462,6 +612,7 @@ export function SessionDetail({
                 sessionId={session.id}
                 startFullscreen={startFullscreen}
                 variant={terminalVariant}
+                appearance="dark"
                 height={terminalHeight}
                 isOpenCodeSession={isOpenCodeSession}
                 reloadCommand={isOpenCodeSession ? reloadCommand : undefined}
@@ -649,7 +800,7 @@ function SessionDetailPRCard({ pr, sessionId, metadata }: { pr: DashboardPR; ses
 
       {/* Row 3: Collapsible unresolved comments */}
       {pr.unresolvedComments.length > 0 && (
-        <details className="session-detail-comments-strip">
+        <details className="session-detail-comments-strip" open>
           <summary>
             <div className="session-detail-comments-strip__toggle">
               <svg
@@ -670,7 +821,7 @@ function SessionDetailPRCard({ pr, sessionId, metadata }: { pr: DashboardPR; ses
             {pr.unresolvedComments.map((c) => {
               const { title, description } = cleanBugbotComment(c.body);
               return (
-                <details key={c.url} className="session-detail-comment">
+                <details key={c.url} className="session-detail-comment" open>
                   <summary>
                     <div className="session-detail-comment__row">
                       <svg
