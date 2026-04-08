@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { getProjectBaseDir, killProcessTree, type OrchestratorConfig } from "@composio/ao-core";
+import { getProjectBaseDir, isWindows, killProcessTree, type OrchestratorConfig } from "@composio/ao-core";
 
 const LIFECYCLE_PID_FILE = "lifecycle-worker.pid";
 const LIFECYCLE_LOG_FILE = "lifecycle-worker.log";
@@ -185,7 +185,7 @@ export async function ensureLifecycleWorker(
     const launch = resolveLifecycleWorkerLaunch(projectId);
     const child = spawn(launch.command, launch.args, {
       cwd: process.cwd(),
-      detached: true,
+      detached: !isWindows(),
       stdio: ["ignore", stdoutFd, stderrFd],
       env: {
         ...process.env,
