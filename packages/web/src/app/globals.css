@@ -2696,8 +2696,15 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     text-transform: uppercase;
   }
 
+  .session-detail-page section.mt-4,
   .session-detail-page section.mt-5 {
     margin-top: 6px;
+  }
+
+  /* Terminal: reduce border-radius and shadow on mobile */
+  .terminal-container {
+    border-radius: 6px !important;
+    box-shadow: none !important;
   }
 
   /* -- Touch targets for interactive elements -- */

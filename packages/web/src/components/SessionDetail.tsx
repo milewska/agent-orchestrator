@@ -377,7 +377,7 @@ export function SessionDetail({
         />
       )}
 
-      <div className="dashboard-main mx-auto max-w-full px-5 py-5 lg:px-8">
+      <div className="dashboard-main mx-auto max-w-full px-3 py-4 sm:px-5 sm:py-5 lg:px-8">
         <main className="min-w-0">
           {(!isOrchestrator || isMobile) && (
             <SessionTopStrip
@@ -393,12 +393,12 @@ export function SessionDetail({
             />
           )}
 
-          <section className="mt-5">
+          <section className="mt-4 sm:mt-5">
             <div id="session-terminal-section" aria-hidden="true" />
             <div className="mb-3 flex items-center gap-2">
               <div
-                className="h-3 w-0.5"
-                style={{ background: isOrchestrator ? accentColor : activity.color, opacity: 0.75 }}
+                className="h-4 w-0.5 rounded-full"
+                style={{ background: isOrchestrator ? accentColor : activity.color, opacity: 0.85 }}
               />
               <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[var(--color-text-tertiary)]">
                 Live Terminal
@@ -415,7 +415,7 @@ export function SessionDetail({
           </section>
 
           {pr ? (
-            <section id="session-pr-section" className="mt-6">
+            <section id="session-pr-section" className="mt-5 sm:mt-6">
               <SessionDetailPRCard pr={pr} sessionId={session.id} metadata={session.metadata} />
             </section>
           ) : null}

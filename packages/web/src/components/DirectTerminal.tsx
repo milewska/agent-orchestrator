@@ -745,8 +745,8 @@ export function DirectTerminal({
   return (
     <div
       className={cn(
-        "terminal-container overflow-hidden border border-[var(--color-border-default)]",
-        fullscreen && "fixed inset-0 z-50 rounded-none border-0",
+        "terminal-container border border-[var(--color-border-default)]",
+        fullscreen ? "fixed inset-0 z-50 overflow-hidden rounded-none border-0" : "overflow-x-hidden",
       )}
       style={{
         background: containerBg,
@@ -766,8 +766,8 @@ export function DirectTerminal({
       >
         {/* Connection dot */}
         <div className={cn("h-2.5 w-2.5 shrink-0 rounded-full", statusDotClass)} />
-        {/* Session name */}
-        <span className="font-[var(--font-mono)] text-[11px]" style={{ color: accentColor }}>
+        {/* Session name — hidden on small screens */}
+        <span className="hidden font-[var(--font-mono)] text-[11px] sm:inline" style={{ color: accentColor }}>
           {sessionId}
         </span>
         {/* Status badge */}
@@ -776,9 +776,9 @@ export function DirectTerminal({
         >
           {statusBadgeText}
         </span>
-        {/* XDA clipboard badge */}
+        {/* XDA clipboard badge — hidden on small screens */}
         <span
-          className="px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em]"
+          className="hidden px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] sm:inline"
           style={{
             color: accentColor,
             background: `color-mix(in srgb, ${accentColor} 12%, transparent)`,
@@ -958,7 +958,7 @@ export function DirectTerminal({
       {/* ── Terminal area ───────────────────────────────────────────── */}
       <div
         ref={terminalRef}
-        className={cn("w-full p-2")}
+        className={cn("w-full px-3 py-2 md:px-4")}
         style={{
           overflow: "hidden",
           display: "flex",
@@ -968,7 +968,7 @@ export function DirectTerminal({
       />
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between border-t border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-1.5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-1.5">
         <div className="flex items-center gap-3">
           <span className="font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
             {settings.fontSize}px
