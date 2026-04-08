@@ -1148,6 +1148,8 @@ async function runStartup(
     // SIGINT/SIGTERM so the dashboard group is also cleaned up on exit.
     if (!isWindows() && pid) {
       const forward = (): void => {
+        process.off("SIGINT", forward);
+        process.off("SIGTERM", forward);
         void killProcessTree(pid, "SIGTERM");
       };
       process.once("SIGINT", forward);
