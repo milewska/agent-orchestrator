@@ -389,10 +389,10 @@ export function SessionDetail({
 
       <div className="dashboard-main mx-auto max-w-full px-3 py-4 sm:px-5 sm:py-5 lg:px-8">
         <main className="min-w-0">
-          {/* ── Session header — visually unified with terminal ────── */}
+          {/* ── Page header — breadcrumb, title, badges (page-level chrome) */}
           <div id="session-terminal-section" aria-hidden="true" />
           {(!isOrchestrator || isMobile) && (
-            <div className="mb-2">
+            <div className="mb-5">
               {/* Breadcrumbs — headline omitted on mobile to avoid duplicate with h1 */}
               <div className="mb-2 flex items-center gap-1.5">
                 <a
@@ -463,7 +463,7 @@ export function SessionDetail({
             </div>
           )}
 
-          {/* ── Terminal ───────────────────────────────────────────── */}
+          {/* ── Terminal layer — self-contained box with its own chrome */}
           <section>
             <DirectTerminal
               sessionId={session.id}
