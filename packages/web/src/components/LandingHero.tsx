@@ -1,5 +1,80 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+
+const terminalLines = [
+  { text: "$ ao batch-spawn 42 43 44 45 46", type: "cmd" as const, delay: 0 },
+  { text: "", type: "blank" as const, delay: 800 },
+  { text: "⟡ Loaded agent-orchestrator.yaml (agent: claude-code, tracker: github)", type: "info" as const, delay: 1000 },
+  { text: "⟡ Resolving 5 issues from ComposioHQ/my-saas-app", type: "info" as const, delay: 1400 },
+  { text: "⟡ Creating worktrees in ~/.agent-orchestrator/a1b2c3/worktrees/", type: "info" as const, delay: 1800 },
+  { text: "", type: "blank" as const, delay: 2200 },
+  { text: "✓ s-001 → #42 Add user auth flow (claude-code)", type: "success" as const, delay: 2400 },
+  { text: "✓ s-002 → #43 Fix pagination bug (codex)", type: "success" as const, delay: 2700 },
+  { text: "✓ s-003 → #44 Add rate limiting (aider)", type: "success" as const, delay: 3000 },
+  { text: "✓ s-004 → #45 Update API tests (claude-code)", type: "success" as const, delay: 3300 },
+  { text: "✓ s-005 → #46 Refactor DB layer (opencode)", type: "success" as const, delay: 3600 },
+  { text: "", type: "blank" as const, delay: 4000 },
+  { text: "● 5 agents working · Dashboard → http://localhost:3000", type: "status" as const, delay: 4200 },
+];
+
+function TerminalTyping() {
+  const [visibleCount, setVisibleCount] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const started = useRef(false);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !started.current) {
+          started.current = true;
+          terminalLines.forEach((line, i) => {
+            setTimeout(() => setVisibleCount(i + 1), line.delay);
+          });
+        }
+      },
+      { threshold: 0.3 },
+    );
+    if (ref.current) observer.observe(ref.current);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={ref} className="px-5 py-4 font-mono text-[0.8125rem] leading-[1.9] text-left min-h-[280px]">
+      {terminalLines.slice(0, visibleCount).map((line, i) => {
+        if (line.type === "blank") return <div key={i}>&nbsp;</div>;
+
+        const colorClass =
+          line.type === "cmd"
+            ? "text-[var(--landing-fg)]"
+            : line.type === "success"
+              ? "text-[rgba(134,239,172,0.8)]"
+              : line.type === "status"
+                ? "text-[var(--landing-muted)]"
+                : "text-[var(--landing-muted)] opacity-50";
+
+        return (
+          <div
+            key={i}
+            className={`${colorClass} landing-line-appear`}
+          >
+            {line.type === "cmd" && (
+              <span className="text-[var(--landing-muted)] opacity-50">$ </span>
+            )}
+            {line.type === "status" && (
+              <span className="landing-agent-dot mr-1.5 inline-block" />
+            )}
+            {line.type === "cmd" ? line.text.slice(2) : line.text}
+          </div>
+        );
+      })}
+      {visibleCount > 0 && visibleCount < terminalLines.length && (
+        <span className="inline-block w-2 h-4 bg-[var(--landing-fg)] opacity-70 landing-cursor-blink" />
+      )}
+    </div>
+  );
+}
+
 export function LandingHero() {
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -9,7 +84,7 @@ export function LandingHero() {
           <span className="w-1.5 h-1.5 rounded-full bg-[rgba(134,239,172,0.7)]" />
           Open Source · MIT Licensed · 5.9k GitHub Stars
         </div>
-        <h1 className="landing-fade-rise font-normal text-[clamp(2.5rem,7vw,5rem)] leading-[1] tracking-[-2px] max-w-[56rem] font-sans font-[680] tracking-tight">
+        <h1 className="landing-fade-rise font-sans font-[680] text-[clamp(2.5rem,7vw,5rem)] leading-[1] tracking-[-2px] max-w-[56rem]">
           Run 30 AI agents in parallel.
           <br />
           <span className="text-[var(--landing-muted)]">One dashboard.</span>
@@ -33,7 +108,7 @@ export function LandingHero() {
           </a>
         </div>
 
-        {/* Product preview — terminal showing actual ao output */}
+        {/* Product preview — animated terminal */}
         <div className="landing-fade-rise-d2 w-full max-w-[52rem] mt-16">
           <div className="landing-card rounded-2xl overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--landing-border-subtle)]">
@@ -44,42 +119,7 @@ export function LandingHero() {
                 agent-orchestrator — my-saas-app
               </span>
             </div>
-            <div className="px-5 py-4 font-mono text-[0.8125rem] leading-[1.9] text-left">
-              <div>
-                <span className="text-[var(--landing-muted)] opacity-50">$</span>{" "}
-                <span className="text-white">ao batch-spawn 42 43 44 45 46</span>
-              </div>
-              <div className="text-[var(--landing-muted)] opacity-50 mt-1">
-                ⟡ Loaded agent-orchestrator.yaml (agent: claude-code, tracker: github)
-              </div>
-              <div className="text-[var(--landing-muted)] opacity-50">
-                ⟡ Resolving 5 issues from ComposioHQ/my-saas-app
-              </div>
-              <div className="text-[var(--landing-muted)] opacity-50">
-                ⟡ Creating worktrees in ~/.agent-orchestrator/a1b2c3/worktrees/
-              </div>
-              <div className="text-[rgba(134,239,172,0.8)] mt-1">
-                ✓ s-001 → #42 Add user auth flow (claude-code)
-              </div>
-              <div className="text-[rgba(134,239,172,0.8)]">
-                ✓ s-002 → #43 Fix pagination bug (codex)
-              </div>
-              <div className="text-[rgba(134,239,172,0.8)]">
-                ✓ s-003 → #44 Add rate limiting (aider)
-              </div>
-              <div className="text-[rgba(134,239,172,0.8)]">
-                ✓ s-004 → #45 Update API tests (claude-code)
-              </div>
-              <div className="text-[rgba(134,239,172,0.8)]">
-                ✓ s-005 → #46 Refactor DB layer (opencode)
-              </div>
-              <div className="mt-1">
-                <span className="landing-agent-dot mr-1" />
-                <span className="text-[var(--landing-muted)] opacity-50">
-                  5 agents working · Dashboard → http://localhost:3000
-                </span>
-              </div>
-            </div>
+            <TerminalTyping />
           </div>
         </div>
       </section>

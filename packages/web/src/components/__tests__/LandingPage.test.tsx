@@ -27,6 +27,7 @@ import { LandingHowItWorks } from "../LandingHowItWorks";
 import { LandingQuickStart } from "../LandingQuickStart";
 import { LandingCTA } from "../LandingCTA";
 import { LandingUseCases } from "../LandingUseCases";
+import { LandingWorkflow } from "../LandingWorkflow";
 import { LandingDifferentiators } from "../LandingDifferentiators";
 import { ScrollRevealProvider } from "../ScrollRevealProvider";
 
@@ -61,9 +62,24 @@ describe("LandingHero", () => {
     expect(screen.getByText(/npx @composio\/ao start/)).toBeInTheDocument();
   });
 
-  it("renders terminal preview with ao output", () => {
+  it("renders terminal container", () => {
     render(<LandingHero />);
-    expect(screen.getByText("ao batch-spawn 42 43 44 45 46")).toBeInTheDocument();
+    expect(screen.getByText("agent-orchestrator — my-saas-app")).toBeInTheDocument();
+  });
+});
+
+describe("LandingWorkflow", () => {
+  it("renders workflow pipeline steps", () => {
+    render(<LandingWorkflow />);
+    expect(screen.getByText("Issue assigned")).toBeInTheDocument();
+    expect(screen.getByText("Agent spawns")).toBeInTheDocument();
+    expect(screen.getByText("PR opened")).toBeInTheDocument();
+    expect(screen.getByText("Merged")).toBeInTheDocument();
+  });
+
+  it("renders section heading", () => {
+    render(<LandingWorkflow />);
+    expect(screen.getByText("From issue to merged PR")).toBeInTheDocument();
   });
 });
 

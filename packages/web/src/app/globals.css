@@ -3546,3 +3546,29 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   background: rgba(134, 239, 172, 0.7);
   animation: landing-pulse-dot 2s ease-in-out infinite;
 }
+
+/* Terminal typing animations */
+.landing-line-appear {
+  animation: landing-fade-rise 0.3s ease-out both;
+}
+
+@keyframes landing-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.landing-cursor-blink {
+  animation: landing-cursor-blink 0.8s step-end infinite;
+}
+
+/* Workflow pipeline pulse */
+@keyframes landing-node-pulse {
+  0% { box-shadow: 0 0 0 0 currentColor; opacity: 0.6; }
+  70% { box-shadow: 0 0 0 10px transparent; opacity: 0; }
+  100% { box-shadow: 0 0 0 0 transparent; opacity: 0; }
+}
+
+.landing-node-pulse {
+  border: 1.5px solid;
+  animation: landing-node-pulse 1.5s ease-out infinite;
+}
