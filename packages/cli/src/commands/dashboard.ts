@@ -90,6 +90,24 @@ export function registerDashboard(program: Command): void {
         process.exit(1);
       });
 
+      // On Unix the child is spawned with detached:true (own process group) so
+      // Ctrl+C only reaches the parent's process group, not the dashboard's.
+      // Forward SIGINT/SIGTERM so the child group is cleaned up on exit.
+      const pid = child.pid;
+      if (!isWindows() && pid) {
+        const forward = (): void => {
+          process.off("SIGINT", forward);
+          process.off("SIGTERM", forward);
+          void killProcessTree(pid, "SIGTERM");
+        };
+        process.once("SIGINT", forward);
+        process.once("SIGTERM", forward);
+        child.once("exit", () => {
+          process.off("SIGINT", forward);
+          process.off("SIGTERM", forward);
+        });
+      }
+
       let openAbort: AbortController | undefined;
 
       if (opts.open !== false) {
