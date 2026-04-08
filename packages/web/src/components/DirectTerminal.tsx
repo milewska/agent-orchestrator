@@ -280,12 +280,10 @@ export function DirectTerminal({
       .then(([Terminal, FitAddon, WebLinksAddon, WebglAddon]) => {
         if (!mounted || !terminalRef.current) return;
 
-        // Terminal canvas is always dark-themed
+        const isDark = resolvedTheme !== "light";
         const preset = getThemePreset(settings.themeName);
-        const activeTheme = {
-          ...(preset?.dark ?? terminalThemes.dark),
-          selectionBackground: settings.selectionColor,
-        };
+        const baseTheme = isDark ? (preset?.dark ?? terminalThemes.dark) : terminalThemes.light;
+        const activeTheme = { ...baseTheme, selectionBackground: settings.selectionColor };
 
         const terminal = new Terminal({
           cursorBlink: settings.cursorBlink,
@@ -293,7 +291,7 @@ export function DirectTerminal({
           cursorStyle: settings.cursorStyle,
           fontFamily: settings.fontFamily,
           theme: activeTheme,
-          minimumContrastRatio: 1,
+          minimumContrastRatio: isDark ? 1 : 7,
           scrollback: 10000,
           allowProposedApi: true,
           fastScrollModifier: "alt",
@@ -541,18 +539,20 @@ export function DirectTerminal({
     };
   }, [sessionId, variant]);
 
-  // Apply theme preset — terminal canvas is always dark-themed
+  // Apply theme preset — respects page light/dark mode
   useEffect(() => {
     const terminal = terminalInstance.current;
     if (!terminal) return;
-    const preset = getThemePreset(settings.themeName);
-    const baseTheme = preset ? preset.dark : terminalThemes.dark;
-    terminal.options.theme = {
-      ...baseTheme,
-      selectionBackground: settings.selectionColor,
-    };
-    terminal.options.minimumContrastRatio = 1;
-  }, [terminalThemes, settings.themeName, settings.selectionColor]);
+    const isDark = resolvedTheme !== "light";
+    if (isDark) {
+      const preset = getThemePreset(settings.themeName);
+      const baseTheme = preset ? preset.dark : terminalThemes.dark;
+      terminal.options.theme = { ...baseTheme, selectionBackground: settings.selectionColor };
+    } else {
+      terminal.options.theme = { ...terminalThemes.light, selectionBackground: settings.selectionColor };
+    }
+    terminal.options.minimumContrastRatio = isDark ? 1 : 7;
+  }, [resolvedTheme, terminalThemes, settings.themeName, settings.selectionColor]);
 
   // Apply font/cursor setting changes live
   useEffect(() => {
@@ -646,11 +646,11 @@ export function DirectTerminal({
 
   const isLight = resolvedTheme === "light";
 
-  // Terminal canvas is always dark regardless of page theme
   const containerBg = useMemo(() => {
+    if (isLight) return "#fafafa";
     const preset = getThemePreset(settings.themeName);
     return preset?.dark.background ?? "#0d1117";
-  }, [settings.themeName]);
+  }, [isLight, settings.themeName]);
 
   // Chrome colors — adapt to light/dark
   const chrome = isLight
@@ -883,15 +883,13 @@ export function DirectTerminal({
                 ref={settingsPanelRef}
                 style={{
                   position: "fixed",
-                  top: settingsButtonRef.current.getBoundingClientRect().bottom + 8,
-                  right: Math.max(12, window.innerWidth - settingsButtonRef.current.getBoundingClientRect().right),
-                  width: 280,
-                  maxHeight: "calc(100vh - 48px)",
-                  overflowY: "auto",
+                  top: settingsButtonRef.current.getBoundingClientRect().bottom + 4,
+                  right: window.innerWidth - settingsButtonRef.current.getBoundingClientRect().right,
+                  width: 300,
                   background: isLight ? chrome.panelBg : "#161b22",
                   border: `1px solid ${isLight ? chrome.barBorder : "#30363d"}`,
                   borderRadius: 12,
-                  boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+                  boxShadow: isLight ? "0 8px 24px rgba(0,0,0,0.12)" : "0 16px 48px rgba(0,0,0,0.5)",
                   padding: 16,
                   zIndex: 100,
                   fontSize: 12,
