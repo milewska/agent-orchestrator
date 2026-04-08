@@ -63,7 +63,9 @@ export function getShell(): ShellInfo {
   return cachedShell;
 }
 
-/** Reset cached shell (for testing) */
+/** Reset cached shell (for testing)
+ * @internal
+ */
 export function _resetShellCache(): void {
   cachedShell = null;
 }

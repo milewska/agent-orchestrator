@@ -272,6 +272,21 @@ describe("findPidByPort", () => {
     expect(pid).toBeNull();
   });
 
+  it("finds PID from IPv6 LISTENING line on Windows", async () => {
+    setPlatform("win32");
+    // netstat -ano includes IPv6 entries like [::]:3000 when server binds to all interfaces
+    const netstatOutput = [
+      "  Proto  Local Address          Foreign Address        State           PID",
+      "  TCP    [::]:3000              [::]:0                 LISTENING       55",
+    ].join("\n");
+    resolveExecFile(netstatOutput);
+
+    const mod = await import("../platform.js");
+    const pid = await mod.findPidByPort(3000);
+
+    expect(pid).toBe("55");
+  });
+
   it("returns null when no LISTENING line matches on Windows", async () => {
     setPlatform("win32");
     resolveExecFile("  TCP    0.0.0.0:8080           0.0.0.0:0              LISTENING       99\n");
