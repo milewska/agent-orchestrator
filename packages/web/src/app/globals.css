@@ -820,7 +820,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 .detail-card {
   background: var(--detail-card-bg);
   box-shadow: var(--detail-card-shadow);
-  border-radius: 2px;
+  border-radius: 12px;
 }
 
 .session-detail-page {

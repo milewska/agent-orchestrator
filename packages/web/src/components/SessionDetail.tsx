@@ -178,15 +178,16 @@ function OrchestratorStatusStrip({
         className="flex flex-wrap items-center gap-x-3 gap-y-1.5"
         style={{
           padding: "8px 16px",
-          background: "rgba(22, 27, 34, 0.8)",
+          background: "var(--color-bg-elevated)",
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
-          border: "1px solid #21262d",
-          borderRadius: 8,
+          border: "1px solid var(--color-border-default)",
+          borderRadius: 12,
+          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
         }}
       >
         {/* Title + activity */}
-        <h1 className="text-[15px] font-semibold tracking-[-0.02em] text-[#e6edf3]">
+        <h1 className="text-[15px] font-semibold tracking-[-0.02em] text-[var(--color-text-primary)]">
           {headline}
         </h1>
         <div
@@ -204,11 +205,11 @@ function OrchestratorStatusStrip({
         </div>
 
         {/* Divider */}
-        <div className="h-4 w-px bg-[#30363d]" />
+        <div className="h-4 w-px bg-[var(--color-border-subtle)]" />
 
         {/* Agent count */}
-        <span className="text-[13px] font-bold tabular-nums text-[#e6edf3]">{total}</span>
-        <span className="text-[11px] text-[#8b949e]">agents</span>
+        <span className="text-[13px] font-bold tabular-nums text-[var(--color-text-primary)]">{total}</span>
+        <span className="text-[11px] text-[var(--color-text-tertiary)]">agents</span>
 
         {/* Zone pills */}
         {stats.map((s) => (
@@ -228,7 +229,7 @@ function OrchestratorStatusStrip({
 
         {/* Uptime — pushed to right */}
         {uptime ? (
-          <span className="ml-auto font-[var(--font-mono)] text-[11px] text-[#8b949e]">
+          <span className="ml-auto font-[var(--font-mono)] text-[11px] text-[var(--color-text-tertiary)]">
             up {uptime}
           </span>
         ) : null}

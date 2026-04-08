@@ -608,16 +608,61 @@ export function DirectTerminal({
 
   // ── Derived state for chrome ─────────────────────────────────────
 
+  const isLight = resolvedTheme === "light";
+
   const containerBg = useMemo(() => {
-    if (resolvedTheme === "light") return "#fafafa";
+    if (isLight) return "#fafafa";
     const preset = getThemePreset(settings.themeName);
     return preset?.dark.background ?? "#0d1117";
-  }, [resolvedTheme, settings.themeName]);
+  }, [isLight, settings.themeName]);
+
+  // Chrome colors — adapt to light/dark
+  const chrome = isLight
+    ? {
+        barBg: "rgba(246, 248, 250, 0.9)",
+        barBorder: "#d1d9e0",
+        statusBarBg: "#f0f3f6",
+        text: "#1f2328",
+        textMuted: "#656d76",
+        divider: "#d1d9e0",
+        btnBg: "rgba(0,0,0,0.04)",
+        btnBorder: "#d1d9e0",
+        btnHoverBg: "rgba(0,0,0,0.08)",
+        btnText: "#656d76",
+        btnHoverText: "#1f2328",
+        containerBorder: "#d1d9e0",
+        shadow: "0 4px 12px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.04)",
+        permissionColor: "#1a7f37",
+        prLinkColor: "#0969da",
+        agentBadgeColor: "#8250df",
+        agentBadgeBg: "rgba(130,80,223,0.08)",
+        agentBadgeBorder: "1px solid rgba(130,80,223,0.2)",
+      }
+    : {
+        barBg: "rgba(22, 27, 34, 0.8)",
+        barBorder: "#21262d",
+        statusBarBg: "#161b22",
+        text: "#e6edf3",
+        textMuted: "#8b949e",
+        divider: "#484f58",
+        btnBg: "rgba(255,255,255,0.06)",
+        btnBorder: "#30363d",
+        btnHoverBg: "rgba(255,255,255,0.1)",
+        btnText: "#8b949e",
+        btnHoverText: "#e6edf3",
+        containerBorder: "#21262d",
+        shadow: "0 8px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)",
+        permissionColor: "#3fb950",
+        prLinkColor: "#58a6ff",
+        agentBadgeColor: "#d2a8ff",
+        agentBadgeBg: "rgba(210,168,255,0.1)",
+        agentBadgeBorder: "1px solid rgba(210,168,255,0.25)",
+      };
 
   // Top bar (~42px) + status bar (~33px)
   const chromeHeight = "75px";
 
-  // Connection dot style
+  // Connection dot
   const dotBg =
     status === "connected" ? "#3fb950" : status === "error" ? "#f85149" : "#d29922";
   const dotShadow =
@@ -656,23 +701,23 @@ export function DirectTerminal({
   return (
     <div
       className={cn(
-        "terminal-container border border-[#21262d]",
+        "terminal-container border",
         fullscreen ? "fixed inset-0 z-50 overflow-hidden rounded-none border-0" : "overflow-x-hidden",
       )}
       style={{
         background: containerBg,
+        borderColor: chrome.containerBorder,
         borderRadius: fullscreen ? 0 : 12,
-        boxShadow: fullscreen
-          ? "none"
-          : "0 8px 24px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04)",
+        boxShadow: fullscreen ? "none" : chrome.shadow,
       }}
     >
       {/* ── Top bar ─────────────────────────────────────────────────── */}
       <div
-        className="topbar flex items-center justify-between border-b border-[#21262d]"
+        className="topbar flex items-center justify-between"
         style={{
           padding: "10px 16px",
-          background: "rgba(22, 27, 34, 0.8)",
+          background: chrome.barBg,
+          borderBottom: `1px solid ${chrome.barBorder}`,
           backdropFilter: "blur(12px)",
           WebkitBackdropFilter: "blur(12px)",
         }}
@@ -697,7 +742,7 @@ export function DirectTerminal({
               fontFamily: '"JetBrains Mono", "SF Mono", Menlo, monospace',
               fontSize: 13,
               fontWeight: 600,
-              color: "#e6edf3",
+              color: chrome.text,
             }}
           >
             {sessionId}
@@ -725,9 +770,9 @@ export function DirectTerminal({
                 fontWeight: 600,
                 padding: "2px 8px",
                 borderRadius: 10,
-                color: "#d2a8ff",
-                background: "rgba(210,168,255,0.1)",
-                border: "1px solid rgba(210,168,255,0.25)",
+                color: chrome.agentBadgeColor,
+                background: chrome.agentBadgeBg,
+                border: chrome.agentBadgeBorder,
                 lineHeight: "16px",
               }}
             >
@@ -746,10 +791,10 @@ export function DirectTerminal({
                 alignItems: "center",
                 gap: 4,
                 padding: "4px 10px",
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid #30363d",
+                background: chrome.btnBg,
+                border: `1px solid ${chrome.btnBorder}`,
                 borderRadius: 6,
-                color: "#8b949e",
+                color: chrome.btnText,
                 fontSize: 12,
                 cursor: reloading ? "not-allowed" : "pointer",
                 opacity: reloading ? 0.6 : 1,
@@ -779,10 +824,10 @@ export function DirectTerminal({
               alignItems: "center",
               gap: 6,
               padding: "4px 10px",
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid #30363d",
+              background: chrome.btnBg,
+              border: `1px solid ${chrome.btnBorder}`,
               borderRadius: 6,
-              color: "#8b949e",
+              color: chrome.btnText,
               fontSize: 12,
               cursor: "pointer",
             }}
@@ -827,17 +872,18 @@ export function DirectTerminal({
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
       <div
-        className="flex items-center justify-between border-t border-[#21262d]"
+        className="flex items-center justify-between"
         style={{
           padding: "6px 16px",
-          background: "#161b22",
+          background: chrome.statusBarBg,
+          borderTop: `1px solid ${chrome.barBorder}`,
           fontSize: 11,
         }}
       >
         {/* Left side */}
-        <div className="flex items-center" style={{ gap: 12, color: "#8b949e" }}>
+        <div className="flex items-center" style={{ gap: 12, color: chrome.textMuted }}>
           {/* Permission badge */}
-          <span style={{ color: "#3fb950", fontWeight: 600, fontFamily: '"JetBrains Mono", monospace' }}>
+          <span style={{ color: chrome.permissionColor, fontWeight: 600, fontFamily: '"JetBrains Mono", monospace' }}>
             <svg
               className="mr-1 inline-block"
               width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -847,7 +893,7 @@ export function DirectTerminal({
             </svg>
             bypass permissions on
           </span>
-          <span style={{ color: "#484f58" }}>|</span>
+          <span style={{ color: chrome.divider }}>|</span>
           <span className="hidden sm:inline">(shift+tab to cycle)</span>
           {prNumber ? (
             <>
@@ -857,7 +903,7 @@ export function DirectTerminal({
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{
-                  color: "#58a6ff",
+                  color: chrome.prLinkColor,
                   fontFamily: '"JetBrains Mono", monospace',
                   fontWeight: 500,
                   textDecoration: "none",
