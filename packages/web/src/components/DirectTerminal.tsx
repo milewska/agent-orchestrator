@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/cn";
@@ -181,6 +182,7 @@ export function DirectTerminal({
   const [reloading, setReloading] = useState(false);
   const [reloadError, setReloadError] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [panelPos, setPanelPos] = useState({ top: 0, right: 0 });
   const [reconnectCount, setReconnectCount] = useState(0);
   const settingsPanelRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -198,6 +200,14 @@ export function DirectTerminal({
     const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
     router.replace(newUrl, { scroll: false });
   }, [fullscreen, pathname, router, searchParams]);
+
+  // Position the settings panel below the gear button
+  useEffect(() => {
+    if (showSettings && settingsButtonRef.current) {
+      const rect = settingsButtonRef.current.getBoundingClientRect();
+      setPanelPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    }
+  }, [showSettings]);
 
   // Close settings panel on click outside or scroll
   useEffect(() => {
@@ -739,7 +749,7 @@ export function DirectTerminal({
     <div
       className={cn(
         "terminal-container border",
-        fullscreen && "fixed inset-0 z-50 overflow-hidden rounded-none border-0",
+        fullscreen ? "fixed inset-0 z-50 overflow-hidden rounded-none border-0" : "overflow-hidden",
       )}
       style={{
         background: containerBg,
@@ -878,21 +888,21 @@ export function DirectTerminal({
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </button>
-            {/* Settings panel — absolute to button wrapper */}
-            {showSettings ? (
+            {/* Settings panel — rendered via portal to avoid overflow clipping */}
+            {showSettings ? createPortal(
               <div
                 ref={settingsPanelRef}
                 style={{
-                  position: "absolute",
-                  top: "calc(100% + 4px)",
-                  right: 0,
+                  position: "fixed",
+                  top: panelPos.top,
+                  right: panelPos.right,
                   width: 300,
                   background: isLight ? chrome.panelBg : "#161b22",
                   border: `1px solid ${isLight ? chrome.barBorder : "#30363d"}`,
                   borderRadius: 12,
                   boxShadow: isLight ? "0 8px 24px rgba(0,0,0,0.12)" : "0 16px 48px rgba(0,0,0,0.5)",
                   padding: 16,
-                  zIndex: 100,
+                  zIndex: 9999,
                   fontSize: 12,
                 }}
               >
@@ -1050,7 +1060,8 @@ export function DirectTerminal({
                 >
                   Reset to Defaults
                 </button>
-              </div>
+              </div>,
+              document.body,
             ) : null}
           </div>
           {/* Fullscreen button */}
