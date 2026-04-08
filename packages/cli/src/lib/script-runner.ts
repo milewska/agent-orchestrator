@@ -26,7 +26,20 @@ export async function runRepoScript(scriptName: string, args: string[]): Promise
   // an argument to another interpreter (e.g. zsh script.sh) the shebang is ignored, so we must
   // name bash explicitly rather than using the user's $SHELL.
   // Windows: use getShell() (resolves to pwsh > powershell.exe > cmd.exe).
-  const shell = shellOverride || (isWindows() ? getShell().cmd : "bash");
+  const shellInfo = isWindows() ? getShell() : null;
+
+  // On Windows without AO_BASH_PATH, cmd.exe is the last-resort fallback — but it cannot
+  // run bash scripts regardless of the flag used. Fail fast with a clear message so the user
+  // knows to set AO_BASH_PATH rather than seeing a cryptic "-File is not recognised" error.
+  if (!shellOverride && shellInfo && /cmd(\.exe)?$/i.test(shellInfo.cmd)) {
+    throw new Error(
+      "Cannot run repo scripts on Windows without bash. " +
+        "Set AO_BASH_PATH to a bash executable " +
+        "(e.g. C:\\Program Files\\Git\\bin\\bash.exe).",
+    );
+  }
+
+  const shell = shellOverride || shellInfo?.cmd || "bash";
   const scriptPath = resolveScriptPath(scriptName);
   // Unix: spawn(bash, [scriptPath, ...args]) — file mode so args reach $1, $2, etc.
   // Windows (no override): use -File so positional args ($1, $2, …) reach the script.

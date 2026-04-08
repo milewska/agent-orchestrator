@@ -132,4 +132,32 @@ describe("runRepoScript", () => {
     const scriptIdx = (spawnCall[1] as string[]).findIndex((a: string) => a.includes("test-script.sh"));
     expect((spawnCall[1] as string[])[scriptIdx + 1]).toBe("--fix");
   });
+
+  it("throws a clear error on Windows when getShell() falls back to cmd.exe", async () => {
+    mockIsWindows.mockReturnValue(true);
+    mockGetShell.mockReturnValue({
+      cmd: "C:\\Windows\\System32\\cmd.exe",
+      args: (c: string) => ["/c", c],
+    });
+
+    await expect(runRepoScript("test-script.sh", [])).rejects.toThrow(
+      /Cannot run repo scripts on Windows without bash.*AO_BASH_PATH/,
+    );
+    expect(mockSpawn).not.toHaveBeenCalled();
+  });
+
+  it("does not throw for cmd.exe when AO_BASH_PATH override is set", async () => {
+    process.env["AO_BASH_PATH"] = "/custom/bash";
+    mockIsWindows.mockReturnValue(true);
+    mockGetShell.mockReturnValue({
+      cmd: "C:\\Windows\\System32\\cmd.exe",
+      args: (c: string) => ["/c", c],
+    });
+    const child = makeSpawnEventEmitter(0);
+    mockSpawn.mockReturnValue(child);
+
+    await runRepoScript("test-script.sh", []);
+
+    expect(mockSpawn).toHaveBeenCalledWith("/custom/bash", expect.any(Array), expect.any(Object));
+  });
 });

@@ -45,17 +45,16 @@ describe("platform adapter", () => {
   });
 
   describe("getShell", () => {
-    it("returns sh-based shell on unix", async () => {
+    it("always returns /bin/sh on unix (ignores $SHELL)", async () => {
       setPlatform("linux");
       const mod = await import("../platform.js");
       mod._resetShellCache();
       const shell = mod.getShell();
-      // On Linux/macOS SHELL env var points to sh/bash/zsh. On Windows CI
-      // running this test the platform check is what matters, so we rely on
-      // SHELL env var (which may be a full path like /bin/bash or
-      // C:\Program Files\Git\bin\bash.exe). Accept any shell containing
-      // "sh" or "bash" anywhere in the path.
-      expect(shell.cmd).toMatch(/sh|bash/i);
+      // getShell() must always return /bin/sh on Unix regardless of $SHELL,
+      // so that postCreate commands and runtime launches work correctly even
+      // when the user's login shell is fish, nushell, or other non-POSIX shells.
+      expect(shell.cmd).toBe("/bin/sh");
+      expect(shell.args("echo hi")).toEqual(["-c", "echo hi"]);
     });
 
     it("returns powershell or cmd on win32", async () => {

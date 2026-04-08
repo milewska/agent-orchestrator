@@ -56,8 +56,10 @@ export function getShell(): ShellInfo {
   if (isWindows()) {
     cachedShell = resolveWindowsShell();
   } else {
-    const shell = process.env["SHELL"] || "/bin/sh";
-    cachedShell = { cmd: shell, args: (c) => ["-c", c] };
+    // Always use /bin/sh, not $SHELL. postCreate commands and runtime launches are
+    // non-interactive; using $SHELL would break if the user's login shell is
+    // non-POSIX (e.g. fish, nushell). /bin/sh is guaranteed POSIX-compliant on all Unix systems.
+    cachedShell = { cmd: "/bin/sh", args: (c) => ["-c", c] };
   }
 
   return cachedShell;
