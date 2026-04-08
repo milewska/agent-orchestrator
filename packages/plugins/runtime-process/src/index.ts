@@ -1,11 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import type {
-  PluginModule,
-  Runtime,
-  RuntimeCreateConfig,
-  RuntimeHandle,
-  RuntimeMetrics,
-  AttachInfo,
+import {
+  isWindows,
+  killProcessTree,
+  type PluginModule,
+  type Runtime,
+  type RuntimeCreateConfig,
+  type RuntimeHandle,
+  type RuntimeMetrics,
+  type AttachInfo,
 } from "@composio/ao-core";
 
 export const manifest = {
@@ -66,7 +68,7 @@ export function create(): Runtime {
           env: { ...process.env, ...config.environment },
           stdio: ["pipe", "pipe", "pipe"],
           shell: true,
-          detached: true, // Own process group so destroy() can kill child commands
+          detached: !isWindows(), // Own process group so destroy() can kill child commands (Unix only)
         });
       } catch (err: unknown) {
         processes.delete(handleId);
@@ -156,41 +158,40 @@ export function create(): Runtime {
         return;
       }
       if (child.exitCode === null && child.signalCode === null) {
-        // Kill the entire process group (negative PID) so child commands
-        // spawned by the shell are also terminated, not just the shell itself.
         const pid = child.pid;
-        if (pid) {
-          try {
-            process.kill(-pid, "SIGTERM");
-          } catch {
-            // Process group may not exist — fall back to direct kill
-            child.kill("SIGTERM");
-          }
-        } else {
-          child.kill("SIGTERM");
-        }
 
-        // Give it 5 seconds, then SIGKILL — use once() to avoid listener leaks
-        await new Promise<void>((resolve) => {
+        // Register the exit listener BEFORE sending the kill signal to avoid
+        // the race where the process exits during the async killProcessTree
+        // call and the "exit" event fires before the listener is attached,
+        // causing the full 5-second timeout to always elapse on Windows.
+        const waitForExit = new Promise<void>((resolve) => {
           const timeout = setTimeout(() => {
-            if (child.exitCode === null && child.signalCode === null) {
-              if (pid) {
-                try {
-                  process.kill(-pid, "SIGKILL");
-                } catch {
-                  child.kill("SIGKILL");
-                }
-              } else {
-                child.kill("SIGKILL");
-              }
-            }
-            resolve();
+            Promise.resolve(
+              child.exitCode === null && child.signalCode === null
+                ? pid
+                  ? killProcessTree(pid, "SIGKILL")
+                  : void child.kill("SIGKILL")
+                : undefined,
+            )
+              .catch(() => {})
+              .finally(resolve);
           }, 5000);
+
           child.once("exit", () => {
             clearTimeout(timeout);
             resolve();
           });
         });
+
+        // Send SIGTERM after the listener is registered so we cannot miss
+        // the exit event regardless of how quickly the process terminates.
+        if (pid) {
+          await killProcessTree(pid, "SIGTERM");
+        } else {
+          child.kill("SIGTERM");
+        }
+
+        await waitForExit;
       }
 
       processes.delete(handle.id);
