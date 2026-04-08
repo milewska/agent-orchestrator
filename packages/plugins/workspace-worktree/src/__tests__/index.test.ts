@@ -885,7 +885,7 @@ describe("workspace.postCreate()", () => {
     const ws = create();
     const project = makeProject({ postCreate: ["npm install"] });
 
-    mockGetShell.mockReturnValue({
+    mockGetShell.mockReturnValueOnce({
       cmd: "pwsh",
       args: (c: string) => ["-NoLogo", "-NonInteractive", "-Command", c],
     });
