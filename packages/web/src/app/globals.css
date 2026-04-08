@@ -3428,3 +3428,97 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.4; }
 }
+
+/* ── Landing Page ─────────────────────────────────────────────────── */
+.landing-page {
+  --landing-bg: hsl(201, 100%, 13%);
+  --landing-fg: hsl(0, 0%, 100%);
+  --landing-muted: hsl(240, 4%, 66%);
+  background: var(--landing-bg);
+  color: var(--landing-fg);
+  font-family: var(--font-sans, 'Inter', -apple-system, sans-serif);
+}
+
+.liquid-glass {
+  background: rgba(255, 255, 255, 0.01);
+  background-blend-mode: luminosity;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  border: none;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.liquid-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.4px;
+  background: linear-gradient(180deg,
+    rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%,
+    rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
+    rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.liquid-glass-solid {
+  background: hsl(0, 0%, 100%);
+  color: hsl(0, 0%, 4%);
+  font-weight: 500;
+  box-shadow: 0 0 24px rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.liquid-glass-solid:hover {
+  opacity: 0.9;
+}
+
+.liquid-glass-solid::before {
+  display: none;
+}
+
+@keyframes landing-fade-rise {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes landing-pulse-dot {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.landing-fade-rise {
+  animation: landing-fade-rise 0.8s ease-out both;
+}
+
+.landing-fade-rise-d1 {
+  animation: landing-fade-rise 0.8s ease-out 0.2s both;
+}
+
+.landing-fade-rise-d2 {
+  animation: landing-fade-rise 0.8s ease-out 0.4s both;
+}
+
+.landing-reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 0.8s ease-out, transform 0.8s ease-out;
+}
+
+.landing-reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.landing-agent-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(134, 239, 172, 0.7);
+  animation: landing-pulse-dot 2s ease-in-out infinite;
+}
