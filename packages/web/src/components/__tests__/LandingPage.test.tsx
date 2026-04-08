@@ -26,6 +26,7 @@ import { LandingTestimonials } from "../LandingTestimonials";
 import { LandingHowItWorks } from "../LandingHowItWorks";
 import { LandingQuickStart } from "../LandingQuickStart";
 import { LandingCTA } from "../LandingCTA";
+import { LandingUseCases } from "../LandingUseCases";
 import { LandingDifferentiators } from "../LandingDifferentiators";
 import { ScrollRevealProvider } from "../ScrollRevealProvider";
 
@@ -67,10 +68,25 @@ describe("LandingHero", () => {
 });
 
 describe("LandingAbout", () => {
-  it("renders the problem statement and description", () => {
+  it("renders the problem statement and config preview", () => {
     render(<LandingAbout />);
     expect(screen.getByText(/running AI agents in 10 browser tabs/)).toBeInTheDocument();
-    expect(screen.getByText(/single command/)).toBeInTheDocument();
+    expect(screen.getByText("agent-orchestrator.yaml")).toBeInTheDocument();
+    expect(screen.getByText("claude-code")).toBeInTheDocument();
+  });
+});
+
+describe("LandingUseCases", () => {
+  it("renders all three use cases", () => {
+    render(<LandingUseCases />);
+    expect(screen.getByText("Clear a bug backlog overnight")).toBeInTheDocument();
+    expect(screen.getByText("Ship a feature sprint in hours")).toBeInTheDocument();
+    expect(screen.getByText(/Migrate an API/)).toBeInTheDocument();
+  });
+
+  it("renders before/after comparisons", () => {
+    render(<LandingUseCases />);
+    expect(screen.getByText("10 agents, 10 PRs by morning")).toBeInTheDocument();
   });
 });
 

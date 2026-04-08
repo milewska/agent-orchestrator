@@ -5,6 +5,7 @@ import { LandingAgentsBar } from "@/components/LandingAgentsBar";
 import { LandingStats } from "@/components/LandingStats";
 import { LandingVideo } from "@/components/LandingVideo";
 import { LandingFeatures } from "@/components/LandingFeatures";
+import { LandingUseCases } from "@/components/LandingUseCases";
 import { LandingDifferentiators } from "@/components/LandingDifferentiators";
 import { LandingTestimonials } from "@/components/LandingTestimonials";
 import { LandingHowItWorks } from "@/components/LandingHowItWorks";
@@ -20,6 +21,7 @@ export default function LandingPage() {
       <LandingAbout />
       <LandingAgentsBar />
       <LandingFeatures />
+      <LandingUseCases />
       <LandingHowItWorks />
       <LandingDifferentiators />
       <LandingVideo />
