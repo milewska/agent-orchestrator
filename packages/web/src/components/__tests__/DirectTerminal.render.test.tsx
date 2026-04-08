@@ -193,10 +193,10 @@ describe("DirectTerminal render", () => {
     expect(screen.getByText("Cursor Blink")).toBeInTheDocument();
     expect(screen.getByText("Theme")).toBeInTheDocument();
 
-    // Should have cursor style buttons
-    expect(screen.getByText("bar")).toBeInTheDocument();
-    expect(screen.getByText("block")).toBeInTheDocument();
-    expect(screen.getByText("underline")).toBeInTheDocument();
+    // Should have cursor style visual buttons
+    expect(screen.getByTitle("Block")).toBeInTheDocument();
+    expect(screen.getByTitle("Bar")).toBeInTheDocument();
+    expect(screen.getByTitle("Underline")).toBeInTheDocument();
 
     // Should have theme swatches
     expect(screen.getByTitle("GitHub Dark")).toBeInTheDocument();

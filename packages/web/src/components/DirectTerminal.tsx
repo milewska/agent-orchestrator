@@ -541,7 +541,7 @@ export function DirectTerminal({
     terminal.options.minimumContrastRatio = isDark ? 1 : 7;
   }, [resolvedTheme, terminalThemes, settings.themeName]);
 
-  // Apply font/cursor setting changes
+  // Apply font/cursor setting changes live
   useEffect(() => {
     const terminal = terminalInstance.current;
     if (!terminal) return;
@@ -549,6 +549,8 @@ export function DirectTerminal({
     terminal.options.fontFamily = settings.fontFamily;
     terminal.options.cursorStyle = settings.cursorStyle;
     terminal.options.cursorBlink = settings.cursorBlink;
+    // Force xterm to re-render with new cursor settings
+    terminal.refresh(0, terminal.rows - 1);
     fitAddon.current?.fit();
     const currentWs = ws.current;
     if (currentWs?.readyState === WebSocket.OPEN) {
@@ -868,131 +870,178 @@ export function DirectTerminal({
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </button>
-            {/* Settings panel — fixed position so it's never clipped by
-                terminal container overflow. Coordinates from button ref. */}
-            {showSettings && settingsButtonRef.current ? (
+            {/* Settings panel — matching mockup layout */}
+            {showSettings ? (
               <div
                 ref={settingsPanelRef}
                 style={{
                   position: "fixed",
-                  top: settingsButtonRef.current.getBoundingClientRect().bottom + 6,
-                  right: Math.max(8, window.innerWidth - settingsButtonRef.current.getBoundingClientRect().right),
+                  top: 24,
+                  right: 24,
                   width: 280,
-                  maxHeight: "calc(100vh - 80px)",
+                  maxHeight: "calc(100vh - 48px)",
                   overflowY: "auto",
-                  background: chrome.panelBg,
-                  border: `1px solid ${chrome.barBorder}`,
-                  borderRadius: 10,
-                  boxShadow: chrome.panelShadow,
-                  padding: 14,
-                  zIndex: 70,
+                  background: isLight ? chrome.panelBg : "#161b22",
+                  border: `1px solid ${isLight ? chrome.barBorder : "#30363d"}`,
+                  borderRadius: 12,
+                  boxShadow: "0 16px 48px rgba(0,0,0,0.5)",
+                  padding: 16,
+                  zIndex: 100,
                   fontSize: 12,
                 }}
               >
-                {/* Font Family */}
-                <label style={{ display: "block", marginBottom: 10 }}>
-                  <span style={{ display: "block", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted, marginBottom: 4 }}>Font Family</span>
-                  <select
-                    value={settings.fontFamily}
-                    onChange={(e) => updateSettings({ fontFamily: e.target.value })}
-                    style={{ width: "100%", padding: "5px 8px", background: chrome.btnBg, border: `1px solid ${chrome.barBorder}`, borderRadius: 5, color: chrome.text, fontSize: 12, cursor: "pointer" }}
-                  >
+                {/* Title */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: chrome.text, marginBottom: 16 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={chrome.textMuted} strokeWidth="2">
+                    <path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  Terminal Settings
+                </div>
+
+                {/* Font Family — pill buttons */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, color: chrome.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: 6 }}>Font Family</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                     {FONT_FAMILIES.map((f) => (
-                      <option key={f.value} value={f.value}>{f.label}</option>
-                    ))}
-                  </select>
-                </label>
-                {/* Font Size */}
-                <label style={{ display: "block", marginBottom: 10 }}>
-                  <span style={{ display: "block", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted, marginBottom: 4 }}>Font Size</span>
-                  <div className="flex items-center" style={{ gap: 8 }}>
-                    <input
-                      type="range"
-                      min={10}
-                      max={22}
-                      value={settings.fontSize}
-                      onChange={(e) => updateSettings({ fontSize: Number(e.target.value) })}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, color: chrome.text, minWidth: 32, textAlign: "right" }}>
-                      {settings.fontSize}px
-                    </span>
-                  </div>
-                </label>
-                {/* Cursor Style */}
-                <label style={{ display: "block", marginBottom: 10 }}>
-                  <span style={{ display: "block", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted, marginBottom: 4 }}>Cursor Style</span>
-                  <div className="flex" style={{ gap: 4 }}>
-                    {(["bar", "block", "underline"] as const).map((style) => (
                       <button
-                        key={style}
-                        onClick={() => updateSettings({ cursorStyle: style })}
+                        key={f.value}
+                        onClick={() => updateSettings({ fontFamily: f.value })}
                         style={{
-                          flex: 1,
-                          padding: "4px 0",
-                          background: settings.cursorStyle === style ? chrome.accent : chrome.btnBg,
-                          color: settings.cursorStyle === style ? chrome.accentText : chrome.text,
-                          border: `1px solid ${settings.cursorStyle === style ? chrome.accent : chrome.barBorder}`,
-                          borderRadius: 4,
-                          fontSize: 11,
-                          fontWeight: 500,
+                          fontSize: 12,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          border: `1px solid ${settings.fontFamily === f.value ? chrome.accent : (isLight ? "#d1d9e0" : "#30363d")}`,
+                          background: settings.fontFamily === f.value ? `color-mix(in srgb, ${chrome.accent} 10%, transparent)` : (isLight ? "rgba(0,0,0,0.02)" : "rgba(255,255,255,0.03)"),
+                          color: settings.fontFamily === f.value ? chrome.accent : chrome.textMuted,
                           cursor: "pointer",
+                          fontFamily: f.value,
                         }}
                       >
-                        {style}
+                        {f.label}
                       </button>
                     ))}
                   </div>
-                </label>
-                {/* Cursor Blink */}
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted }}>Cursor Blink</span>
-                  <button
-                    onClick={() => updateSettings({ cursorBlink: !settings.cursorBlink })}
-                    style={{
-                      width: 36,
-                      height: 20,
-                      borderRadius: 10,
-                      background: settings.cursorBlink ? chrome.accent : chrome.btnBg,
-                      border: `1px solid ${settings.cursorBlink ? chrome.accent : chrome.barBorder}`,
-                      position: "relative",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
-                  >
-                    <div style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: "50%",
-                      background: chrome.accentText,
-                      position: "absolute",
-                      top: 2,
-                      left: settings.cursorBlink ? 19 : 2,
-                      transition: "left 0.15s ease",
-                    }} />
-                  </button>
-                </label>
-                {/* Theme */}
-                <div>
-                  <span style={{ display: "block", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted, marginBottom: 6 }}>Theme</span>
-                  <div className="flex flex-wrap" style={{ gap: 6 }}>
+                </div>
+
+                {/* Font Size — pill buttons */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: chrome.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>Font Size</span>
+                    <span style={{ fontSize: 10, color: isLight ? "#8c959f" : "#484f58" }}>{settings.fontSize}px</span>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {[12, 13, 14, 15, 16].map((size) => (
+                      <button
+                        key={size}
+                        onClick={() => updateSettings({ fontSize: size })}
+                        style={{
+                          fontSize: 12,
+                          padding: "4px 10px",
+                          borderRadius: 6,
+                          border: `1px solid ${settings.fontSize === size ? chrome.accent : (isLight ? "#d1d9e0" : "#30363d")}`,
+                          background: settings.fontSize === size ? `color-mix(in srgb, ${chrome.accent} 10%, transparent)` : (isLight ? "rgba(0,0,0,0.02)" : "rgba(255,255,255,0.03)"),
+                          color: settings.fontSize === size ? chrome.accent : chrome.textMuted,
+                          cursor: "pointer",
+                          fontFamily: '"JetBrains Mono", monospace',
+                        }}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Divider */}
+                <div style={{ height: 1, background: isLight ? "#d8dee4" : "#21262d", margin: "14px 0" }} />
+
+                {/* Theme — square swatches */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, color: chrome.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: 6 }}>Theme</div>
+                  <div style={{ display: "flex", gap: 6 }}>
                     {THEME_PRESETS.map((preset) => (
                       <button
                         key={preset.name}
                         onClick={() => updateSettings({ themeName: preset.name })}
                         title={preset.label}
                         style={{
-                          width: 22,
-                          height: 22,
-                          borderRadius: "50%",
+                          width: 28,
+                          height: 28,
+                          borderRadius: 8,
                           background: preset.swatch,
-                          border: settings.themeName === preset.name ? `2px solid ${chrome.accent}` : `1px solid ${chrome.barBorder}`,
+                          border: settings.themeName === preset.name ? `2px solid ${chrome.accent}` : "2px solid transparent",
                           cursor: "pointer",
                           padding: 0,
+                          transition: "transform 0.15s ease",
                         }}
                       />
                     ))}
                   </div>
+                </div>
+
+                {/* Cursor Style — visual previews */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, color: chrome.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500, marginBottom: 6 }}>Cursor Style</div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {(["block", "bar", "underline"] as const).map((style) => (
+                      <button
+                        key={style}
+                        onClick={() => updateSettings({ cursorStyle: style })}
+                        title={style.charAt(0).toUpperCase() + style.slice(1)}
+                        style={{
+                          width: 36,
+                          height: 28,
+                          borderRadius: 6,
+                          border: `1px solid ${settings.cursorStyle === style ? chrome.accent : (isLight ? "#d1d9e0" : "#30363d")}`,
+                          background: settings.cursorStyle === style ? `color-mix(in srgb, ${chrome.accent} 10%, transparent)` : (isLight ? "rgba(0,0,0,0.02)" : "rgba(255,255,255,0.03)"),
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        {style === "block" ? (
+                          <div style={{ width: 10, height: 16, background: chrome.accent, borderRadius: 1 }} />
+                        ) : style === "bar" ? (
+                          <div style={{ width: 2, height: 16, background: chrome.accent, borderRadius: 1 }} />
+                        ) : (
+                          <div style={{ width: 10, height: 2, background: chrome.accent, borderRadius: 1, alignSelf: "flex-end", marginBottom: 4 }} />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Cursor Blink toggle */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 11, color: chrome.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", fontWeight: 500 }}>Cursor Blink</span>
+                  <button
+                    onClick={() => updateSettings({ cursorBlink: !settings.cursorBlink })}
+                    style={{
+                      width: 36,
+                      height: 20,
+                      borderRadius: 10,
+                      background: settings.cursorBlink ? chrome.accent : (isLight ? "#d1d9e0" : chrome.btnBg),
+                      border: `1px solid ${settings.cursorBlink ? chrome.accent : (isLight ? "#d1d9e0" : chrome.barBorder)}`,
+                      position: "relative",
+                      cursor: "pointer",
+                      padding: 0,
+                      transition: "background 0.15s ease",
+                    }}
+                  >
+                    <div style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: 2,
+                      left: settings.cursorBlink ? 19 : 2,
+                      transition: "left 0.15s ease",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                    }} />
+                  </button>
                 </div>
               </div>
             ) : null}
