@@ -212,6 +212,30 @@ describe("killProcessTree", () => {
     await expect(mod.killProcessTree(9999)).resolves.toBeUndefined();
     killSpy.mockRestore();
   });
+
+  it("returns immediately without killing anything when pid is 0", async () => {
+    setPlatform("linux");
+    const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+
+    const mod = await import("../platform.js");
+    await mod.killProcessTree(0);
+
+    expect(killSpy).not.toHaveBeenCalled();
+    expect(mockExecFile).not.toHaveBeenCalled();
+    killSpy.mockRestore();
+  });
+
+  it("returns immediately without killing anything when pid is negative", async () => {
+    setPlatform("linux");
+    const killSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+
+    const mod = await import("../platform.js");
+    await mod.killProcessTree(-1);
+
+    expect(killSpy).not.toHaveBeenCalled();
+    expect(mockExecFile).not.toHaveBeenCalled();
+    killSpy.mockRestore();
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -74,6 +74,9 @@ export async function killProcessTree(
   pid: number,
   signal: "SIGTERM" | "SIGKILL" = "SIGTERM",
 ): Promise<void> {
+  // pid=0 means "current process group" on Unix (-0 === 0 in JS), which would
+  // kill AO itself. pid<0 is never valid. Guard both.
+  if (pid <= 0) return;
   if (isWindows()) {
     // taskkill /T kills the process tree; /F forces termination (SIGKILL equivalent).
     // Without /F, taskkill sends WM_CLOSE allowing the process to shut down gracefully
