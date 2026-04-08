@@ -8,6 +8,7 @@ const {
   mockExecFileAsync,
   mockReaddir,
   mockReadFile,
+  mockReadFileSync,
   mockStat,
   mockHomedir,
   mockWriteFile,
@@ -19,6 +20,7 @@ const {
   mockExecFileAsync: vi.fn(),
   mockReaddir: vi.fn(),
   mockReadFile: vi.fn(),
+  mockReadFileSync: vi.fn(() => ""),
   mockStat: vi.fn(),
   mockHomedir: vi.fn(() => "/mock/home"),
   mockWriteFile: vi.fn().mockResolvedValue(undefined),
@@ -46,6 +48,7 @@ vi.mock("node:fs/promises", () => ({
 
 vi.mock("node:fs", () => ({
   existsSync: mockExistsSync,
+  readFileSync: mockReadFileSync,
 }));
 
 vi.mock("node:os", () => ({
@@ -248,6 +251,17 @@ describe("getLaunchCommand", () => {
     expect(cmd).not.toMatch(/\s-p\s/);
     expect(cmd).not.toContain("Do the task");
   });
+
+  it("inlines systemPromptFile content on Windows instead of $(cat ...)", () => {
+    mockIsWindows.mockReturnValueOnce(true);
+    mockReadFileSync.mockReturnValueOnce("You are a helpful assistant.");
+    const cmd = agent.getLaunchCommand(
+      makeLaunchConfig({ systemPromptFile: "C:\\prompts\\system.md", prompt: "Do the task" }),
+    );
+    expect(cmd).toContain("--append-system-prompt");
+    expect(cmd).toContain("You are a helpful assistant.");
+    expect(cmd).not.toContain("$(cat");
+  });
 });
 
 // =========================================================================
@@ -373,6 +387,15 @@ describe("isProcessRunning", () => {
       return Promise.reject(new Error("unexpected"));
     });
     expect(await agent.isProcessRunning(makeTmuxHandle())).toBe(false);
+  });
+
+  it("returns false for tmux handle on Windows without spawning ps", async () => {
+    mockIsWindows.mockReturnValue(true);
+    // ps should never be called — getCachedProcessList guards against Windows
+    mockExecFileAsync.mockRejectedValue(new Error("ps not available on Windows"));
+    expect(await agent.isProcessRunning(makeTmuxHandle())).toBe(false);
+    expect(mockExecFileAsync).not.toHaveBeenCalledWith("ps", expect.anything(), expect.anything());
+    mockIsWindows.mockReturnValue(false);
   });
 });
 
@@ -979,6 +1002,16 @@ describe("setupWorkspaceHooks on win32", () => {
   it("Node.js hook script handles gh pr merge detection", () => {
     expect(METADATA_UPDATER_SCRIPT_NODE).toContain("pr\\s+merge");
     expect(METADATA_UPDATER_SCRIPT_NODE).toContain("merged");
+  });
+
+  it("Node.js hook script validates AO_DATA_DIR against allowed directories", () => {
+    // Must contain the allowlist check mirroring ao-metadata-helper.sh and
+    // the Node.js wrappers in agent-workspace-hooks.ts (C-1 security fix)
+    expect(METADATA_UPDATER_SCRIPT_NODE).toContain("allowedBases");
+    expect(METADATA_UPDATER_SCRIPT_NODE).toContain("realpathSync");
+    expect(METADATA_UPDATER_SCRIPT_NODE).toContain(".ao");
+    expect(METADATA_UPDATER_SCRIPT_NODE).toContain(".agent-orchestrator");
+    expect(METADATA_UPDATER_SCRIPT_NODE).toContain("os.tmpdir");
   });
 
   it("does not add duplicate hook entry when called twice on Windows", async () => {

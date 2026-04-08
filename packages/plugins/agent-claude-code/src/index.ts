@@ -19,7 +19,7 @@ import {
 } from "@composio/ao-core";
 import { execFile, execFileSync } from "node:child_process";
 import { readdir, readFile, stat, open, writeFile, mkdir, chmod } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
@@ -203,8 +203,9 @@ export const METADATA_UPDATER_SCRIPT_NODE = `#!/usr/bin/env node
 // - git checkout -b / git switch -c: extracts branch name and writes to metadata
 // - gh pr merge: updates status to "merged"
 
-const { readFileSync, writeFileSync, renameSync, existsSync } = require("node:fs");
-const { join } = require("node:path");
+const { readFileSync, writeFileSync, renameSync, existsSync, realpathSync } = require("node:fs");
+const { join, sep, resolve: resolvePath } = require("node:path");
+const os = require("node:os");
 
 const AO_DATA_DIR = process.env.AO_DATA_DIR || join(process.env.HOME || process.env.USERPROFILE || "", ".ao-sessions");
 const AO_SESSION = process.env.AO_SESSION || "";
@@ -251,6 +252,16 @@ if (!AO_SESSION) {
 // Validate AO_SESSION contains no path traversal components
 if (AO_SESSION.includes("/") || AO_SESSION.includes("\\\\") || AO_SESSION.includes("..")) {
   process.stdout.write(JSON.stringify({ systemMessage: "AO_SESSION contains invalid path characters, skipping metadata update" }) + "\\n");
+  process.exit(0);
+}
+
+// Validate AO_DATA_DIR is within an allowed base directory (mirrors ao-metadata-helper.sh)
+const home = os.homedir();
+let resolvedAoDir;
+try { resolvedAoDir = realpathSync(AO_DATA_DIR); } catch { resolvedAoDir = resolvePath(AO_DATA_DIR); }
+const allowedBases = [join(home, ".ao"), join(home, ".agent-orchestrator"), os.tmpdir()];
+if (!allowedBases.some((a) => resolvedAoDir === a || resolvedAoDir.startsWith(a + sep))) {
+  process.stdout.write(JSON.stringify({ systemMessage: "AO_DATA_DIR is outside allowed directories, skipping metadata update" }) + "\\n");
   process.exit(0);
 }
 
@@ -577,6 +588,10 @@ export function resetPsCache(): void {
 }
 
 async function getCachedProcessList(): Promise<string> {
+  // ps -eo is a Unix-only command; on Windows the tmux branch is never taken
+  // in normal operation, but guard here to avoid a spurious spawn error if
+  // a stale tmux handle is encountered.
+  if (isWindows()) return "";
   const now = Date.now();
   if (psCache && now - psCache.timestamp < PS_CACHE_TTL_MS) {
     // Cache hit — return resolved output or wait for in-flight request
@@ -838,10 +853,17 @@ function createClaudeCodeAgent(): Agent {
       }
 
       if (config.systemPromptFile) {
-        // Use shell command substitution to read from file at launch time.
-        // This avoids tmux truncation when inlining 2000+ char prompts.
-        // The double quotes allow $() expansion; inner path is single-quoted for safety.
-        parts.push("--append-system-prompt", `"$(cat ${shellEscape(config.systemPromptFile)})"`);
+        if (isWindows()) {
+          // Windows: $(cat ...) is bash syntax, not understood by PowerShell/cmd.exe.
+          // Read the file synchronously and inline the content instead.
+          const content = readFileSync(config.systemPromptFile, "utf-8");
+          parts.push("--append-system-prompt", shellEscape(content));
+        } else {
+          // Unix: use shell command substitution to read from file at launch time.
+          // This avoids tmux truncation when inlining 2000+ char prompts.
+          // The double quotes allow $() expansion; inner path is single-quoted for safety.
+          parts.push("--append-system-prompt", `"$(cat ${shellEscape(config.systemPromptFile)})"`);
+        }
       } else if (config.systemPrompt) {
         parts.push("--append-system-prompt", shellEscape(config.systemPrompt));
       }
