@@ -33,7 +33,7 @@ function getAoBinDir(): string {
 }
 
 /** Current version of wrapper scripts — bump when scripts change */
-const WRAPPER_VERSION = "0.4.0";
+const WRAPPER_VERSION = "0.5.0";
 
 // =============================================================================
 // PATH Builder
@@ -292,6 +292,61 @@ export function buildNodeWrapper(
   return buildGitNodeWrapper(realBinaryPath);
 }
 
+/**
+ * Shared Node.js snippet: updateAoMetadata function used by both gh and git wrappers.
+ * Validates session, key, and AO_DATA_DIR before writing metadata.
+ */
+const NODE_UPDATE_AO_METADATA = `\
+// ---------------------------------------------------------------------------
+// Metadata update (shared by gh/git wrappers)
+// ---------------------------------------------------------------------------
+function updateAoMetadata(key, value) {
+  const aoDir = process.env["AO_DATA_DIR"] || "";
+  const aoSession = process.env["AO_SESSION"] || "";
+  if (!aoDir || !aoSession) return;
+
+  // Validate session — no path separators or traversal
+  if (aoSession.includes("/") || aoSession.includes("\\\\") || aoSession.includes("..")) return;
+
+  // Validate key
+  if (!/^[a-zA-Z0-9_-]+$/.test(key)) return;
+
+  // Validate aoDir is under expected locations (mirrors bash ao-metadata-helper.sh)
+  const os = require("os");
+  const home = os.homedir();
+  const sep = path.sep;
+  let resolvedDir;
+  try { resolvedDir = fs.realpathSync(aoDir); } catch { resolvedDir = path.resolve(aoDir); }
+  const allowed = [path.join(home, ".ao"), path.join(home, ".agent-orchestrator"), os.tmpdir()];
+  if (!allowed.some(a => resolvedDir === a || resolvedDir.startsWith(a + sep))) return;
+
+  const metadataFile = path.join(resolvedDir, aoSession);
+  if (!fs.existsSync(metadataFile)) return;
+
+  // Strip newlines from value
+  const cleanValue = String(value).replace(/[\\r\\n]/g, "");
+
+  let content;
+  try { content = fs.readFileSync(metadataFile, "utf8"); } catch { return; }
+
+  const lines = content.split("\\n");
+  const keyPrefix = key + "=";
+  const idx = lines.findIndex(l => l.startsWith(keyPrefix));
+  if (idx >= 0) {
+    lines[idx] = key + "=" + cleanValue;
+  } else {
+    lines.push(key + "=" + cleanValue);
+  }
+
+  const tmpFile = metadataFile + ".tmp." + process.pid;
+  try {
+    fs.writeFileSync(tmpFile, lines.join("\\n"), "utf8");
+    fs.renameSync(tmpFile, metadataFile);
+  } catch {
+    try { fs.unlinkSync(tmpFile); } catch {}
+  }
+}`;
+
 function buildGhNodeWrapper(realBinaryPath: string): string {
   return `#!/usr/bin/env node
 // ao gh wrapper (Windows Node.js) — auto-updates session metadata on PR operations
@@ -330,47 +385,7 @@ function findRealGh() {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Metadata update
-// ---------------------------------------------------------------------------
-function updateAoMetadata(key, value) {
-  const aoDir = process.env["AO_DATA_DIR"] || "";
-  const aoSession = process.env["AO_SESSION"] || "";
-  if (!aoDir || !aoSession) return;
-
-  // Validate session — no path separators or traversal
-  if (aoSession.includes("/") || aoSession.includes("\\\\") || aoSession.includes("..")) return;
-
-  // Validate key
-  if (!/^[a-zA-Z0-9_-]+$/.test(key)) return;
-
-  const metadataFile = path.join(aoDir, aoSession);
-  if (!fs.existsSync(metadataFile)) return;
-
-  // Strip newlines from value
-  const cleanValue = String(value).replace(/[\\r\\n]/g, "");
-
-  let content;
-  try { content = fs.readFileSync(metadataFile, "utf8"); } catch { return; }
-
-  const lines = content.split("\\n");
-  const keyPrefix = key + "=";
-  const idx = lines.findIndex(l => l.startsWith(keyPrefix));
-  if (idx >= 0) {
-    lines[idx] = key + "=" + cleanValue;
-  } else {
-    // Insert before trailing empty lines
-    lines.push(key + "=" + cleanValue);
-  }
-
-  const tmpFile = metadataFile + ".tmp." + process.pid;
-  try {
-    fs.writeFileSync(tmpFile, lines.join("\\n"), "utf8");
-    fs.renameSync(tmpFile, metadataFile);
-  } catch {
-    try { fs.unlinkSync(tmpFile); } catch {}
-  }
-}
+${NODE_UPDATE_AO_METADATA}
 
 // ---------------------------------------------------------------------------
 // Main
@@ -444,42 +459,7 @@ function findRealGit() {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Metadata update (same as gh wrapper)
-// ---------------------------------------------------------------------------
-function updateAoMetadata(key, value) {
-  const aoDir = process.env["AO_DATA_DIR"] || "";
-  const aoSession = process.env["AO_SESSION"] || "";
-  if (!aoDir || !aoSession) return;
-
-  if (aoSession.includes("/") || aoSession.includes("\\\\") || aoSession.includes("..")) return;
-  if (!/^[a-zA-Z0-9_-]+$/.test(key)) return;
-
-  const metadataFile = path.join(aoDir, aoSession);
-  if (!fs.existsSync(metadataFile)) return;
-
-  const cleanValue = String(value).replace(/[\\r\\n]/g, "");
-
-  let content;
-  try { content = fs.readFileSync(metadataFile, "utf8"); } catch { return; }
-
-  const lines = content.split("\\n");
-  const keyPrefix = key + "=";
-  const idx = lines.findIndex(l => l.startsWith(keyPrefix));
-  if (idx >= 0) {
-    lines[idx] = key + "=" + cleanValue;
-  } else {
-    lines.push(key + "=" + cleanValue);
-  }
-
-  const tmpFile = metadataFile + ".tmp." + process.pid;
-  try {
-    fs.writeFileSync(tmpFile, lines.join("\\n"), "utf8");
-    fs.renameSync(tmpFile, metadataFile);
-  } catch {
-    try { fs.unlinkSync(tmpFile); } catch {}
-  }
-}
+${NODE_UPDATE_AO_METADATA}
 
 // ---------------------------------------------------------------------------
 // Main
