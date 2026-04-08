@@ -3431,7 +3431,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 
 /* ── Landing Page ─────────────────────────────────────────────────── */
 .landing-page {
-  --landing-bg: hsl(201, 100%, 13%);
+  --landing-bg: #000000;
   --landing-fg: hsl(0, 0%, 100%);
   --landing-muted: hsl(240, 4%, 66%);
   background: var(--landing-bg);
