@@ -267,9 +267,10 @@ export function DirectTerminal({
   useEffect(() => {
     if (!terminalRef.current) return;
 
-    // Reset reconnection state when sessionId changes
+    // Reset state when sessionId changes
     permanentErrorRef.current = false;
     reconnectAttemptRef.current = 0;
+    setRendererType("canvas");
 
     // Dynamically import xterm.js to avoid SSR issues
     let mounted = true;
