@@ -11,7 +11,9 @@ export interface TerminalSettings {
   themeName: string;
 }
 
-const VALID_FONT_SIZES = new Set([12, 13, 14, 15, 16]);
+function isValidFontSize(n: number): boolean {
+  return Number.isInteger(n) && n >= 10 && n <= 22;
+}
 const VALID_CURSOR_STYLES = new Set(["block", "bar", "underline"]);
 
 export interface ThemePreset {
@@ -221,7 +223,7 @@ function loadPersistedSettings(): TerminalSettings {
     const obj = parsed as Record<string, unknown>;
     return {
       fontSize:
-        typeof obj.fontSize === "number" && VALID_FONT_SIZES.has(obj.fontSize)
+        typeof obj.fontSize === "number" && isValidFontSize(obj.fontSize)
           ? obj.fontSize
           : DEFAULT_SETTINGS.fontSize,
       cursorStyle:

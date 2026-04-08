@@ -700,12 +700,28 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
             placeholder={sendingQuickReply !== null ? "Sending..." : "Type a reply..."}
             aria-label="Type a reply to the agent"
             value={replyText}
-            onChange={(e) => setReplyText(e.target.value)}
+            onChange={(e) => {
+              setReplyText(e.target.value);
+              // Auto-grow: reset height then set to scrollHeight
+              const el = e.target;
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+            }}
             onKeyDown={(e) => {
-              void handleReplyKeyDown(e);
+              if (e.key === "Enter" && e.shiftKey) {
+                // Let the newline insert, then auto-grow on next frame
+                requestAnimationFrame(() => {
+                  const el = e.target as HTMLTextAreaElement;
+                  el.style.height = "auto";
+                  el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                });
+              } else {
+                void handleReplyKeyDown(e);
+              }
             }}
             rows={1}
             disabled={sendingQuickReply !== null}
+            style={{ overflow: "hidden", resize: "none" }}
           />
         </div>
       )}

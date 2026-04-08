@@ -148,21 +148,19 @@ describe("DirectTerminal render", () => {
     expect(screen.getByTitle("Fullscreen")).toBeInTheDocument();
   });
 
-  it("renders status bar with permission badge for Claude Code", async () => {
-    render(<DirectTerminal sessionId="test-session" agentName="Claude Code" />);
+  it("renders font size controls and theme swatches in status bar", async () => {
+    render(<DirectTerminal sessionId="test-session" />);
 
     await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
 
-    expect(screen.getByText("bypass permissions on")).toBeInTheDocument();
-  });
-
-  it("renders agent name in status bar for non-Claude agents", async () => {
-    render(<DirectTerminal sessionId="test-session" agentName="Aider" />);
-
-    await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
-
-    expect(screen.queryByText("bypass permissions on")).toBeNull();
-    expect(screen.getAllByText("Aider").length).toBeGreaterThanOrEqual(1);
+    // Font size display (default 14px)
+    expect(screen.getByText("14px")).toBeInTheDocument();
+    // Font size buttons
+    expect(screen.getByTitle("Decrease font size")).toBeInTheDocument();
+    expect(screen.getByTitle("Increase font size")).toBeInTheDocument();
+    // Theme swatches
+    expect(screen.getByTitle("GitHub Dark")).toBeInTheDocument();
+    expect(screen.getByTitle("Dracula")).toBeInTheDocument();
   });
 
   it("renders PR link in status bar when prNumber is provided", async () => {

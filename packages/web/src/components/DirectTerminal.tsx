@@ -164,7 +164,7 @@ export function DirectTerminal({
   const searchParams = useSearchParams();
   const { resolvedTheme } = useTheme();
   const terminalThemes = useMemo(() => buildTerminalThemes(variant), [variant]);
-  const [settings] = useTerminalSettings();
+  const [settings, updateSettings] = useTerminalSettings();
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const terminalInstance = useRef<TerminalType | null>(null);
@@ -872,40 +872,95 @@ export function DirectTerminal({
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
       <div
-        className="flex items-center justify-between"
+        className="flex flex-wrap items-center justify-between gap-y-1"
         style={{
-          padding: "6px 16px",
+          padding: "5px 16px",
           background: chrome.statusBarBg,
           borderTop: `1px solid ${chrome.barBorder}`,
           fontSize: 11,
         }}
       >
-        {/* Left side */}
-        <div className="flex items-center" style={{ gap: 12, color: chrome.textMuted }}>
-          {/* Permission badge — Claude Code specific */}
-          {agentName === "Claude Code" ? (
-            <>
-              <span style={{ color: chrome.permissionColor, fontWeight: 600, fontFamily: '"JetBrains Mono", monospace' }}>
-                <svg
-                  className="mr-1 inline-block"
-                  width="12" height="12" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" strokeWidth="2.5"
-                >
-                  <path d="M7 17l9.2-9.2M17 17V7H7" />
-                </svg>
-                bypass permissions on
-              </span>
-              <span style={{ color: chrome.divider }}>|</span>
-              <span className="hidden sm:inline">(shift+tab to cycle)</span>
-            </>
-          ) : agentName ? (
-            <span style={{ color: chrome.textMuted, fontFamily: '"JetBrains Mono", monospace' }}>
-              {agentName}
+        {/* Left side — font controls */}
+        <div className="flex items-center" style={{ gap: 8, color: chrome.textMuted }}>
+          {/* Font size: decrease / value / increase */}
+          <div className="flex items-center" style={{ gap: 2 }}>
+            <button
+              onClick={() => {
+                const next = Math.max(10, settings.fontSize - 1);
+                updateSettings({ fontSize: next });
+              }}
+              style={{
+                padding: "1px 5px",
+                background: chrome.btnBg,
+                border: `1px solid ${chrome.barBorder}`,
+                borderRadius: 3,
+                color: chrome.textMuted,
+                cursor: "pointer",
+                fontSize: 11,
+                lineHeight: "14px",
+              }}
+              title="Decrease font size"
+            >
+              -
+            </button>
+            <span
+              style={{
+                minWidth: 28,
+                textAlign: "center",
+                fontFamily: '"JetBrains Mono", monospace',
+                fontWeight: 600,
+                color: chrome.text,
+              }}
+            >
+              {settings.fontSize}px
             </span>
-          ) : null}
+            <button
+              onClick={() => {
+                const next = Math.min(22, settings.fontSize + 1);
+                updateSettings({ fontSize: next });
+              }}
+              style={{
+                padding: "1px 5px",
+                background: chrome.btnBg,
+                border: `1px solid ${chrome.barBorder}`,
+                borderRadius: 3,
+                color: chrome.textMuted,
+                cursor: "pointer",
+                fontSize: 11,
+                lineHeight: "14px",
+              }}
+              title="Increase font size"
+            >
+              +
+            </button>
+          </div>
+
+          <span style={{ color: chrome.divider }}>|</span>
+
+          {/* Font family selector */}
+          <select
+            value={settings.cursorStyle}
+            onChange={(e) => updateSettings({ cursorStyle: e.target.value as "block" | "bar" | "underline" })}
+            style={{
+              background: chrome.btnBg,
+              border: `1px solid ${chrome.barBorder}`,
+              borderRadius: 3,
+              color: chrome.text,
+              fontSize: 11,
+              padding: "1px 4px",
+              cursor: "pointer",
+              fontFamily: '"JetBrains Mono", monospace',
+            }}
+            title="Cursor style"
+          >
+            <option value="bar">bar</option>
+            <option value="block">block</option>
+            <option value="underline">underline</option>
+          </select>
+
           {prNumber ? (
             <>
-              <span className="hidden sm:inline" style={{ color: chrome.divider }}>|</span>
+              <span style={{ color: chrome.divider }}>|</span>
               <a
                 href={prUrl}
                 target="_blank"
@@ -924,8 +979,27 @@ export function DirectTerminal({
           ) : null}
         </div>
 
-        {/* Right side — reserved for cost display */}
-        <div />
+        {/* Right side — theme selector */}
+        <div className="flex items-center" style={{ gap: 6 }}>
+          {THEME_PRESETS.map((preset) => (
+            <button
+              key={preset.name}
+              onClick={() => updateSettings({ themeName: preset.name })}
+              title={preset.label}
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: "50%",
+                background: preset.swatch,
+                border: settings.themeName === preset.name
+                  ? "2px solid #58a6ff"
+                  : `1px solid ${chrome.barBorder}`,
+                cursor: "pointer",
+                padding: 0,
+              }}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
