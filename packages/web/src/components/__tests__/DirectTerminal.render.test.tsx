@@ -148,19 +148,15 @@ describe("DirectTerminal render", () => {
     expect(screen.getByTitle("Fullscreen")).toBeInTheDocument();
   });
 
-  it("renders font size controls and theme swatches in status bar", async () => {
+  it("renders settings button and font info in status bar", async () => {
     render(<DirectTerminal sessionId="test-session" />);
 
     await waitFor(() => expect(screen.getByText("CONNECTED")).toBeInTheDocument());
 
-    // Font size display (default 14px)
-    expect(screen.getByText("14px")).toBeInTheDocument();
-    // Font size buttons
-    expect(screen.getByTitle("Decrease font size")).toBeInTheDocument();
-    expect(screen.getByTitle("Increase font size")).toBeInTheDocument();
-    // Theme swatches
-    expect(screen.getByTitle("GitHub Dark")).toBeInTheDocument();
-    expect(screen.getByTitle("Dracula")).toBeInTheDocument();
+    // Settings gear button in top bar
+    expect(screen.getByTitle("Terminal settings")).toBeInTheDocument();
+    // Status bar shows font family + size
+    expect(screen.getByText(/JetBrains Mono · 14px/)).toBeInTheDocument();
   });
 
   it("renders PR link in status bar when prNumber is provided", async () => {

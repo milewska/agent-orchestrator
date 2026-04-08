@@ -8,6 +8,7 @@ import {
   useTerminalSettings,
   getThemePreset,
   THEME_PRESETS,
+  FONT_FAMILIES,
 } from "./TerminalSettings";
 
 // Import xterm CSS (must be imported in client component)
@@ -178,6 +179,9 @@ export function DirectTerminal({
   const [error, setError] = useState<string | null>(null);
   const [reloading, setReloading] = useState(false);
   const [reloadError, setReloadError] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const settingsPanelRef = useRef<HTMLDivElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
 
   // Update URL when fullscreen changes
   useEffect(() => {
@@ -190,6 +194,22 @@ export function DirectTerminal({
     const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
     router.replace(newUrl, { scroll: false });
   }, [fullscreen, pathname, router, searchParams]);
+
+  // Close settings panel on click outside
+  useEffect(() => {
+    if (!showSettings) return;
+    function handleClick(e: MouseEvent) {
+      const target = e.target as Node;
+      if (
+        settingsPanelRef.current && !settingsPanelRef.current.contains(target) &&
+        settingsButtonRef.current && !settingsButtonRef.current.contains(target)
+      ) {
+        setShowSettings(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showSettings]);
 
   async function handleReload(): Promise<void> {
     if (!isOpenCodeSession || reloading) return;
@@ -256,11 +276,10 @@ export function DirectTerminal({
         const activeTheme = isDark ? (preset?.dark ?? terminalThemes.dark) : terminalThemes.light;
 
         const terminal = new Terminal({
-          cursorBlink: true,
+          cursorBlink: settings.cursorBlink,
           fontSize: settings.fontSize,
           cursorStyle: settings.cursorStyle,
-          fontFamily:
-            'var(--font-jetbrains-mono), "JetBrains Mono", "SF Mono", Menlo, Monaco, "Courier New", monospace',
+          fontFamily: settings.fontFamily,
           theme: activeTheme,
           minimumContrastRatio: isDark ? 1 : 7,
           scrollback: 10000,
@@ -522,12 +541,14 @@ export function DirectTerminal({
     terminal.options.minimumContrastRatio = isDark ? 1 : 7;
   }, [resolvedTheme, terminalThemes, settings.themeName]);
 
-  // Apply font size and cursor style changes
+  // Apply font/cursor setting changes
   useEffect(() => {
     const terminal = terminalInstance.current;
     if (!terminal) return;
     terminal.options.fontSize = settings.fontSize;
+    terminal.options.fontFamily = settings.fontFamily;
     terminal.options.cursorStyle = settings.cursorStyle;
+    terminal.options.cursorBlink = settings.cursorBlink;
     fitAddon.current?.fit();
     const currentWs = ws.current;
     if (currentWs?.readyState === WebSocket.OPEN) {
@@ -535,7 +556,7 @@ export function DirectTerminal({
         JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }),
       );
     }
-  }, [settings.fontSize, settings.cursorStyle]);
+  }, [settings.fontSize, settings.fontFamily, settings.cursorStyle, settings.cursorBlink]);
 
   // Re-fit terminal when fullscreen changes
   useEffect(() => {
@@ -814,6 +835,158 @@ export function DirectTerminal({
 
         {/* Right side */}
         <div className="topbar-right flex items-center" style={{ gap: 8 }}>
+          {/* Settings button */}
+          <div className="relative">
+            <button
+              ref={settingsButtonRef}
+              onClick={() => setShowSettings((v) => !v)}
+              title="Terminal settings"
+              aria-label="Terminal settings"
+              className="terminal-topbar-btn"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                padding: "4px 8px",
+                background: showSettings ? chrome.btnBg : "transparent",
+                border: `1px solid ${showSettings ? chrome.btnBorder : "transparent"}`,
+                borderRadius: 6,
+                color: chrome.btnText,
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </button>
+            {/* Settings panel dropdown */}
+            {showSettings ? (
+              <div
+                ref={settingsPanelRef}
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "calc(100% + 6px)",
+                  width: 280,
+                  background: chrome.statusBarBg,
+                  border: `1px solid ${chrome.barBorder}`,
+                  borderRadius: 10,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.3)",
+                  padding: 14,
+                  zIndex: 60,
+                  fontSize: 12,
+                }}
+              >
+                {/* Font Family */}
+                <label style={{ display: "block", marginBottom: 10 }}>
+                  <span style={{ display: "block", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted, marginBottom: 4 }}>Font Family</span>
+                  <select
+                    value={settings.fontFamily}
+                    onChange={(e) => updateSettings({ fontFamily: e.target.value })}
+                    style={{ width: "100%", padding: "5px 8px", background: chrome.btnBg, border: `1px solid ${chrome.barBorder}`, borderRadius: 5, color: chrome.text, fontSize: 12, cursor: "pointer" }}
+                  >
+                    {FONT_FAMILIES.map((f) => (
+                      <option key={f.value} value={f.value}>{f.label}</option>
+                    ))}
+                  </select>
+                </label>
+                {/* Font Size */}
+                <label style={{ display: "block", marginBottom: 10 }}>
+                  <span style={{ display: "block", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted, marginBottom: 4 }}>Font Size</span>
+                  <div className="flex items-center" style={{ gap: 8 }}>
+                    <input
+                      type="range"
+                      min={10}
+                      max={22}
+                      value={settings.fontSize}
+                      onChange={(e) => updateSettings({ fontSize: Number(e.target.value) })}
+                      style={{ flex: 1 }}
+                    />
+                    <span style={{ fontFamily: '"JetBrains Mono", monospace', fontWeight: 600, color: chrome.text, minWidth: 32, textAlign: "right" }}>
+                      {settings.fontSize}px
+                    </span>
+                  </div>
+                </label>
+                {/* Cursor Style */}
+                <label style={{ display: "block", marginBottom: 10 }}>
+                  <span style={{ display: "block", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted, marginBottom: 4 }}>Cursor Style</span>
+                  <div className="flex" style={{ gap: 4 }}>
+                    {(["bar", "block", "underline"] as const).map((style) => (
+                      <button
+                        key={style}
+                        onClick={() => updateSettings({ cursorStyle: style })}
+                        style={{
+                          flex: 1,
+                          padding: "4px 0",
+                          background: settings.cursorStyle === style ? "#58a6ff" : chrome.btnBg,
+                          color: settings.cursorStyle === style ? "#fff" : chrome.text,
+                          border: `1px solid ${settings.cursorStyle === style ? "#58a6ff" : chrome.barBorder}`,
+                          borderRadius: 4,
+                          fontSize: 11,
+                          fontWeight: 500,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {style}
+                      </button>
+                    ))}
+                  </div>
+                </label>
+                {/* Cursor Blink */}
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted }}>Cursor Blink</span>
+                  <button
+                    onClick={() => updateSettings({ cursorBlink: !settings.cursorBlink })}
+                    style={{
+                      width: 36,
+                      height: 20,
+                      borderRadius: 10,
+                      background: settings.cursorBlink ? "#58a6ff" : chrome.btnBg,
+                      border: `1px solid ${settings.cursorBlink ? "#58a6ff" : chrome.barBorder}`,
+                      position: "relative",
+                      cursor: "pointer",
+                      padding: 0,
+                    }}
+                  >
+                    <div style={{
+                      width: 14,
+                      height: 14,
+                      borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: 2,
+                      left: settings.cursorBlink ? 19 : 2,
+                      transition: "left 0.15s ease",
+                    }} />
+                  </button>
+                </label>
+                {/* Theme */}
+                <div>
+                  <span style={{ display: "block", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: chrome.textMuted, marginBottom: 6 }}>Theme</span>
+                  <div className="flex flex-wrap" style={{ gap: 6 }}>
+                    {THEME_PRESETS.map((preset) => (
+                      <button
+                        key={preset.name}
+                        onClick={() => updateSettings({ themeName: preset.name })}
+                        title={preset.label}
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: "50%",
+                          background: preset.swatch,
+                          border: settings.themeName === preset.name ? "2px solid #58a6ff" : `1px solid ${chrome.barBorder}`,
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+          {/* Fullscreen button */}
           <button
             onClick={() => setFullscreen(!fullscreen)}
             title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
@@ -872,7 +1045,7 @@ export function DirectTerminal({
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
       <div
-        className="flex flex-wrap items-center justify-between gap-y-1"
+        className="flex items-center justify-between"
         style={{
           padding: "5px 16px",
           background: chrome.statusBarBg,
@@ -880,126 +1053,30 @@ export function DirectTerminal({
           fontSize: 11,
         }}
       >
-        {/* Left side — font controls */}
-        <div className="flex items-center" style={{ gap: 8, color: chrome.textMuted }}>
-          {/* Font size: decrease / value / increase */}
-          <div className="flex items-center" style={{ gap: 2 }}>
-            <button
-              onClick={() => {
-                const next = Math.max(10, settings.fontSize - 1);
-                updateSettings({ fontSize: next });
-              }}
-              style={{
-                padding: "1px 5px",
-                background: chrome.btnBg,
-                border: `1px solid ${chrome.barBorder}`,
-                borderRadius: 3,
-                color: chrome.textMuted,
-                cursor: "pointer",
-                fontSize: 11,
-                lineHeight: "14px",
-              }}
-              title="Decrease font size"
-            >
-              -
-            </button>
-            <span
-              style={{
-                minWidth: 28,
-                textAlign: "center",
-                fontFamily: '"JetBrains Mono", monospace',
-                fontWeight: 600,
-                color: chrome.text,
-              }}
-            >
-              {settings.fontSize}px
-            </span>
-            <button
-              onClick={() => {
-                const next = Math.min(22, settings.fontSize + 1);
-                updateSettings({ fontSize: next });
-              }}
-              style={{
-                padding: "1px 5px",
-                background: chrome.btnBg,
-                border: `1px solid ${chrome.barBorder}`,
-                borderRadius: 3,
-                color: chrome.textMuted,
-                cursor: "pointer",
-                fontSize: 11,
-                lineHeight: "14px",
-              }}
-              title="Increase font size"
-            >
-              +
-            </button>
-          </div>
-
-          <span style={{ color: chrome.divider }}>|</span>
-
-          {/* Font family selector */}
-          <select
-            value={settings.cursorStyle}
-            onChange={(e) => updateSettings({ cursorStyle: e.target.value as "block" | "bar" | "underline" })}
+        {/* Left — font info */}
+        <span style={{ color: chrome.textMuted, fontFamily: '"JetBrains Mono", monospace' }}>
+          {FONT_FAMILIES.find((f) => f.value === settings.fontFamily)?.label ?? "monospace"}
+          {" · "}
+          {settings.fontSize}px
+        </span>
+        {/* Right — PR link if available */}
+        {prNumber ? (
+          <a
+            href={prUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             style={{
-              background: chrome.btnBg,
-              border: `1px solid ${chrome.barBorder}`,
-              borderRadius: 3,
-              color: chrome.text,
-              fontSize: 11,
-              padding: "1px 4px",
-              cursor: "pointer",
+              color: chrome.prLinkColor,
               fontFamily: '"JetBrains Mono", monospace',
+              fontWeight: 500,
+              fontSize: 11,
+              textDecoration: "none",
             }}
-            title="Cursor style"
+            className="hover:underline"
           >
-            <option value="bar">bar</option>
-            <option value="block">block</option>
-            <option value="underline">underline</option>
-          </select>
-
-          {prNumber ? (
-            <>
-              <span style={{ color: chrome.divider }}>|</span>
-              <a
-                href={prUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  color: chrome.prLinkColor,
-                  fontFamily: '"JetBrains Mono", monospace',
-                  fontWeight: 500,
-                  textDecoration: "none",
-                }}
-                className="hover:underline"
-              >
-                PR #{prNumber}
-              </a>
-            </>
-          ) : null}
-        </div>
-
-        {/* Right side — theme selector */}
-        <div className="flex items-center" style={{ gap: 6 }}>
-          {THEME_PRESETS.map((preset) => (
-            <button
-              key={preset.name}
-              onClick={() => updateSettings({ themeName: preset.name })}
-              title={preset.label}
-              style={{
-                width: 14,
-                height: 14,
-                borderRadius: "50%",
-                background: preset.swatch,
-                border: settings.themeName === preset.name
-                  ? "2px solid #58a6ff"
-                  : `1px solid ${chrome.barBorder}`,
-                cursor: "pointer",
-                padding: 0,
-              }}
-            />
-          ))}
-        </div>
+            PR #{prNumber}
+          </a>
+        ) : <div />}
       </div>
     </div>
   );

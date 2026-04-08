@@ -7,9 +7,21 @@ import type { ITheme } from "xterm";
 
 export interface TerminalSettings {
   fontSize: number;
+  fontFamily: string;
   cursorStyle: "block" | "bar" | "underline";
+  cursorBlink: boolean;
   themeName: string;
 }
+
+export const FONT_FAMILIES = [
+  { value: '"JetBrains Mono", monospace', label: "JetBrains Mono" },
+  { value: '"Fira Code", monospace', label: "Fira Code" },
+  { value: '"Source Code Pro", monospace', label: "Source Code Pro" },
+  { value: 'Menlo, monospace', label: "Menlo" },
+  { value: 'Monaco, monospace', label: "Monaco" },
+  { value: 'Consolas, monospace', label: "Consolas" },
+  { value: 'monospace', label: "monospace" },
+] as const;
 
 function isValidFontSize(n: number): boolean {
   return Number.isInteger(n) && n >= 10 && n <= 22;
@@ -29,7 +41,9 @@ const STORAGE_KEY = "ao-terminal-settings";
 
 const DEFAULT_SETTINGS: TerminalSettings = {
   fontSize: 14,
+  fontFamily: '"JetBrains Mono", monospace',
   cursorStyle: "bar",
+  cursorBlink: true,
   themeName: "github-dark",
 };
 
@@ -226,10 +240,18 @@ function loadPersistedSettings(): TerminalSettings {
         typeof obj.fontSize === "number" && isValidFontSize(obj.fontSize)
           ? obj.fontSize
           : DEFAULT_SETTINGS.fontSize,
+      fontFamily:
+        typeof obj.fontFamily === "string" && FONT_FAMILIES.some((f) => f.value === obj.fontFamily)
+          ? obj.fontFamily
+          : DEFAULT_SETTINGS.fontFamily,
       cursorStyle:
         typeof obj.cursorStyle === "string" && VALID_CURSOR_STYLES.has(obj.cursorStyle)
           ? (obj.cursorStyle as TerminalSettings["cursorStyle"])
           : DEFAULT_SETTINGS.cursorStyle,
+      cursorBlink:
+        typeof obj.cursorBlink === "boolean"
+          ? obj.cursorBlink
+          : DEFAULT_SETTINGS.cursorBlink,
       themeName:
         typeof obj.themeName === "string" && THEME_PRESETS.some((t) => t.name === obj.themeName)
           ? obj.themeName
