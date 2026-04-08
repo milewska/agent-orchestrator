@@ -738,10 +738,12 @@ export function DirectTerminal({
         boxShadow: fullscreen ? "none" : chrome.shadow,
       }}
     >
-      {/* ── Top bar ─────────────────────────────────────────────────── */}
+      {/* ── Top bar — z-index above terminal area so settings panel isn't clipped */}
       <div
         className="topbar flex items-center justify-between"
         style={{
+          position: "relative",
+          zIndex: 10,
           padding: "10px 16px",
           background: chrome.barBg,
           borderBottom: `1px solid ${chrome.barBorder}`,
@@ -866,21 +868,24 @@ export function DirectTerminal({
                 <circle cx="12" cy="12" r="3" />
               </svg>
             </button>
-            {/* Settings panel dropdown */}
-            {showSettings ? (
+            {/* Settings panel — fixed position so it's never clipped by
+                terminal container overflow. Coordinates from button ref. */}
+            {showSettings && settingsButtonRef.current ? (
               <div
                 ref={settingsPanelRef}
                 style={{
-                  position: "absolute",
-                  right: 0,
-                  top: "calc(100% + 6px)",
+                  position: "fixed",
+                  top: settingsButtonRef.current.getBoundingClientRect().bottom + 6,
+                  right: Math.max(8, window.innerWidth - settingsButtonRef.current.getBoundingClientRect().right),
                   width: 280,
+                  maxHeight: "calc(100vh - 80px)",
+                  overflowY: "auto",
                   background: chrome.panelBg,
                   border: `1px solid ${chrome.barBorder}`,
                   borderRadius: 10,
                   boxShadow: chrome.panelShadow,
                   padding: 14,
-                  zIndex: 60,
+                  zIndex: 70,
                   fontSize: 12,
                 }}
               >
