@@ -42,7 +42,7 @@ export function registerOpen(program: Command): void {
         ),
       );
 
-      for (const session of sessionsToOpen.sort()) {
+      for (const session of sessionsToOpen.sort((a, b) => a.id.localeCompare(b.id))) {
         const runtimeName = session.runtimeHandle?.runtimeName ?? config.defaults.runtime;
         const targetName = session.runtimeHandle?.id ?? session.id;
         const attachInfo = await sm.getAttachInfo(session.id).catch(() => null);
