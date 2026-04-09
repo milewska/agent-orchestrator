@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useState, useEffect, useRef } from "react";
+import { memo, useState, useEffect, useLayoutEffect, useRef } from "react";
 import {
   type DashboardSession,
   getAttentionLevel,
@@ -133,9 +133,10 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
     }
   };
 
-  // Auto-resize reply textarea when content changes (including Shift+Enter newlines).
-  // Runs after React commits the new value to the DOM, so scrollHeight is accurate.
-  useEffect(() => {
+  // Auto-resize reply textarea synchronously before browser paint to avoid flicker.
+  // useLayoutEffect runs after DOM mutation but before paint, so scrollHeight is
+  // accurate and the height update is applied in the same frame.
+  useLayoutEffect(() => {
     const el = replyTextareaRef.current;
     if (!el) return;
     el.style.height = "auto";
