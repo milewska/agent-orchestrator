@@ -12,19 +12,15 @@ import "server-only";
  * bundle them correctly.
  */
 
-import { loadConfig } from "@composio/ao-core/config";
 import {
+  loadConfig,
+  createPluginRegistry,
+  createSessionManager,
+  createLifecycleManager,
   decompose,
   getLeaves,
   getSiblings,
   formatPlanTree,
-  DEFAULT_DECOMPOSER_CONFIG,
-  type DecomposerConfig,
-} from "@composio/ao-core/decomposer";
-import { createLifecycleManager } from "@composio/ao-core/lifecycle-manager";
-import { createPluginRegistry } from "@composio/ao-core/plugin-registry";
-import { createSessionManager } from "@composio/ao-core/session-manager";
-import {
   type OrchestratorConfig,
   type PluginRegistry,
   type OpenCodeSessionManager,
@@ -34,18 +30,20 @@ import {
   type Tracker,
   type Issue,
   type Session,
+  type DecomposerConfig,
+  DEFAULT_DECOMPOSER_CONFIG,
   isOrchestratorSession,
   TERMINAL_STATUSES,
-} from "@composio/ao-core/types";
+} from "@aoagents/ao-core";
 
 // Static plugin imports — webpack needs these to be string literals
-import pluginRuntimeTmux from "@composio/ao-plugin-runtime-tmux";
-import pluginAgentClaudeCode from "@composio/ao-plugin-agent-claude-code";
-import pluginAgentOpencode from "@composio/ao-plugin-agent-opencode";
-import pluginWorkspaceWorktree from "@composio/ao-plugin-workspace-worktree";
-import pluginScmGithub from "@composio/ao-plugin-scm-github";
-import pluginTrackerGithub from "@composio/ao-plugin-tracker-github";
-import pluginTrackerLinear from "@composio/ao-plugin-tracker-linear";
+import pluginRuntimeTmux from "@aoagents/ao-plugin-runtime-tmux";
+import pluginAgentClaudeCode from "@aoagents/ao-plugin-agent-claude-code";
+import pluginAgentOpencode from "@aoagents/ao-plugin-agent-opencode";
+import pluginWorkspaceWorktree from "@aoagents/ao-plugin-workspace-worktree";
+import pluginScmGithub from "@aoagents/ao-plugin-scm-github";
+import pluginTrackerGithub from "@aoagents/ao-plugin-tracker-github";
+import pluginTrackerLinear from "@aoagents/ao-plugin-tracker-linear";
 
 export interface Services {
   config: OrchestratorConfig;

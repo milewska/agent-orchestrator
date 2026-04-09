@@ -1,8 +1,5 @@
-import {
-  isOrchestratorSession,
-  isTerminalSession,
-  type Session,
-} from "@composio/ao-core/types";
+import type { Session } from "@aoagents/ao-core";
+import { isOrchestratorSession, isTerminalSession } from "@aoagents/ao-core/types";
 import type { Orchestrator } from "@/components/OrchestratorSelector";
 
 /**

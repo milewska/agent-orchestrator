@@ -9,7 +9,7 @@ import {
   type SCMWebhookEvent,
   type SCMWebhookRequest,
   type Session,
-} from "@composio/ao-core/types";
+} from "@aoagents/ao-core";
 
 export interface WebhookProjectMatch {
   projectId: string;
@@ -46,7 +46,7 @@ export function findWebhookProjects(
 }
 
 export function eventMatchesProject(event: SCMWebhookEvent, project: ProjectConfig): boolean {
-  if (!event.repository || !project.repo) return false;
+  if (!event.repository) return false;
   return (
     `${event.repository.owner}/${event.repository.name}`.toLowerCase() ===
     project.repo.toLowerCase()

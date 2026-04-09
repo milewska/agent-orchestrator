@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { generateOrchestratorPrompt } from "@composio/ao-core/orchestrator-prompt";
-import { generateSessionPrefix } from "@composio/ao-core/paths";
+import { generateOrchestratorPrompt, generateSessionPrefix } from "@aoagents/ao-core";
 import { getServices } from "@/lib/services";
 import { validateIdentifier, validateConfiguredProject } from "@/lib/validation";
 import { mapSessionsToOrchestrators } from "@/lib/orchestrator-utils";

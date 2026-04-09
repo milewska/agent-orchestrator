@@ -76,12 +76,6 @@ class MockWebSocket {
   close() {}
 }
 
-class MockResizeObserver {
-  observe() {}
-  disconnect() {}
-  unobserve() {}
-}
-
 vi.mock("xterm", () => ({
   Terminal: MockTerminal,
 }));
@@ -94,6 +88,19 @@ vi.mock("@xterm/addon-web-links", () => ({
   WebLinksAddon: MockWebLinksAddon,
 }));
 
+vi.mock("@/hooks/useMux", () => ({
+  useMux: () => ({
+    subscribeTerminal: vi.fn(() => vi.fn()),
+    writeTerminal: vi.fn(),
+    openTerminal: vi.fn(),
+    closeTerminal: vi.fn(),
+    resizeTerminal: vi.fn(),
+    status: "connected",
+    sessions: [],
+    terminals: [],
+  }),
+}));
+
 describe("DirectTerminal render", () => {
   beforeEach(() => {
     searchParams = new URLSearchParams();
@@ -104,7 +111,6 @@ describe("DirectTerminal render", () => {
       value: { ready: Promise.resolve() },
     });
     vi.stubGlobal("WebSocket", MockWebSocket);
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({
@@ -124,10 +130,11 @@ describe("DirectTerminal render", () => {
   it("renders the shared accent chrome for orchestrator terminals", async () => {
     render(<DirectTerminal sessionId="ao-orchestrator" variant="orchestrator" />);
 
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith("/api/runtime/terminal", expect.any(Object)));
-    await waitFor(() => expect(MockWebSocket.instances[0]?.url).toContain("/ao-terminal-ws?session=ao-orchestrator"));
+    await waitFor(() =>
+      expect(screen.getByText("Connected")).toBeInTheDocument(),
+    );
 
-    expect(screen.getByText("ao-orchestrator")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Fullscreen" })).toBeInTheDocument();
+    expect(screen.getByText("ao-orchestrator")).toHaveStyle({ color: "var(--color-accent)" });
+    expect(screen.getByText("XDA")).toHaveStyle({ color: "var(--color-accent)" });
   });
 });

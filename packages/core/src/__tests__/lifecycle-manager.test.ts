@@ -1731,7 +1731,6 @@ describe("rate limiting optimizations", () => {
     expect(getPendingMock).toHaveBeenCalledTimes(1);
   });
 });
-
 describe("summary pinning", () => {
   it("pins first quality summary when pinnedSummary not set", async () => {
     const session = makeSession({

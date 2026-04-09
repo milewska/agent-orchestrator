@@ -9,7 +9,7 @@ import {
   TERMINAL_STATUSES,
   isPRMergeReady,
 } from "@/lib/types";
-import { CI_STATUS } from "@composio/ao-core/types";
+import { CI_STATUS } from "@aoagents/ao-core/types";
 import { cn } from "@/lib/cn";
 import dynamic from "next/dynamic";
 import { getSessionTitle } from "@/lib/format";
