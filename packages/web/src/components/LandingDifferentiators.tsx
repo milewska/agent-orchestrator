@@ -1,34 +1,10 @@
 const rows = [
-  {
-    feature: "Web-based dashboard",
-    ao: true,
-    others: "Native Mac apps only",
-  },
-  {
-    feature: "Open source (MIT)",
-    ao: true,
-    others: "Closed source",
-  },
-  {
-    feature: "Multi-agent (Claude, Codex, Aider, OpenCode)",
-    ao: true,
-    others: "Single agent",
-  },
-  {
-    feature: "Auto CI failure recovery",
-    ao: true,
-    others: "Manual",
-  },
-  {
-    feature: "Plugin architecture (7 slots)",
-    ao: true,
-    others: "Fixed integrations",
-  },
-  {
-    feature: "Git worktree isolation",
-    ao: true,
-    others: "Shared workspace",
-  },
+  { feature: "Web-based dashboard", others: "Native Mac apps only" },
+  { feature: "Open source (MIT)", others: "Closed source" },
+  { feature: "Multi-agent (Claude, Codex, Aider, OpenCode)", others: "Single agent" },
+  { feature: "Auto CI failure recovery", others: "Manual" },
+  { feature: "Plugin architecture (7 slots)", others: "Fixed integrations" },
+  { feature: "Git worktree isolation", others: "Shared workspace" },
 ];
 
 export function LandingDifferentiators() {

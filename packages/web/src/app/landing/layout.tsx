@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Agent Orchestrator — Run 30 AI Agents in Parallel",
+  title: { absolute: "Agent Orchestrator — Run 30 AI Agents in Parallel" },
   description:
     "The open-source platform for spawning and managing parallel AI coding agents. One dashboard. Zero babysitting.",
 };

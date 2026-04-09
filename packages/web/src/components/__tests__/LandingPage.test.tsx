@@ -194,11 +194,11 @@ describe("LandingTestimonials", () => {
     expect(screen.getByText(/3 PRs\/day to 15 PRs\/day/)).toBeInTheDocument();
   });
 
-  it("renders author names", () => {
+  it("renders author roles", () => {
     render(<LandingTestimonials />);
-    expect(screen.getByText("Sarah K.")).toBeInTheDocument();
-    expect(screen.getByText("Marcus R.")).toBeInTheDocument();
-    expect(screen.getByText("Jia P.")).toBeInTheDocument();
+    expect(screen.getByText("Staff Engineer")).toBeInTheDocument();
+    expect(screen.getByText("Solo Founder")).toBeInTheDocument();
+    expect(screen.getByText("Eng Lead")).toBeInTheDocument();
   });
 });
 
@@ -235,7 +235,7 @@ describe("LandingQuickStart", () => {
   it("renders CLI commands", () => {
     render(<LandingQuickStart />);
     expect(screen.getByText(/npm i -g @composio\/ao/)).toBeInTheDocument();
-    expect(screen.getByText(/ao setup/)).toBeInTheDocument();
+    expect(screen.getByText(/ao start/)).toBeInTheDocument();
     expect(screen.getByText(/ao batch-spawn 1 2 3/)).toBeInTheDocument();
   });
 });

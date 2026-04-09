@@ -1,24 +1,24 @@
 const testimonials = [
   {
     quote:
-      "I set up 12 agents on our backlog before lunch. By end of day, 8 PRs were merged. This is how engineering should scale.",
-    initials: "SK",
-    name: "Sarah K.",
-    role: "Staff Engineer, Series B Startup",
+      "Set up 12 agents on our backlog before lunch. By end of day, 8 PRs were merged.",
+    initials: "01",
+    name: "Staff Engineer",
+    role: "Series B Startup",
   },
   {
     quote:
       "The auto CI recovery alone saves me hours a week. Agents fix their own broken tests. I just review and merge.",
-    initials: "MR",
-    name: "Marcus R.",
-    role: "Solo Founder, Indie SaaS",
+    initials: "02",
+    name: "Solo Founder",
+    role: "Indie SaaS",
   },
   {
     quote:
       "We went from 3 PRs/day to 15 PRs/day. The plugin system means we swapped in GitLab and Linear without changing our workflow.",
-    initials: "JP",
-    name: "Jia P.",
-    role: "Eng Lead, 20-person team",
+    initials: "03",
+    name: "Eng Lead",
+    role: "20-person team",
   },
 ];
 

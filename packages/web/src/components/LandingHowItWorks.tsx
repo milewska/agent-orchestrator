@@ -145,7 +145,7 @@ function DashColumn({ title, cards }: { title: string; cards: DashCardData[] }) 
             {card.done ? (
               <span>✓</span>
             ) : (
-              <span className={`landing-agent-dot ${card.amber ? "bg-[rgba(251,191,36,0.7)]" : ""}`} />
+              <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: card.amber ? "rgba(251,191,36,0.7)" : "rgba(134,239,172,0.7)" }} />
             )}
             {card.agent}
           </div>

@@ -15,21 +15,27 @@ export function LandingWorkflow() {
   const [activeStep, setActiveStep] = useState(-1);
   const ref = useRef<HTMLDivElement>(null);
   const started = useRef(false);
+  const timerIds = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !started.current) {
           started.current = true;
+          const ids: ReturnType<typeof setTimeout>[] = [];
           steps.forEach((_, i) => {
-            setTimeout(() => setActiveStep(i), 600 + i * 700);
+            ids.push(setTimeout(() => setActiveStep(i), 600 + i * 700));
           });
+          timerIds.current = ids;
         }
       },
       { threshold: 0.4 },
     );
     if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      timerIds.current.forEach(clearTimeout);
+    };
   }, []);
 
   return (
@@ -48,8 +54,11 @@ export function LandingWorkflow() {
         {/* Connection line */}
         <div className="absolute top-6 left-6 right-6 h-px bg-[var(--landing-border-subtle)] hidden md:block" />
         <div
-          className="absolute top-6 left-6 h-px bg-[var(--landing-accent)] hidden md:block transition-all duration-700 ease-out"
-          style={{ width: activeStep >= 0 ? `${Math.min((activeStep / (steps.length - 1)) * 100, 100)}%` : "0%" }}
+          className="absolute top-6 left-6 right-6 h-px hidden md:block transition-all duration-700 ease-out origin-left"
+          style={{
+            background: "var(--landing-accent)",
+            transform: `scaleX(${activeStep >= 0 ? Math.min(activeStep / (steps.length - 1), 1) : 0})`,
+          }}
         />
 
         {/* Steps */}

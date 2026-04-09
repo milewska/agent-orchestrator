@@ -22,21 +22,27 @@ function TerminalTyping() {
   const [visibleCount, setVisibleCount] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const started = useRef(false);
+  const timerIds = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && !started.current) {
           started.current = true;
+          const ids: ReturnType<typeof setTimeout>[] = [];
           terminalLines.forEach((line, i) => {
-            setTimeout(() => setVisibleCount(i + 1), line.delay);
+            ids.push(setTimeout(() => setVisibleCount(i + 1), line.delay));
           });
+          timerIds.current = ids;
         }
       },
       { threshold: 0.3 },
     );
     if (ref.current) observer.observe(ref.current);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      timerIds.current.forEach(clearTimeout);
+    };
   }, []);
 
   return (
@@ -64,7 +70,7 @@ function TerminalTyping() {
             {line.type === "status" && (
               <span className="landing-agent-dot mr-1.5 inline-block" />
             )}
-            {line.type === "cmd" ? line.text.slice(2) : line.text}
+            {line.type === "cmd" ? line.text.slice(2) : line.type === "status" ? line.text.slice(2) : line.text}
           </div>
         );
       })}
