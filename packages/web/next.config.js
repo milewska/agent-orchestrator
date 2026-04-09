@@ -1,4 +1,7 @@
+import os from "os";
+
 /** @type {import('next').NextConfig} */
+const homeDir = os.homedir().replace(/\\/g, "/");
 const nextConfig = {
   serverExternalPackages: ["@composio/core"],
   transpilePackages: [
@@ -11,12 +14,27 @@ const nextConfig = {
     "@composio/ao-plugin-tracker-linear",
     "@composio/ao-plugin-workspace-worktree",
   ],
-  webpack: (config) => {
+  webpack: (config, { isServer }) => {
     if (process.platform === "win32") {
       config.snapshot = {
         ...config.snapshot,
         managedPaths: [/^(.+?[\\/]node_modules[\\/])/],
       };
+      // Prevent nft from globbing the home directory during server file tracing.
+      // ao-core resolves paths like ~/.agent-orchestrator at runtime; nft tries to
+      // scan them at build time and hits EPERM on Windows junction points
+      // (e.g. C:\Users\<user>\Application Data).
+      if (isServer) {
+        const tracePlugin = config.plugins.find(
+          (p) => p.constructor?.name === "TraceEntryPointsPlugin"
+        );
+        if (tracePlugin) {
+          tracePlugin.traceIgnores = [
+            ...(tracePlugin.traceIgnores ?? []),
+            `${homeDir}/**`,
+          ];
+        }
+      }
     }
     return config;
   },
