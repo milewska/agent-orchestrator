@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import chalk from "chalk";
 import type { Command } from "commander";
-import { findPidByPort, isWindows, killProcessTree, loadConfig } from "@composio/ao-core";
+import { findPidByPort, isWindows, killProcessTree, loadConfig } from "@aoagents/ao-core";
 import { findWebDir, buildDashboardEnv, waitForPortAndOpen } from "../lib/web-dir.js";
 import { forwardSignalsToChild } from "../lib/shell.js";
 import {

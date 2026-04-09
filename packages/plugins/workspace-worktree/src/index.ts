@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import { existsSync, lstatSync, symlinkSync, rmSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve, basename, dirname, sep } from "node:path";
 import { homedir } from "node:os";
-import { getShell, isWindows, type PluginModule, type Workspace, type WorkspaceCreateConfig, type WorkspaceInfo, type ProjectConfig } from "@composio/ao-core";
+import { getShell, isWindows, type PluginModule, type Workspace, type WorkspaceCreateConfig, type WorkspaceInfo, type ProjectConfig } from "@aoagents/ao-core";
 
 /** Timeout for git commands (30 seconds) */
 const GIT_TIMEOUT = 30_000;

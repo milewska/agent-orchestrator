@@ -22,12 +22,12 @@ vi.mock("node:url", () => ({
   fileURLToPath: vi.fn(() => "/mock/cli/src/lib/script-runner.ts"),
 }));
 
-vi.mock("@composio/ao-core", () => ({
+vi.mock("@aoagents/ao-core", () => ({
   isWindows: vi.fn(() => false),
 }));
 
 import * as childProcess from "node:child_process";
-import * as core from "@composio/ao-core";
+import * as core from "@aoagents/ao-core";
 import { runRepoScript } from "../../src/lib/script-runner.js";
 
 const mockIsWindows = core.isWindows as ReturnType<typeof vi.fn>;

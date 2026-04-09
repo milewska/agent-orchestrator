@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as fs from "node:fs";
-import * as aoCore from "@composio/ao-core";
-import type { OrchestratorConfig } from "@composio/ao-core";
+import * as aoCore from "@aoagents/ao-core";
+import type { OrchestratorConfig } from "@aoagents/ao-core";
 
 vi.mock("node:fs", () => ({
   existsSync: vi.fn(),
@@ -13,9 +13,9 @@ vi.mock("node:fs", () => ({
   closeSync: vi.fn(),
 }));
 
-vi.mock("@composio/ao-core", async (importOriginal) => {
+vi.mock("@aoagents/ao-core", async (importOriginal) => {
   // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-  const actual = await importOriginal<typeof import("@composio/ao-core")>();
+  const actual = await importOriginal<typeof import("@aoagents/ao-core")>();
   return {
     ...actual,
     getProjectBaseDir: vi.fn(() => "/mock/project"),

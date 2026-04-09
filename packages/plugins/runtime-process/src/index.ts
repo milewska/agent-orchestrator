@@ -9,7 +9,7 @@ import {
   type RuntimeHandle,
   type RuntimeMetrics,
   type AttachInfo,
-} from "@composio/ao-core";
+} from "@aoagents/ao-core";
 
 export const manifest = {
   name: "process",

@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { existsSync, rmSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { getShell, type PluginModule, type Workspace, type WorkspaceCreateConfig, type WorkspaceInfo, type ProjectConfig } from "@composio/ao-core";
+import { getShell, type PluginModule, type Workspace, type WorkspaceCreateConfig, type WorkspaceInfo, type ProjectConfig } from "@aoagents/ao-core";
 
 const execFileAsync = promisify(execFile);
 

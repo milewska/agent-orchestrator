@@ -22,7 +22,7 @@ vi.mock("node:fs", () => ({
   readdirSync: vi.fn(),
 }));
 
-vi.mock("@composio/ao-core", () => ({
+vi.mock("@aoagents/ao-core", () => ({
   getShell: vi.fn(() => ({ cmd: "sh", args: (c: string) => ["-c", c] })),
   isWindows: vi.fn(() => false),
 }));
@@ -37,7 +37,7 @@ vi.mock("node:os", () => ({
 
 import * as childProcess from "node:child_process";
 import { existsSync, lstatSync, symlinkSync, cpSync, rmSync, mkdirSync, readdirSync } from "node:fs";
-import * as core from "@composio/ao-core";
+import * as core from "@aoagents/ao-core";
 import { create, manifest } from "../index.js";
 
 // ---------------------------------------------------------------------------

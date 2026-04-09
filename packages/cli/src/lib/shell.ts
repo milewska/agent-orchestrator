@@ -1,6 +1,6 @@
 import { type ChildProcess, execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
-import { killProcessTree } from "@composio/ao-core";
+import { killProcessTree } from "@aoagents/ao-core";
 
 const execFileAsync = promisify(execFileCb);
 

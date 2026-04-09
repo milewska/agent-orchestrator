@@ -6,7 +6,7 @@
 import { resolve } from "node:path";
 import { existsSync, rmSync } from "node:fs";
 import ora from "ora";
-import { findPidByPort } from "@composio/ao-core";
+import { findPidByPort } from "@aoagents/ao-core";
 import { exec } from "./shell.js";
 
 /**

@@ -10,7 +10,7 @@ vi.mock("node:child_process", () => {
   return { execFile: mockExecFile };
 });
 
-vi.mock("@composio/ao-core", () => ({
+vi.mock("@aoagents/ao-core", () => ({
   getShell: vi.fn(() => ({ cmd: "sh", args: (c: string) => ["-c", c] })),
 }));
 
@@ -56,7 +56,7 @@ function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
 
 // Import after mocks are set up
 import clonePlugin, { manifest, create } from "../index.js";
-import * as core from "@composio/ao-core";
+import * as core from "@aoagents/ao-core";
 
 const mockGetShell = core.getShell as ReturnType<typeof vi.fn>;
 
