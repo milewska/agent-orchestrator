@@ -203,6 +203,20 @@ See [agent-orchestrator.yaml.example](./agent-orchestrator.yaml.example) for a f
 
 Use Docker when you want stronger session isolation, reproducible images, or resource limits on shared servers. AO still defaults to `tmux` locally.
 
+For a first-time user, the simplest setup path is:
+
+```bash
+ao docker prepare my-app
+```
+
+That prepares Docker for the project's worker agent, pulls the matching official image reference, and writes the project runtime config for you. You can also let AO build locally-managed images:
+
+```bash
+ao docker prepare my-app --build-local
+ao docker prepare my-app --build-local --agent codex
+ao docker prepare my-app --image ghcr.io/your-org/custom-agent:latest --no-pull
+```
+
 ```yaml
 projects:
   my-app:
@@ -211,7 +225,7 @@ projects:
     defaultBranch: main
     runtime: docker
     runtimeConfig:
-      image: ghcr.io/composio/ao:latest
+      image: ghcr.io/composio/ao-claude-code:latest
       limits:
         cpus: 2
         memory: 4g
@@ -236,7 +250,7 @@ You can also persist runtime selection from the CLI:
 
 ```bash
 ao runtime show
-ao runtime set docker my-app --image ghcr.io/composio/ao:latest --memory 4g --cpus 2 --read-only
+ao runtime set docker my-app --image ghcr.io/composio/ao-claude-code:latest --memory 4g --cpus 2 --read-only
 ao runtime clear my-app
 ```
 
@@ -246,6 +260,7 @@ Notes on `ao runtime`:
 - `ao runtime set <name> <project>` writes a project override.
 - Docker config flags are project-only because `runtimeConfig` lives under each project.
 - `ao runtime clear <project>` removes both the project `runtime` and its `runtimeConfig`, so the project falls back to the default runtime.
+- `ao docker prepare <project>` is the onboarding path when you want AO to choose or build an image for you.
 
 Notes:
 

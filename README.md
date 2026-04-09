@@ -143,6 +143,20 @@ See [`agent-orchestrator.yaml.example`](agent-orchestrator.yaml.example) for the
 
 Docker is opt-in. The local default stays `tmux`, but you can switch a project or a single startup to Docker when you want isolation, reproducible images, or server/CI-friendly sessions without changing the local default.
 
+For first-time users, the easiest path is:
+
+```bash
+ao docker prepare my-app
+```
+
+That command picks the project's worker agent, pulls the matching official Docker image reference, and writes `runtime: docker` plus `runtimeConfig.image` back into the project config. If you prefer not to rely on a prebuilt image, you can ask AO to build one locally instead:
+
+```bash
+ao docker prepare my-app --build-local
+ao docker prepare my-app --build-local --agent codex
+ao docker prepare my-app --image ghcr.io/your-org/custom-agent:latest --no-pull
+```
+
 ```yaml
 projects:
   my-app:
@@ -151,7 +165,7 @@ projects:
     defaultBranch: main
     runtime: docker
     runtimeConfig:
-      image: ghcr.io/composio/ao:latest
+      image: ghcr.io/composio/ao-claude-code:latest
       limits:
         cpus: 2
         memory: 4g
@@ -160,19 +174,19 @@ projects:
       tmpfs: [/tmp]
 ```
 
-You can also override runtime per command:
+You can still override runtime per command:
 
 ```bash
-ao start --runtime docker --runtime-image ghcr.io/composio/ao:latest
-ao spawn 123 --runtime docker --runtime-image ghcr.io/composio/ao:latest
+ao start --runtime docker --runtime-image ghcr.io/composio/ao-claude-code:latest
+ao spawn 123 --runtime docker --runtime-image ghcr.io/composio/ao-claude-code:latest
 ao spawn 123 --runtime docker --runtime-memory 4g --runtime-cpus 2 --runtime-read-only
 ```
 
-Or persist runtime selection in config:
+Or persist runtime selection in config directly:
 
 ```bash
 ao runtime show
-ao runtime set docker my-app --image ghcr.io/composio/ao:latest --memory 4g --cpus 2 --read-only
+ao runtime set docker my-app --image ghcr.io/composio/ao-claude-code:latest --memory 4g --cpus 2 --read-only
 ao runtime clear my-app
 ```
 

@@ -12,8 +12,9 @@ ao stop                                # Stop everything (dashboard, orchestrato
 ao status                              # Overview of all sessions
 ao status --watch                      # Live-updating terminal status view
 ao dashboard                           # Open web dashboard in browser
+ao docker prepare my-app               # Pull/build a Docker image and wire the project config
 ao runtime show                        # Show default runtime and project overrides
-ao runtime set docker my-app --image ghcr.io/composio/ao:latest
+ao runtime set docker my-app --image ghcr.io/composio/ao-claude-code:latest
 ```
 
 ## Commands the orchestrator agent uses
@@ -23,7 +24,7 @@ These are primarily invoked by the orchestrator agent running inside a tmux sess
 ```bash
 ao spawn [issue]                       # Spawn an agent (project auto-detected from cwd)
 ao spawn 123 --agent codex             # Override agent for this session
-ao spawn 123 --runtime docker --runtime-image ghcr.io/composio/ao:latest
+ao spawn 123 --runtime docker --runtime-image ghcr.io/composio/ao-claude-code:latest
 ao batch-spawn 101 102 103             # Spawn agents for multiple issues at once
 ao send <session> "Fix the tests"      # Send instructions to a running agent
 ao session ls                          # List sessions
@@ -44,6 +45,26 @@ ao config-help                         # Show full config schema reference
 
 `ao update` fast-forwards the local install on `main`, reinstalls dependencies, clean-rebuilds core packages, refreshes the launcher, and runs smoke tests. Use `ao update --skip-smoke` to stop after rebuild, or `ao update --smoke-only` to rerun just the smoke checks.
 
+## Docker onboarding
+
+Use `ao docker prepare` when you want AO to pick or build an image for you instead of manually editing `runtimeConfig.image`.
+
+```bash
+ao docker prepare my-app
+ao docker prepare my-app --agent codex
+ao docker prepare my-app --build-local --agent opencode
+ao docker prepare my-app --build-local --tag ao-real-codex:demo --agent codex
+ao docker prepare my-app --image ghcr.io/your-org/custom-agent:latest --no-pull
+```
+
+Rules:
+
+- By default, `ao docker prepare` picks the worker agent for the project and pulls an official image reference for that agent.
+- `--build-local` builds a local image from an AO-managed Dockerfile template instead of pulling.
+- `--image` lets you point AO at a custom image; pair it with `--no-pull` if the image already exists locally.
+- `--read-only` automatically adds `tmpfs: [/tmp]` so `tmux` and agent CLIs still have writable runtime scratch space.
+- The command writes `runtime: docker` and `runtimeConfig.image` back into `agent-orchestrator.yaml` for the selected project.
+
 ## Runtime config commands
 
 Use `ao runtime` when you want to persist runtime selection into `agent-orchestrator.yaml` instead of applying a one-off flag.
@@ -52,8 +73,8 @@ Use `ao runtime` when you want to persist runtime selection into `agent-orchestr
 ao runtime show
 ao runtime show my-app
 ao runtime set process                 # updates defaults.runtime
-ao runtime set docker my-app --image ghcr.io/composio/ao:latest
-ao runtime set docker my-app --image ghcr.io/composio/ao:latest --memory 4g --cpus 2 --read-only
+ao runtime set docker my-app --image ghcr.io/composio/ao-claude-code:latest
+ao runtime set docker my-app --image ghcr.io/composio/ao-claude-code:latest --memory 4g --cpus 2 --read-only
 ao runtime clear my-app
 ```
 
@@ -68,7 +89,7 @@ Runtime config rules:
 ## Runtime override examples
 
 ```bash
-ao start --runtime docker --runtime-image ghcr.io/composio/ao:latest
+ao start --runtime docker --runtime-image ghcr.io/composio/ao-claude-code:latest
 ao start --runtime docker --runtime-memory 4g --runtime-cpus 2 --runtime-read-only
 ao spawn 123 --runtime docker --runtime-network bridge --runtime-cap-drop ALL
 ao spawn 123 --runtime docker --runtime-read-only --runtime-tmpfs /tmp --runtime-cap-drop ALL --runtime-cap-drop NET_RAW

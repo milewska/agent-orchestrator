@@ -58,7 +58,7 @@ projects:
     # ── Per-project plugin overrides (optional) ───────────────────
     runtime: tmux             # Override default runtime
     runtimeConfig:            # Common for docker runtime
-      image: ghcr.io/composio/ao:latest
+      image: ghcr.io/composio/ao-claude-code:latest
       limits:
         cpus: 2
         memory: 4g
@@ -150,11 +150,20 @@ notificationRouting:
 # ── Available plugins ───────────────────────────────────────────────
 #
 # Agent:     claude-code, aider, codex, opencode
-# Runtime:   tmux, process
+# Runtime:   tmux, docker, process
 # Workspace: worktree, clone
 # SCM:       github, gitlab
 # Tracker:   github, linear, gitlab
 # Notifier:  desktop, discord, slack, webhook, composio, openclaw
 # Terminal:  iterm2, web
+
+# ── Docker onboarding helper ────────────────────────────────────────
+#
+# Instead of manually building an image first, you can ask AO to prepare
+# Docker for a project:
+#
+#   ao docker prepare my-app
+#   ao docker prepare my-app --build-local --agent codex
+#   ao docker prepare my-app --image ghcr.io/your-org/custom-agent:latest --no-pull
 `.trim();
 }
