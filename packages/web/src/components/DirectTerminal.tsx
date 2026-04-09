@@ -1097,7 +1097,8 @@ export function DirectTerminal({
         </div>
       </div>
 
-      {/* Terminal mount target — zero padding so FitAddon measures accurately */}
+      {/* Terminal mount target — no padding here; visual padding is on the
+          .xterm element via CSS so FitAddon correctly subtracts it */}
       <div
         ref={terminalRef}
         style={{
