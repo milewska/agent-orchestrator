@@ -94,7 +94,7 @@ function buildConfigLayer(config: PromptBuildConfig): string {
     }
     if (reactionHints.length > 0) {
       lines.push(`\n## Automated Reactions`);
-      lines.push("The orchestrator will automatically handle these events:");
+      lines.push("AO will automatically handle these events:");
       lines.push(...reactionHints);
     }
   }
