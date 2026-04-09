@@ -449,14 +449,6 @@ a:hover {
   background: var(--color-scrollbar-active);
 }
 
-/* ── xterm.js terminal padding ──────────────────────────────────────── */
-/* FitAddon reads width from parentElement but subtracts padding from
-   the .xterm element. Padding here is correctly accounted for in
-   FitAddon's column calculation, preventing text clipping. */
-.xterm {
-  padding: 6px 8px;
-}
-
 /* ── xterm.js terminal viewport scrollbar — macOS-style auto-hide ──── */
 
 .xterm .xterm-viewport {

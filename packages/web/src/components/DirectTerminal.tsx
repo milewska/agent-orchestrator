@@ -1097,15 +1097,19 @@ export function DirectTerminal({
         </div>
       </div>
 
-      {/* Terminal mount target — no padding here; visual padding is on the
-          .xterm element via CSS so FitAddon correctly subtracts it */}
-      <div
-        ref={terminalRef}
-        style={{
-          height: fullscreen ? `calc(100dvh - ${chromeHeight})` : height,
-          overflow: "hidden",
-        }}
-      />
+      {/* Outer padding wrapper — provides visual spacing around the terminal.
+          FitAddon reads width from terminalRef (parentElement of .xterm),
+          so terminalRef must have NO padding. The outer wrapper's padding
+          reduces the available width BEFORE FitAddon measures it. */}
+      <div className="p-1.5">
+        <div
+          ref={terminalRef}
+          style={{
+            height: fullscreen ? `calc(100dvh - ${chromeHeight} - 12px)` : `calc(${height} - 12px)`,
+            overflow: "hidden",
+          }}
+        />
+      </div>
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
       <div
