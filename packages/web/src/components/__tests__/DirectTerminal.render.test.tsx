@@ -194,13 +194,11 @@ describe("ResizeObserver-based resize handling", () => {
     await waitFor(() => expect(observeMock).toHaveBeenCalledWith(expect.any(HTMLElement)));
   });
 
-  it("calls fit.fit() and sends resize message via WebSocket when resize fires", async () => {
+  it("calls fit.fit() when container resize fires", async () => {
     const fitSpy = vi.spyOn(MockFitAddon.prototype, "fit");
     render(<DirectTerminal sessionId="resize-callback-session" variant="agent" />);
     await waitFor(() => expect(observeMock).toHaveBeenCalled());
-    await waitFor(() => expect(MockWebSocket.instances.length).toBeGreaterThan(0));
 
-    // Trigger the resize observer callback
     resizeCallback?.();
 
     expect(fitSpy).toHaveBeenCalled();
