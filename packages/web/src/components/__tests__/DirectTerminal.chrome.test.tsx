@@ -111,6 +111,7 @@ describe("DirectTerminal chrome", () => {
       value: { ready: Promise.resolve() },
     });
     vi.stubGlobal("WebSocket", MockWebSocket);
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({

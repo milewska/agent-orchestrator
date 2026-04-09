@@ -351,7 +351,8 @@ export function DirectTerminal({
           }
         }
 
-        fit.fit();
+        // Defer initial fit so the browser finalizes DOM layout first
+        requestAnimationFrame(() => fit.fit());
 
         const runtimeConnectionConfig: TerminalConnectionConfig = {};
         let runtimeFetchDone = false;
@@ -402,7 +403,9 @@ export function DirectTerminal({
           return true;
         });
 
-        const handleResize = () => {
+        // ResizeObserver catches both window resizes and container-only
+        // resizes (sidebar toggle, panel open/close, etc.)
+        const resizeObserver = new ResizeObserver(() => {
           const currentWs = ws.current;
           if (fit && currentWs?.readyState === WebSocket.OPEN) {
             fit.fit();
@@ -410,9 +413,8 @@ export function DirectTerminal({
               JSON.stringify({ type: "resize", cols: terminal.cols, rows: terminal.rows }),
             );
           }
-        };
-
-        window.addEventListener("resize", handleResize);
+        });
+        resizeObserver.observe(terminalRef.current);
 
         inputDisposable = terminal.onData((data) => {
           if (ws.current?.readyState === WebSocket.OPEN) {
@@ -522,7 +524,7 @@ export function DirectTerminal({
         cleanup = () => {
           selectionDisposable.dispose();
           if (safetyTimer) clearTimeout(safetyTimer);
-          window.removeEventListener("resize", handleResize);
+          resizeObserver.disconnect();
           inputDisposable?.dispose();
           inputDisposable = null;
           if (reconnectTimerRef.current) {
@@ -1095,29 +1097,14 @@ export function DirectTerminal({
         </div>
       </div>
 
-      {/* ── Terminal area ───────────────────────────────────────────── */}
-      {/* Outer wrapper provides visual padding; the xterm mount target
-          must have zero padding so FitAddon measures the full width. */}
+      {/* Terminal mount target — zero padding so FitAddon measures accurately */}
       <div
+        ref={terminalRef}
         style={{
-          padding: "8px 16px",
           height: fullscreen ? `calc(100dvh - ${chromeHeight})` : height,
           overflow: "hidden",
         }}
-      >
-        <div
-          ref={terminalRef}
-          style={{
-            /* Slightly narrower than parent so FitAddon calculates cols
-               with a small buffer — prevents sub-pixel rounding from
-               making the canvas 1-2px wider than the visible area. */
-            width: "calc(100% - 4px)",
-            margin: "0 auto",
-            height: "100%",
-            overflow: "hidden",
-          }}
-        />
-      </div>
+      />
 
       {/* ── Status bar ──────────────────────────────────────────────── */}
       <div
