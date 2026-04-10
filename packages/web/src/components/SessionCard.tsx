@@ -101,7 +101,6 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
   const [replyText, setReplyText] = useState("");
   const actionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quickReplyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const killConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const level = getAttentionLevel(session);
   const pr = session.pr;
 
@@ -137,7 +136,6 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
     return () => {
       if (actionTimerRef.current) clearTimeout(actionTimerRef.current);
       if (quickReplyTimerRef.current) clearTimeout(quickReplyTimerRef.current);
-      if (killConfirmTimerRef.current) clearTimeout(killConfirmTimerRef.current);
     };
   }, []);
 
@@ -194,15 +192,13 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
 
   const handleKillClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    if (killConfirming) {
-      if (killConfirmTimerRef.current) clearTimeout(killConfirmTimerRef.current);
-      setKillConfirming(false);
-      onKill?.(session.id);
+    if (!killConfirming) {
+      setKillConfirming(true);
       return;
     }
-    setKillConfirming(true);
-    if (killConfirmTimerRef.current) clearTimeout(killConfirmTimerRef.current);
-    killConfirmTimerRef.current = setTimeout(() => setKillConfirming(false), 2000);
+
+    setKillConfirming(false);
+    onKill?.(session.id);
   };
 
   /* ── Done card variant ──────────────────────────────────────────── */
@@ -737,23 +733,29 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
             !isTerminal && (
               <button
                 onClick={handleKillClick}
-                aria-label="Terminate session"
+                onMouseLeave={() => setKillConfirming(false)}
+                onBlur={() => setKillConfirming(false)}
+                aria-label={killConfirming ? "Confirm terminate session" : "Terminate session"}
                 className={cn(
                   "session-card__control session-card__terminate btn--danger",
                   killConfirming && "is-confirming",
                 )}
               >
-                <svg
-                  className="session-card__control-icon"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M3 6h18" />
-                  <path d="M8 6V4h8v2" />
-                  <path d="M19 6l-1 14H6L5 6" />
-                </svg>
+                {killConfirming ? (
+                  <span className="font-mono text-[10px] font-semibold tracking-[0.04em]">kill?</span>
+                ) : (
+                  <svg
+                    className="session-card__control-icon"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4h8v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                  </svg>
+                )}
               </button>
             )
           )}

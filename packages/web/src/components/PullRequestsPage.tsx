@@ -87,7 +87,9 @@ export function PullRequestsPage({
   }, [searchParams]);
 
   return (
-    <div className="dashboard-shell flex h-screen">
+      <div
+        className={`dashboard-shell flex h-screen${!isMobile && sidebarCollapsed ? " dashboard-shell--sidebar-collapsed" : ""}`}
+      >
       {showSidebar ? (
         <ProjectSidebar
           projects={projects}

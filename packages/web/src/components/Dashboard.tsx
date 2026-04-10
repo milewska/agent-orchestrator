@@ -462,10 +462,7 @@ function DashboardInner({
       const session = sessionsRef.current.find((s) => s.id === sessionId) ?? null;
       if (!session) return;
       if (!isMobile) {
-        const confirmed = window.confirm("Terminate this session?");
-        if (confirmed) {
-          void killSession(session.id);
-        }
+        void killSession(session.id);
         return;
       }
       setSheetState({ sessionId: session.id, mode: "confirm-kill" });
@@ -650,7 +647,9 @@ function DashboardInner({
             </div>
           </header>
 
-          <div className="dashboard-shell dashboard-shell--desktop">
+          <div
+            className={`dashboard-shell dashboard-shell--desktop${sidebarCollapsed ? " dashboard-shell--sidebar-collapsed" : ""}`}
+          >
             {showSidebar && (
               <ProjectSidebar
                 projects={projects}

@@ -477,7 +477,9 @@ export function SessionDetail({
           </div>
         </header>
 
-        <div className="dashboard-shell dashboard-shell--desktop">
+        <div
+          className={`dashboard-shell dashboard-shell--desktop${sidebarCollapsed ? " dashboard-shell--sidebar-collapsed" : ""}`}
+        >
           {projects.length > 0 ? (
             <ProjectSidebar
               projects={projects}
