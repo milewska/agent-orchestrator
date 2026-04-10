@@ -1008,11 +1008,13 @@ async function runStartup(
     }
   }
 
-  // Create orchestrator session (unless --no-orchestrator or existing orchestrators found)
-  let hasExistingOrchestrators = false;
+  // When the dashboard is enabled, always send the user to the orchestrator picker
+  // and let the web app handle resume/spawn. This avoids auto-opening stale
+  // sessions and keeps startup off the session enumeration path.
+  const hasExistingOrchestrators = false;
   let selectedOrchestratorId: string | null = null;
 
-  if (opts?.orchestrator !== false) {
+  if (opts?.orchestrator !== false && opts?.dashboard === false) {
     const sm = await getSessionManager(config);
 
     // Check for existing orchestrator sessions for this project
@@ -1039,19 +1041,13 @@ async function runStartup(
     );
 
     if (existingOrchestrators.length > 0) {
-      // Existing orchestrators found — always auto-select the most recently active one.
-      // With a single orchestrator, navigate directly to its session page.
-      // With multiple orchestrators, keep the selection page so the user can choose or spawn a
-      // new one — the dashboard only links to one orchestrator per project, so the selection page
-      // is the only startup path for multi-orchestrator projects.
+      // Without the dashboard we still need a concrete session to attach to, so
+      // auto-select the most recently active orchestrator.
       const sortedOrchestrators = [...existingOrchestrators].sort(
         (a, b) => (b.lastActivityAt?.getTime() ?? 0) - (a.lastActivityAt?.getTime() ?? 0),
       );
       const selected = sortedOrchestrators[0];
       selectedOrchestratorId = selected.id;
-      if (opts?.dashboard !== false && existingOrchestrators.length > 1) {
-        hasExistingOrchestrators = true;
-      }
       spinner.succeed(
         `Using existing orchestrator session: ${selected.id}` +
           (existingOrchestrators.length > 1
@@ -1096,7 +1092,12 @@ async function runStartup(
     console.log(chalk.cyan("Lifecycle:"), lifecycleTarget);
   }
 
-  if (hasExistingOrchestrators) {
+  if (opts?.dashboard !== false && opts?.orchestrator !== false) {
+    console.log(
+      chalk.cyan("Orchestrator:"),
+      `http://localhost:${port}/orchestrators?project=${projectId}`,
+    );
+  } else if (hasExistingOrchestrators) {
     console.log(
       chalk.cyan("Orchestrator:"),
       "multiple sessions found — select one in the dashboard",
@@ -1121,17 +1122,17 @@ async function runStartup(
   console.log(chalk.dim(`Config: ${config.configPath}`));
 
   // Auto-open browser once the server is ready.
-  // With a single orchestrator (or a newly created one), navigate directly to the session page.
-  // With multiple existing orchestrators, open the selection page so the user can choose or
-  // spawn a new one — the dashboard only links one orchestrator per project.
+  // When the dashboard is enabled, always land on the orchestrator picker so the
+  // user can choose a live session or start a new one.
   // Polls the port instead of using a fixed delay — deterministic and works regardless of
   // how long Next.js takes to compile. AbortController cancels polling on early exit.
   let openAbort: AbortController | undefined;
   if (opts?.dashboard !== false) {
     openAbort = new AbortController();
-    const orchestratorUrl = hasExistingOrchestrators
-      ? `http://localhost:${port}/orchestrators?project=${projectId}`
-      : `http://localhost:${port}/sessions/${selectedOrchestratorId ?? sessionId}`;
+    const orchestratorUrl =
+      opts?.orchestrator !== false
+        ? `http://localhost:${port}/orchestrators?project=${projectId}`
+        : `http://localhost:${port}`;
     void waitForPortAndOpen(port, orchestratorUrl, openAbort.signal);
   }
 
