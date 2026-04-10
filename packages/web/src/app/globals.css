@@ -1439,7 +1439,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   background: var(--color-accent-orange);
 }
 .kanban-column__dot[data-level="respond"] {
-  background: var(--color-status-error);
+  background: var(--color-status-respond);
 }
 .kanban-column__dot[data-level="merge"] {
   background: var(--color-status-ready);
@@ -4059,7 +4059,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   /* ── Mobile action pill tone colors ──────────────────────────────────── */
 
   .mobile-action-pill__dot[data-level="respond"] {
-    background: var(--color-status-error);
+    background: var(--color-status-respond);
   }
   .mobile-action-pill__dot[data-level="merge"] {
     background: var(--color-status-ready);
@@ -4069,7 +4069,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   }
 
   .mobile-action-pill__count[data-level="respond"] {
-    color: var(--color-status-error);
+    color: var(--color-status-respond);
   }
   .mobile-action-pill__count[data-level="merge"] {
     color: var(--color-status-ready);
@@ -4533,7 +4533,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     background: var(--color-accent-orange);
   }
   .accordion-header__dot[data-level="respond"] {
-    background: var(--color-status-error);
+    background: var(--color-status-respond);
   }
   .accordion-header__dot[data-level="merge"] {
     background: var(--color-status-ready);
@@ -4549,7 +4549,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     background: var(--color-accent-orange);
   }
   .mobile-session-row__dot[data-level="respond"] {
-    background: var(--color-status-error);
+    background: var(--color-status-respond);
   }
   .mobile-session-row__dot[data-level="merge"] {
     background: var(--color-status-ready);
