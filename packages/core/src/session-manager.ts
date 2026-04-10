@@ -1255,6 +1255,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       updateMetadata(sessionsDir, sessionId, session.metadata);
     }
 
+    invalidateListCache();
     return session;
   }
 
@@ -1508,9 +1509,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         /* best effort */
       }
       await cleanupWorktreeAndMetadata(systemPromptFile);
+      invalidateListCache();
       throw err;
     }
 
+    invalidateListCache();
     return session;
   }
 
@@ -1566,7 +1569,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
       return sessions;
     } finally {
-      listInflightCache.delete(cacheKey);
+      // Only remove our own promise — an invalidation may have already
+      // cleared it and a new caller may have inserted a replacement.
+      if (listInflightCache.get(cacheKey) === promise) {
+        listInflightCache.delete(cacheKey);
+      }
     }
   }
 
@@ -1743,6 +1750,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     if (didPurgeOpenCodeSession) {
       markArchivedOpenCodeCleanup(sessionsDir, sessionId);
     }
+    invalidateListCache();
   }
 
   async function cleanup(
@@ -1905,6 +1913,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     result.killed = [...killedKeys].map(formatEntry);
     result.skipped = [...skippedKeys].map(formatEntry);
 
+    invalidateListCache();
     return result;
   }
 
@@ -2278,6 +2287,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     }
 
+    invalidateListCache();
     return {
       sessionId,
       projectId,
@@ -2312,6 +2322,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     }
 
     updateMetadata(sessionsDir, sessionId, { opencodeSessionId: discovered });
+    invalidateListCache();
     return discovered;
   }
 
@@ -2545,6 +2556,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     }
 
+    invalidateListCache();
     return restoredSession;
   }
 
