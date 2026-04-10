@@ -147,6 +147,77 @@
 - **Keyboard navigation:** All interactive elements reachable via Tab. Logical tab order. Escape closes modals/popovers. Arrow keys navigate within lists.
 - **Screen reader:** ARIA labels on all icon-only buttons. `role="heading"` with `aria-level` on non-heading elements styled as headings. Status changes announced via `aria-live` regions.
 
+## Web Implementation Rules
+- **Single source of truth:** This file is the authoritative design spec for the repo, including `packages/web/`. Do not create a second package-level `DESIGN.md`.
+- **Tokens over raw values:** In React/Tailwind code, use CSS variables from `packages/web/src/app/globals.css` instead of hardcoded hex, rgba, or `dark:` overrides.
+- **No inline styles:** Avoid `style={{ ... }}` for theme values. Use Tailwind utilities with `var(--token)` or add a named class in `globals.css`.
+- **No external UI kits:** Do not introduce Radix, shadcn, Headless UI, or similar component libraries for core UI primitives.
+- **Tailwind vs CSS classes:** Use Tailwind for one-off layout and spacing. Add a class in `globals.css` when a pattern is theme-sensitive, uses pseudo-elements, gradients, or repeats 3+ times.
+- **Theme handling:** `:root` holds light tokens and `.dark` holds dark overrides. Use tokenized classes like `bg-[var(--color-bg-surface)]`, not `bg-white dark:bg-[#1a1918]`.
+
+## Token Mapping
+These are the concrete token names used in `packages/web/src/app/globals.css`. New UI code should reference these names directly.
+
+### Core Surface Tokens
+| CSS Token | Meaning |
+|-----------|---------|
+| `--color-bg-base` | Page background |
+| `--color-bg-surface` | Standard card/panel background |
+| `--color-bg-elevated` | Elevated surfaces, popovers, modals |
+| `--color-bg-elevated-hover` | Hover state for elevated surfaces |
+| `--color-bg-subtle` | Subtle fill for chips, hovers, muted emphasis |
+| `--color-bg-sidebar` | Sidebar-specific background |
+
+### Core Text and Border Tokens
+| CSS Token | Meaning |
+|-----------|---------|
+| `--color-text-primary` | Primary headings/body copy |
+| `--color-text-secondary` | Supporting text |
+| `--color-text-tertiary` | Captions/placeholders |
+| `--color-text-muted` | Low-emphasis meta text |
+| `--color-text-inverse` | Text on accent or dark fills |
+| `--color-border-subtle` | Hairline dividers |
+| `--color-border-default` | Standard borders |
+| `--color-border-strong` | Emphasized borders/focus-adjacent borders |
+
+### Accent and Utility Tokens
+| CSS Token | Meaning |
+|-----------|---------|
+| `--color-accent` | Primary interactive accent |
+| `--color-accent-hover` | Hover state for accent surfaces |
+| `--color-accent-subtle` | Accent-tinted background |
+| `--color-accent-blue` | Semantic blue alias |
+| `--color-accent-green` | Semantic green alias |
+| `--color-accent-yellow` | Semantic amber alias |
+| `--color-accent-orange` | Semantic orange alias |
+| `--color-accent-red` | Semantic red alias |
+| `--color-tint-blue` | Blue pill/badge background |
+| `--color-tint-green` | Green pill/badge background |
+| `--color-tint-yellow` | Yellow pill/badge background |
+| `--color-tint-orange` | Orange pill/badge background |
+| `--color-tint-red` | Red pill/badge background |
+| `--color-tint-neutral` | Neutral pill/badge background |
+
+### Status and Alert Tokens
+| CSS Token | Meaning |
+|-----------|---------|
+| `--color-status-working` | Agent actively working |
+| `--color-status-ready` | Ready/queued state |
+| `--color-status-respond` | Human response needed |
+| `--color-status-review` | Review-needed state |
+| `--color-status-pending` | Pending/queued emphasis |
+| `--color-status-merge` | Merge-ready/merged emphasis |
+| `--color-status-idle` | Idle/inactive state |
+| `--color-status-done` | Completed/receding state |
+| `--color-status-error` | Error/broken state |
+| `--color-ci-pass` | CI passing |
+| `--color-ci-fail` | CI failing |
+| `--color-alert-ci` / `--color-alert-ci-bg` | CI failure callout row |
+| `--color-alert-review` / `--color-alert-review-bg` | Review-requested callout row |
+| `--color-alert-changes` / `--color-alert-changes-bg` | Changes-requested callout row |
+| `--color-alert-conflict` / `--color-alert-conflict-bg` | Merge-conflict callout row |
+| `--color-alert-comment` / `--color-alert-comment-bg` | New-comment callout row |
+
 ## Component Anatomy
 
 ### Session Card
@@ -208,6 +279,14 @@
 - **Text:** status color, 13px
 - **Border-radius:** 0
 - **Variants:** success (green), warning (amber), error (red), info (cyan)
+
+## Web Patterns
+- **Mono data:** IDs, hashes, timestamps, branch names, and PR numbers should use `font-mono` with `10-11px` sizing and slightly wider tracking.
+- **Status text:** Session/card status labels should stay mono and low-emphasis unless the status itself is the primary signal.
+- **Alert rows:** Inline alert/callout rows inside cards should use a 2px left border plus paired foreground/background alert tokens.
+- **Dividers:** Use `border-[var(--color-border-subtle)]` or `border-[var(--color-border-default)]` instead of ad hoc neutral grays.
+- **Existing reusable components:** Prefer current primitives/components like `ActivityDot`, `CIBadge`, `PRStatus`, `Toast`, and shared layout patterns already in `packages/web/src/components/`.
+- **Sharp edges remain the rule:** Do not reintroduce rounded cards/buttons as a package-level convention. `rounded-full` is reserved for dots, pills, and avatars.
 
 ## Performance Guidelines
 - Use `contain: layout style paint` and `content-visibility: auto` on session cards
