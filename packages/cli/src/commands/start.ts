@@ -1011,7 +1011,6 @@ async function runStartup(
   // When the dashboard is enabled, always send the user to the orchestrator picker
   // and let the web app handle resume/spawn. This avoids auto-opening stale
   // sessions and keeps startup off the session enumeration path.
-  const hasExistingOrchestrators = false;
   let selectedOrchestratorId: string | null = null;
 
   if (opts?.orchestrator !== false && opts?.dashboard === false) {
@@ -1097,24 +1096,12 @@ async function runStartup(
       chalk.cyan("Orchestrator:"),
       `http://localhost:${port}/orchestrators?project=${projectId}`,
     );
-  } else if (hasExistingOrchestrators) {
-    console.log(
-      chalk.cyan("Orchestrator:"),
-      "multiple sessions found — select one in the dashboard",
-    );
   } else if (opts?.orchestrator !== false && !reused) {
     const orchSessionId = selectedOrchestratorId ?? sessionId;
-    if (opts?.dashboard !== false) {
-      console.log(
-        chalk.cyan("Orchestrator:"),
-        `http://localhost:${port}/sessions/${orchSessionId}`,
-      );
-    } else {
-      console.log(
-        chalk.cyan("Orchestrator:"),
-        `ao session attach ${orchSessionId}`,
-      );
-    }
+    console.log(
+      chalk.cyan("Orchestrator:"),
+      `ao session attach ${orchSessionId}`,
+    );
   } else if (reused) {
     console.log(chalk.cyan("Orchestrator:"), `reused existing session (${sessionId})`);
   }
