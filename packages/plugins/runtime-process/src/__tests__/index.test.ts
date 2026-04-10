@@ -5,11 +5,26 @@ import type { RuntimeHandle } from "@aoagents/ao-core";
 // ---------------------------------------------------------------------------
 // Hoisted mock — must be set up before import
 // ---------------------------------------------------------------------------
-const { mockSpawn, mockIsWindows, mockKillProcessTree, mockGetShell } = vi.hoisted(() => ({
+const {
+  mockSpawn,
+  mockIsWindows,
+  mockKillProcessTree,
+  mockGetShell,
+  mockGetPipePath,
+  mockPtyHostSendMessage,
+  mockPtyHostGetOutput,
+  mockPtyHostIsAlive,
+  mockPtyHostKill,
+} = vi.hoisted(() => ({
   mockSpawn: vi.fn(),
   mockIsWindows: vi.fn(() => false),
   mockKillProcessTree: vi.fn().mockResolvedValue(undefined),
   mockGetShell: vi.fn(() => ({ cmd: "sh", args: (c: string) => ["-c", c] })),
+  mockGetPipePath: vi.fn((id: string) => `\\\\.\\pipe\\ao-pty-${id}`),
+  mockPtyHostSendMessage: vi.fn().mockResolvedValue(undefined),
+  mockPtyHostGetOutput: vi.fn().mockResolvedValue(""),
+  mockPtyHostIsAlive: vi.fn().mockResolvedValue(true),
+  mockPtyHostKill: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -32,6 +47,14 @@ vi.mock("@aoagents/ao-core", async (importOriginal) => {
   };
 });
 
+vi.mock("../pty-client.js", () => ({
+  getPipePath: mockGetPipePath,
+  ptyHostSendMessage: mockPtyHostSendMessage,
+  ptyHostGetOutput: mockPtyHostGetOutput,
+  ptyHostIsAlive: mockPtyHostIsAlive,
+  ptyHostKill: mockPtyHostKill,
+}));
+
 import { create, manifest, default as defaultExport } from "../index.js";
 
 // ---------------------------------------------------------------------------
@@ -49,9 +72,10 @@ class MockChildProcess extends EventEmitter {
     on: vi.fn(),
     removeListener: vi.fn(),
   };
-  stdout = new EventEmitter();
-  stderr = new EventEmitter();
+  stdout = Object.assign(new EventEmitter(), { destroy: vi.fn() });
+  stderr = Object.assign(new EventEmitter(), { destroy: vi.fn() });
   kill = vi.fn();
+  unref = vi.fn();
 }
 
 function createMockChild(autoSpawn = true): MockChildProcess {
@@ -60,6 +84,21 @@ function createMockChild(autoSpawn = true): MockChildProcess {
     // Emit "spawn" on next tick so the await in create() resolves
     process.nextTick(() => child.emit("spawn"));
   }
+
+  return child;
+}
+
+/**
+ * Creates a mock child process that emits READY:<pid> on stdout, simulating
+ * the PTY host startup handshake used on Windows.
+ */
+function createWindowsMockChild(pid = 12345): MockChildProcess {
+  const child = new MockChildProcess();
+  child.pid = pid;
+  // Emit READY signal on next tick so the Windows create() branch resolves
+  process.nextTick(() => {
+    child.stdout.emit("data", Buffer.from(`READY:${pid}\n`));
+  });
   return child;
 }
 
@@ -323,7 +362,8 @@ describe("destroy()", () => {
   });
 
   it("uses killProcessTree (not direct process.kill) on Windows and Unix", async () => {
-    mockIsWindows.mockReturnValue(true);
+    // On Unix: verify killProcessTree is used (not process.kill(-pid))
+    mockIsWindows.mockReturnValue(false);
     const child = createMockChild();
     mockSpawn.mockReturnValue(child);
 
@@ -749,14 +789,15 @@ describe("Windows compatibility", () => {
   it("does not set detached:true on win32", async () => {
     mockIsWindows.mockReturnValue(true);
 
-    const child = createMockChild();
+    const child = createWindowsMockChild();
     mockSpawn.mockReturnValue(child);
 
     const runtime = create();
     await runtime.create(defaultConfig({ sessionId: "win-spawn-test" }));
 
+    // On Windows the PTY host is spawned with detached: true (must survive parent exit)
     const [, , spawnOpts] = mockSpawn.mock.calls[0] as [string, string[], Record<string, unknown>];
-    expect(spawnOpts.detached).toBe(false);
+    expect(spawnOpts.detached).toBe(true);
   });
 
   it("sets detached:true on non-Windows", async () => {
@@ -772,10 +813,10 @@ describe("Windows compatibility", () => {
     expect(spawnOpts.detached).toBe(true);
   });
 
-  it("uses killProcessTree instead of process.kill(-pid) on win32", async () => {
+  it("uses ptyHostKill + killProcessTree instead of process.kill(-pid) on win32", async () => {
     mockIsWindows.mockReturnValue(true);
 
-    const child = createMockChild();
+    const child = createWindowsMockChild(12345);
     mockSpawn.mockReturnValue(child);
 
     const runtime = create();
@@ -783,45 +824,32 @@ describe("Windows compatibility", () => {
 
     const processSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
 
-    // Emit exit shortly after destroy is called
-    const destroyPromise = runtime.destroy(handle);
-    await new Promise((r) => setTimeout(r, 10));
-    child.exitCode = 0;
-    child.emit("exit", 0, null);
+    await runtime.destroy(handle);
 
-    await destroyPromise;
-
-    // killProcessTree should have been called with the pid
-    expect(mockKillProcessTree).toHaveBeenCalledWith(12345, "SIGTERM");
+    // On Windows destroy() calls ptyHostKill via the named pipe
+    expect(mockPtyHostKill).toHaveBeenCalledWith(expect.stringContaining("win-kill-test"));
+    // killProcessTree should be called with the ptyHostPid (child.pid)
+    expect(mockKillProcessTree).toHaveBeenCalledWith(12345, "SIGKILL");
     // process.kill(-pid) should NOT have been called
-    expect(processSpy).not.toHaveBeenCalledWith(-12345, "SIGTERM");
+    expect(processSpy).not.toHaveBeenCalledWith(-12345, expect.anything());
 
     processSpy.mockRestore();
   });
 
-  it("uses killProcessTree for SIGKILL escalation on win32", async () => {
-    vi.useFakeTimers();
+  it("calls ptyHostKill and killProcessTree(ptyHostPid) on win32 destroy", async () => {
     mockIsWindows.mockReturnValue(true);
 
-    const child = createMockChild();
+    const child = createWindowsMockChild(12345);
     mockSpawn.mockReturnValue(child);
 
     const runtime = create();
-    const createPromise = runtime.create(defaultConfig({ sessionId: "win-sigkill-test" }));
-    await vi.runAllTimersAsync();
-    const handle = await createPromise;
+    const handle = await runtime.create(defaultConfig({ sessionId: "win-sigkill-test" }));
 
-    const destroyPromise = runtime.destroy(handle);
+    await runtime.destroy(handle);
 
-    // Advance past the 5-second timeout — process never exits
-    await vi.advanceTimersByTimeAsync(5100);
-
-    await destroyPromise;
-
-    expect(mockKillProcessTree).toHaveBeenCalledWith(12345, "SIGTERM");
+    // Windows destroy path: ptyHostKill via pipe + killProcessTree on ptyHostPid
+    expect(mockPtyHostKill).toHaveBeenCalledWith(expect.stringContaining("win-sigkill-test"));
     expect(mockKillProcessTree).toHaveBeenCalledWith(12345, "SIGKILL");
-
-    vi.useRealTimers();
   });
 });
 

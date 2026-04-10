@@ -5,7 +5,10 @@
  * so the logic can be properly unit tested.
  */
 
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { dirname } from "node:path";
 
 /** Session ID validation regex — alphanumeric, hyphens, underscores only */
 export const SESSION_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -32,7 +35,8 @@ export function validateSessionId(sessionId: string): boolean {
  */
 export function findTmux(
   execFn: typeof execFileSync = execFileSync,
-): string {
+): string | null {
+  if (process.platform === "win32") return null;
   const candidates = [
     "/opt/homebrew/bin/tmux", // macOS ARM (Homebrew)
     "/usr/local/bin/tmux", // macOS Intel (Homebrew)
@@ -67,9 +71,10 @@ export function findTmux(
  */
 export function resolveTmuxSession(
   sessionId: string,
-  tmuxPath: string,
+  tmuxPath: string | null,
   execFn: typeof execFileSync = execFileSync,
 ): string | null {
+  if (!tmuxPath) return null;
   // Try exact match first using = prefix for exact matching (e.g., "ao-orchestrator")
   // Without =, tmux uses prefix matching: "ao-1" would match "ao-15"
   try {
@@ -99,4 +104,43 @@ export function resolveTmuxSession(
   }
 
   return null;
+}
+
+/**
+ * Resolve a user-facing session ID to its Windows named pipe path.
+ *
+ * The runtime handle uses hash-prefixed IDs (e.g., "bac26c5725e3-tr-1")
+ * for named pipes, but the dashboard sends short IDs (e.g., "tr-1").
+ *
+ * Uses a cached hash prefix after the first successful resolution to avoid
+ * scanning the entire pipe directory (which can contain thousands of entries
+ * and block the event loop).
+ *
+ * @returns Full pipe path (e.g., "\\\\.\\pipe\\ao-pty-bac26c5725e3-tr-1"), or null
+ */
+/**
+ * Resolve a user-facing session ID to its Windows named pipe path.
+ *
+ * Computes the config hash directly from AO_CONFIG_PATH (set by ao start)
+ * using the same algorithm as generateConfigHash in core. No pipe directory
+ * scanning needed — instant resolution.
+ *
+ * @returns Full pipe path (e.g., "\\\\.\\pipe\\ao-pty-bac26c5725e3-tr-1"), or null
+ */
+export function resolvePipePath(sessionId: string): string | null {
+  if (process.platform !== "win32") return null;
+
+  const configPath = process.env["AO_CONFIG_PATH"];
+  if (!configPath) return null;
+
+  // Compute hash the same way as core/paths.ts generateConfigHash():
+  // SHA-256 of the resolved config directory, first 12 hex chars.
+  try {
+    const resolved = realpathSync(configPath);
+    const configDir = dirname(resolved);
+    const hash = createHash("sha256").update(configDir).digest("hex").slice(0, 12);
+    return `\\\\.\\pipe\\ao-pty-${hash}-${sessionId}`;
+  } catch {
+    return null;
+  }
 }

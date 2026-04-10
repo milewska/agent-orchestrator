@@ -51,7 +51,7 @@ describe("generateOrchestratorPrompt", () => {
     });
 
     expect(prompt).toContain("Always use `ao send`");
-    expect(prompt).toContain("never use raw `tmux send-keys`");
+    expect(prompt).toContain("never use direct runtime commands");
     expect(prompt).toContain("ao send --no-wait");
   });
 

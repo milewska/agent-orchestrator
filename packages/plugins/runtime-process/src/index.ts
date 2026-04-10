@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import {
   getShell,
   isWindows,
@@ -10,6 +12,13 @@ import {
   type RuntimeMetrics,
   type AttachInfo,
 } from "@aoagents/ao-core";
+import {
+  getPipePath,
+  ptyHostSendMessage,
+  ptyHostGetOutput,
+  ptyHostIsAlive,
+  ptyHostKill,
+} from "./pty-client.js";
 
 export const manifest = {
   name: "process",
@@ -53,6 +62,80 @@ export function create(): Runtime {
         throw new Error(`Session "${handleId}" already exists — destroy it before re-creating`);
       }
 
+      // --- Windows: spawn via PTY host (ConPTY) ---
+      if (isWindows()) {
+        const pipePath = getPipePath(handleId);
+        const shellInfo = getShell();
+        const ptyHostScript = resolve(
+          dirname(fileURLToPath(import.meta.url)),
+          "pty-host.js",
+        );
+
+        const ptyEnv = { ...process.env, ...config.environment };
+        const ptyChild = spawn(
+          process.execPath,
+          [
+            ptyHostScript,
+            handleId,
+            pipePath,
+            config.workspacePath,
+            shellInfo.cmd,
+            ...shellInfo.args(config.launchCommand),
+          ],
+          {
+            cwd: config.workspacePath,
+            env: ptyEnv,
+            stdio: ["ignore", "pipe", "pipe"],
+            detached: true, // Must survive parent exit (like tmux daemon)
+          },
+        );
+
+        // Wait for PTY host to signal readiness (writes "READY:<pid>\n" to stdout)
+        const ptyPid = await new Promise<number>((resolveReady, reject) => {
+          const timeout = setTimeout(() => {
+            ptyChild.kill();
+            reject(new Error("PTY host startup timeout (10s)"));
+          }, 10_000);
+          let data = "";
+          ptyChild.stdout?.on("data", (chunk: Buffer) => {
+            data += chunk.toString();
+            const match = data.match(/READY:(\d+)/);
+            if (match) {
+              clearTimeout(timeout);
+              resolveReady(parseInt(match[1], 10));
+            }
+          });
+          ptyChild.stderr?.on("data", (chunk: Buffer) => {
+            data += chunk.toString();
+          });
+          ptyChild.on("error", (err) => {
+            clearTimeout(timeout);
+            reject(new Error(`PTY host spawn error: ${err.message}`));
+          });
+          ptyChild.on("exit", (code) => {
+            clearTimeout(timeout);
+            reject(new Error(`PTY host exited during startup with code ${code}: ${data}`));
+          });
+        });
+
+        // Unref so this process can exit while pty-host stays alive
+        ptyChild.unref();
+        ptyChild.stdout?.destroy();
+        ptyChild.stderr?.destroy();
+
+        return {
+          id: handleId,
+          runtimeName: "process",
+          data: {
+            pid: ptyPid,
+            ptyHostPid: ptyChild.pid,
+            pipePath,
+            createdAt: Date.now(),
+          },
+        };
+      }
+
+      // --- Unix: existing piped stdio path (unchanged below) ---
       const entry: ProcessEntry = {
         process: null, // set after spawn — methods guard against null
         outputBuffer: [],
@@ -152,6 +235,17 @@ export function create(): Runtime {
     },
 
     async destroy(handle: RuntimeHandle): Promise<void> {
+      // PTY host path (Windows) — kill via named pipe + process tree
+      const pipePath = (handle.data as Record<string, unknown>)?.pipePath as string | undefined;
+      if (pipePath) {
+        await ptyHostKill(pipePath);
+        const ptyHostPid = (handle.data as Record<string, unknown>)?.ptyHostPid;
+        if (typeof ptyHostPid === "number" && ptyHostPid > 0) {
+          await killProcessTree(ptyHostPid, "SIGKILL");
+        }
+        return;
+      }
+
       const entry = processes.get(handle.id);
       if (!entry) {
         // Process was spawned by a different Node.js process (e.g. ao spawn).
@@ -210,6 +304,13 @@ export function create(): Runtime {
     },
 
     async sendMessage(handle: RuntimeHandle, message: string): Promise<void> {
+      // PTY host path (Windows)
+      const pipePath = (handle.data as Record<string, unknown>)?.pipePath as string | undefined;
+      if (pipePath) {
+        await ptyHostSendMessage(pipePath, message);
+        return;
+      }
+
       const entry = processes.get(handle.id);
       if (!entry) {
         throw new Error(`No process found for session ${handle.id}`);
@@ -249,6 +350,11 @@ export function create(): Runtime {
     },
 
     async getOutput(handle: RuntimeHandle, lines = 50): Promise<string> {
+      const pipePath = (handle.data as Record<string, unknown>)?.pipePath as string | undefined;
+      if (pipePath) {
+        return ptyHostGetOutput(pipePath, lines);
+      }
+
       const entry = processes.get(handle.id);
       if (!entry) return "";
 
@@ -258,6 +364,11 @@ export function create(): Runtime {
     },
 
     async isAlive(handle: RuntimeHandle): Promise<boolean> {
+      const pipePath = (handle.data as Record<string, unknown>)?.pipePath as string | undefined;
+      if (pipePath) {
+        return ptyHostIsAlive(pipePath);
+      }
+
       const entry = processes.get(handle.id);
       if (!entry || !entry.process) {
         // Not in our in-memory Map — check via PID signal-0
@@ -286,6 +397,15 @@ export function create(): Runtime {
     },
 
     async getAttachInfo(handle: RuntimeHandle): Promise<AttachInfo> {
+      const pipePath = (handle.data as Record<string, unknown>)?.pipePath as string | undefined;
+      if (pipePath) {
+        const alive = await ptyHostIsAlive(pipePath);
+        if (!alive) {
+          return { type: "process", target: "", command: `# process for session ${handle.id} is no longer running` };
+        }
+        return { type: "process", target: String((handle.data as Record<string, unknown>)?.pid ?? ""), command: pipePath };
+      }
+
       const entry = processes.get(handle.id);
       if (
         !entry ||

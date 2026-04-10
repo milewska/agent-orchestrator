@@ -381,6 +381,8 @@ function createOpenCodeAgent(): Agent {
     async isProcessRunning(handle: RuntimeHandle): Promise<boolean> {
       try {
         if (handle.runtimeName === "tmux" && handle.id) {
+          // tmux and ps are Unix-only; guard before any tmux calls on Windows
+          if (isWindows()) return false;
           const { stdout: ttyOut } = await execFileAsync(
             "tmux",
             ["list-panes", "-t", handle.id, "-F", "#{pane_tty}"],
@@ -392,9 +394,6 @@ function createOpenCodeAgent(): Agent {
             .map((t) => t.trim())
             .filter(Boolean);
           if (ttys.length === 0) return false;
-
-          // ps -eo is Unix-only; guard against stale tmux handles on Windows
-          if (isWindows()) return false;
           const { stdout: psOut } = await execFileAsync("ps", ["-eo", "pid,tty,args"], {
             timeout: 30_000,
           });

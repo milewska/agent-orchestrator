@@ -234,7 +234,14 @@ describe("validateSessionId", () => {
 // =============================================================================
 
 describe("findTmux", () => {
-  it("returns first candidate that succeeds", () => {
+  it.runIf(process.platform === "win32")("returns null on Windows without calling execFn", () => {
+    const mockExec = vi.fn();
+    const result = findTmux(mockExec);
+    expect(result).toBeNull();
+    expect(mockExec).not.toHaveBeenCalled();
+  });
+
+  it.runIf(process.platform !== "win32")("returns first candidate that succeeds", () => {
     const mockExec = vi.fn()
       .mockImplementationOnce(() => { throw new Error("not found"); }) // /opt/homebrew/bin/tmux
       .mockImplementationOnce(() => "tmux 3.4") // /usr/local/bin/tmux succeeds
@@ -246,7 +253,7 @@ describe("findTmux", () => {
     expect(mockExec).toHaveBeenCalledTimes(2);
   });
 
-  it("returns /opt/homebrew/bin/tmux on macOS ARM (first candidate)", () => {
+  it.runIf(process.platform !== "win32")("returns /opt/homebrew/bin/tmux on macOS ARM (first candidate)", () => {
     const mockExec = vi.fn().mockReturnValue("tmux 3.4");
 
     const result = findTmux(mockExec);
@@ -255,7 +262,7 @@ describe("findTmux", () => {
     expect(mockExec).toHaveBeenCalledTimes(1);
   });
 
-  it("returns /usr/bin/tmux on Linux (third candidate)", () => {
+  it.runIf(process.platform !== "win32")("returns /usr/bin/tmux on Linux (third candidate)", () => {
     const mockExec = vi.fn()
       .mockImplementationOnce(() => { throw new Error("not found"); }) // /opt/homebrew/bin/tmux
       .mockImplementationOnce(() => { throw new Error("not found"); }) // /usr/local/bin/tmux
@@ -267,7 +274,7 @@ describe("findTmux", () => {
     expect(mockExec).toHaveBeenCalledTimes(3);
   });
 
-  it("falls back to bare 'tmux' when no candidates found", () => {
+  it.runIf(process.platform !== "win32")("falls back to bare 'tmux' when no candidates found", () => {
     const mockExec = vi.fn().mockImplementation(() => {
       throw new Error("not found");
     });
@@ -278,7 +285,7 @@ describe("findTmux", () => {
     expect(mockExec).toHaveBeenCalledTimes(3);
   });
 
-  it("checks all three standard locations in order", () => {
+  it.runIf(process.platform !== "win32")("checks all three standard locations in order", () => {
     const mockExec = vi.fn().mockImplementation(() => {
       throw new Error("not found");
     });
@@ -290,7 +297,7 @@ describe("findTmux", () => {
     expect(mockExec).toHaveBeenNthCalledWith(3, "/usr/bin/tmux", ["-V"], { timeout: 5000 });
   });
 
-  it("handles timeout errors from execFileSync", () => {
+  it.runIf(process.platform !== "win32")("handles timeout errors from execFileSync", () => {
     const mockExec = vi.fn()
       .mockImplementationOnce(() => { throw Object.assign(new Error("ETIMEDOUT"), { code: "ETIMEDOUT" }); })
       .mockImplementationOnce(() => "tmux 3.4");
@@ -300,7 +307,7 @@ describe("findTmux", () => {
     expect(result).toBe("/usr/local/bin/tmux");
   });
 
-  it("handles permission denied errors", () => {
+  it.runIf(process.platform !== "win32")("handles permission denied errors", () => {
     const mockExec = vi.fn()
       .mockImplementationOnce(() => { throw Object.assign(new Error("EACCES"), { code: "EACCES" }); })
       .mockImplementationOnce(() => { throw Object.assign(new Error("EACCES"), { code: "EACCES" }); })
@@ -311,7 +318,7 @@ describe("findTmux", () => {
     expect(result).toBe("/usr/bin/tmux");
   });
 
-  it("handles ENOENT (file not found) errors", () => {
+  it.runIf(process.platform !== "win32")("handles ENOENT (file not found) errors", () => {
     const mockExec = vi.fn()
       .mockImplementationOnce(() => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); })
       .mockImplementationOnce(() => "tmux 3.4");
@@ -321,7 +328,7 @@ describe("findTmux", () => {
     expect(result).toBe("/usr/local/bin/tmux");
   });
 
-  it("passes -V flag and 5000ms timeout to each candidate", () => {
+  it.runIf(process.platform !== "win32")("passes -V flag and 5000ms timeout to each candidate", () => {
     const mockExec = vi.fn().mockReturnValue("tmux 3.4");
 
     findTmux(mockExec);
@@ -331,7 +338,7 @@ describe("findTmux", () => {
     expect(options).toEqual({ timeout: 5000 });
   });
 
-  it("stops checking after first success (short-circuit)", () => {
+  it.runIf(process.platform !== "win32")("stops checking after first success (short-circuit)", () => {
     const mockExec = vi.fn().mockReturnValue("tmux 3.4");
 
     findTmux(mockExec);
