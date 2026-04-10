@@ -383,10 +383,11 @@ export const manifest = {
  * Exported for testing purposes.
  */
 export function toClaudeProjectPath(workspacePath: string): string {
-  // Handle Windows drive letters (C:\Users\... → C-Users-...)
+  // Claude Code encodes project paths by replacing special chars with dashes.
+  // On Windows: C:\Users\foo → C--Users-foo (colon becomes dash, backslash becomes dash)
+  // On Unix: /home/foo → -home-foo (leading slash becomes leading dash)
   const normalized = workspacePath.replace(/\\/g, "/");
-  // Claude Code replaces / and . with - (keeping the leading slash as a leading -)
-  return normalized.replace(/:/g, "").replace(/[/.]/g, "-");
+  return normalized.replace(/[/:. ]/g, "-");
 }
 
 /** Find the most recently modified .jsonl session file in a directory */
@@ -938,6 +939,12 @@ function createClaudeCodeAgent(): Agent {
       if (!entry) {
         // Empty file or read error — cannot determine activity
         return null;
+      }
+
+      // If the JSONL entry predates this session, it's from a previous session
+      // in the same worktree. Treat as no data (agent hasn't written yet).
+      if (session.createdAt && entry.modifiedAt < session.createdAt) {
+        return { state: "idle", timestamp: session.createdAt };
       }
 
       const ageMs = Date.now() - entry.modifiedAt.getTime();

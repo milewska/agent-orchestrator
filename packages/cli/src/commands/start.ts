@@ -616,7 +616,7 @@ async function autoCreateConfig(workingDir: string): Promise<OrchestratorConfig>
     console.log(chalk.dim("  Update the 'repo' field in the config before spawning agents.\n"));
   }
 
-  if (!env.hasTmux) {
+  if (!env.hasTmux && getDefaultRuntime() === "tmux") {
     console.log(chalk.yellow("⚠ tmux not found — will prompt to install at startup"));
   }
   if (!env.hasGh) {
@@ -1435,22 +1435,32 @@ export function registerStop(program: Command): void {
 
           const config = loadConfig();
           const { projectId: _projectId, project } = await resolveProject(config, projectArg, "stop");
-          const sessionId = `${project.sessionPrefix}-orchestrator`;
           const port = config.port ?? DEFAULT_PORT;
 
           console.log(chalk.bold(`\nStopping orchestrator for ${chalk.cyan(project.name)}\n`));
 
-          // Kill orchestrator session via SessionManager
+          // Find the actual running orchestrator session (numbered, e.g. tr-orchestrator-5)
           const sm = await getSessionManager(config);
-          const existing = await sm.get(sessionId);
+          const allSessions = await sm.list(_projectId);
+          const allSessionPrefixes = Object.entries(config.projects).map(
+            ([, p]) => p.sessionPrefix ?? generateSessionPrefix(p.name ?? ""),
+          );
+          const orchestratorSessions = allSessions.filter(
+            (s) =>
+              isOrchestratorSession(s, project.sessionPrefix ?? _projectId, allSessionPrefixes) &&
+              !isTerminalSession(s),
+          );
 
-          if (existing) {
-            const spinner = ora("Stopping orchestrator session").start();
+          if (orchestratorSessions.length > 0) {
+            const spinner = ora("Stopping orchestrator session(s)").start();
             const purgeOpenCode = opts?.purgeSession === true;
-            await sm.kill(sessionId, { purgeOpenCode });
-            spinner.succeed("Orchestrator session stopped");
+            for (const orch of orchestratorSessions) {
+              await sm.kill(orch.id, { purgeOpenCode });
+            }
+            const names = orchestratorSessions.map((s) => s.id).join(", ");
+            spinner.succeed(`Orchestrator session(s) stopped: ${names}`);
           } else {
-            console.log(chalk.yellow(`Orchestrator session "${sessionId}" is not running`));
+            console.log(chalk.yellow("No running orchestrator sessions found"));
           }
 
           const lifecycleStopped = await stopLifecycleWorker(config, _projectId);

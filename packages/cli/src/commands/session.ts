@@ -1,7 +1,8 @@
 import { spawn } from "node:child_process";
+import { connect as netConnect } from "node:net";
 import chalk from "chalk";
 import type { Command } from "commander";
-import { loadConfig, SessionNotRestorableError, WorkspaceMissingError } from "@aoagents/ao-core";
+import { generateConfigHash, isWindows, loadConfig, SessionNotRestorableError, WorkspaceMissingError } from "@aoagents/ao-core";
 import { DEFAULT_PORT } from "../lib/constants.js";
 import { git, getTmuxActivity, tmux } from "../lib/shell.js";
 import { formatAge } from "../lib/format.js";
@@ -64,6 +65,7 @@ export function registerSession(program: Command): void {
 
         const activities = await Promise.all(
           projectSessions.map((s) => {
+            if (isWindows()) return Promise.resolve(null);
             const tmuxTarget = s.runtimeHandle?.id ?? s.id;
             return getTmuxActivity(tmuxTarget).catch(() => null);
           }),
@@ -92,34 +94,133 @@ export function registerSession(program: Command): void {
 
   session
     .command("attach")
-    .description("Attach to a session's tmux window")
+    .description("Attach to a session's terminal")
     .argument("<session>", "Session name to attach")
     .action(async (sessionName: string) => {
       const config = loadConfig();
       const sm = await getSessionManager(config);
       const sessionInfo = await sm.get(sessionName);
-      const tmuxTarget = sessionInfo?.runtimeHandle?.id ?? sessionName;
 
-      const exists = await tmux("has-session", "-t", tmuxTarget);
-      if (exists === null) {
-        console.error(chalk.red(`Session '${sessionName}' does not exist`));
-        process.exit(1);
-      }
+      if (isWindows()) {
+        // Windows: connect to PTY host named pipe and relay raw terminal I/O
+        const handleId =
+          sessionInfo?.runtimeHandle?.id ??
+          (config.configPath
+            ? `${generateConfigHash(config.configPath)}-${sessionName}`
+            : sessionName);
+        const pipePath = `\\\\.\\pipe\\ao-pty-${handleId}`;
 
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn("tmux", ["attach", "-t", tmuxTarget], { stdio: "inherit" });
-        child.once("error", (err) => reject(err));
-        child.once("exit", (code) => {
-          if (code === 0 || code === null) {
-            resolve();
-            return;
-          }
-          reject(new Error(`tmux attach exited with code ${code}`));
+        const sock = netConnect(pipePath);
+
+        sock.on("error", (err: Error) => {
+          console.error(chalk.red(`Cannot attach to ${sessionName}: ${err.message}`));
+          process.exit(1);
         });
-      }).catch((err) => {
-        console.error(chalk.red(`Failed to attach to session ${sessionName}: ${err}`));
-        process.exit(1);
-      });
+
+        sock.on("connect", () => {
+          // Raw mode so keystrokes pass through directly (like tmux attach)
+          if (process.stdin.isTTY) {
+            process.stdin.setRawMode(true);
+          }
+          process.stdin.resume();
+
+          // Binary protocol framing buffer
+          let buf = Buffer.alloc(0);
+
+          // PTY host → stdout
+          sock.on("data", (chunk: Buffer) => {
+            buf = Buffer.concat([buf, chunk]);
+            while (buf.length >= 5) {
+              const msgType = buf.readUInt8(0);
+              const len = buf.readUInt32BE(1);
+              if (buf.length < 5 + len) break;
+              const payload = buf.subarray(5, 5 + len);
+              buf = buf.subarray(5 + len);
+
+              // 0x01 = MSG_TERMINAL_DATA
+              if (msgType === 0x01) {
+                process.stdout.write(payload);
+              }
+              // 0x07 = MSG_STATUS_RES (PTY exited)
+              if (msgType === 0x07) {
+                try {
+                  const status = JSON.parse(payload.toString()) as { alive: boolean; exitCode?: number };
+                  if (!status.alive) {
+                    cleanup();
+                    console.log(`\n[session exited with code ${status.exitCode ?? "unknown"}]`);
+                    process.exit(status.exitCode ?? 0);
+                  }
+                } catch { /* ignore parse errors */ }
+              }
+            }
+          });
+
+          // stdin → PTY host (MSG_TERMINAL_INPUT = 0x02)
+          // Ctrl+\ (0x1c) = detach without killing (like tmux Ctrl+B,D)
+          process.stdin.on("data", (data: Buffer) => {
+            if (data.length === 1 && data[0] === 0x1c) {
+              console.log("\n[detached]");
+              cleanup();
+              process.exit(0);
+              return;
+            }
+            const header = Buffer.alloc(5);
+            header.writeUInt8(0x02, 0);
+            header.writeUInt32BE(data.length, 1);
+            sock.write(Buffer.concat([header, data]));
+          });
+
+          // Send terminal resize (MSG_RESIZE = 0x03)
+          const sendResize = () => {
+            const payload = Buffer.from(
+              JSON.stringify({ cols: process.stdout.columns, rows: process.stdout.rows }),
+            );
+            const header = Buffer.alloc(5);
+            header.writeUInt8(0x03, 0);
+            header.writeUInt32BE(payload.length, 1);
+            sock.write(Buffer.concat([header, payload]));
+          };
+          process.stdout.on("resize", sendResize);
+          sendResize(); // send initial size
+
+          const cleanup = () => {
+            if (process.stdin.isTTY) process.stdin.setRawMode(false);
+            sock.destroy();
+          };
+
+          sock.on("close", () => {
+            cleanup();
+            process.exit(0);
+          });
+        });
+
+        // Keep process alive until pipe closes
+        await new Promise(() => {});
+      } else {
+        // Unix: tmux attach (unchanged)
+        const tmuxTarget = sessionInfo?.runtimeHandle?.id ?? sessionName;
+
+        const exists = await tmux("has-session", "-t", tmuxTarget);
+        if (exists === null) {
+          console.error(chalk.red(`Session '${sessionName}' does not exist`));
+          process.exit(1);
+        }
+
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn("tmux", ["attach", "-t", tmuxTarget], { stdio: "inherit" });
+          child.once("error", (err) => reject(err));
+          child.once("exit", (code) => {
+            if (code === 0 || code === null) {
+              resolve();
+              return;
+            }
+            reject(new Error(`tmux attach exited with code ${code}`));
+          });
+        }).catch((err) => {
+          console.error(chalk.red(`Failed to attach to session ${sessionName}: ${err}`));
+          process.exit(1);
+        });
+      }
     });
 
   session
