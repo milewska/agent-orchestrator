@@ -3823,7 +3823,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 
   .dashboard-hero__content {
     display: grid;
-    grid-template-columns: 36px minmax(0, 1fr) 36px;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
     align-items: center;
     padding: 0 12px;
     gap: 8px;
@@ -3873,16 +3873,20 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   }
 
   .mobile-menu-toggle {
-    width: 36px;
-    height: 36px;
-    border: none;
-    background: none;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid var(--color-border-default);
+    background: color-mix(in srgb, var(--color-bg-surface) 92%, transparent);
     color: var(--color-text-secondary);
+    border-radius: 10px;
   }
 
   .mobile-menu-toggle:hover {
-    border: none;
-    background: none;
+    border-color: var(--color-border-strong);
+    background: var(--color-hover-overlay);
     color: var(--color-text-primary);
   }
 
@@ -3969,14 +3973,12 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   }
 
   .mobile-filter-row {
-    display: flex;
-    align-items: center;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
     margin-bottom: 16px;
     padding-bottom: 2px;
+    min-width: 0;
   }
 
   .mobile-filter-row::-webkit-scrollbar {
@@ -3987,8 +3989,10 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-height: 32px;
-    padding: 0 12px;
+    width: 100%;
+    min-height: 36px;
+    min-width: 0;
+    padding: 0 10px;
     border: 1px solid var(--color-border-default);
     background: color-mix(in srgb, var(--color-bg-surface) 88%, transparent);
     color: var(--color-text-secondary);
