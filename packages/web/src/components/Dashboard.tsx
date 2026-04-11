@@ -5,11 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { useMediaQuery, MOBILE_BREAKPOINT } from "@/hooks/useMediaQuery";
 import {
   type DashboardSession,
+  type DashboardPR,
   type AttentionLevel,
   type DashboardOrchestratorLink,
   getAttentionLevel,
   isPRRateLimited,
   isPRMergeReady,
+  isPRUnenriched,
 } from "@/lib/types";
 import { AttentionZone } from "./AttentionZone";
 import { DynamicFavicon, countNeedingAttention } from "./DynamicFavicon";
@@ -130,6 +132,103 @@ function DoneCard({
         </button>
       </div>
     </div>
+  );
+}
+
+function getCiPillClass(pr: DashboardPR): string {
+  if (isPRRateLimited(pr) || isPRUnenriched(pr)) return "";
+  return pr.ciStatus === "passing"
+    ? "mobile-feed-card__pill--green"
+    : pr.ciStatus === "failing"
+      ? "mobile-feed-card__pill--red"
+      : "mobile-feed-card__pill--amber";
+}
+
+function getCiLabel(pr: DashboardPR): string {
+  if (isPRRateLimited(pr) || isPRUnenriched(pr)) return "";
+  return pr.ciStatus === "passing" ? "CI passing" : pr.ciStatus === "failing" ? "CI failed" : "CI pending";
+}
+
+function getReviewPillClass(pr: DashboardPR): string {
+  if (isPRRateLimited(pr) || isPRUnenriched(pr)) return "";
+  return pr.reviewDecision === "approved"
+    ? "mobile-feed-card__pill--green"
+    : pr.reviewDecision === "changes_requested"
+      ? "mobile-feed-card__pill--red"
+      : "mobile-feed-card__pill--amber";
+}
+
+function getReviewLabel(pr: DashboardPR): string {
+  if (isPRRateLimited(pr) || isPRUnenriched(pr)) return "";
+  return pr.reviewDecision === "approved"
+    ? "approved"
+    : pr.reviewDecision === "changes_requested"
+      ? "changes requested"
+      : "needs review";
+}
+
+function MobileFeedCard({
+  session,
+  level,
+  onTap,
+}: {
+  session: DashboardSession;
+  level: AttentionLevel;
+  onTap: (session: DashboardSession) => void;
+}) {
+  const title =
+    (!session.summaryIsFallback && session.summary) ||
+    session.issueTitle ||
+    session.summary ||
+    session.id;
+  const pr = session.pr;
+
+  return (
+    <button
+      type="button"
+      className="mobile-feed-card"
+      onClick={() => onTap(session)}
+    >
+      <div className="mobile-feed-card__strip" data-level={level} />
+      <div className="mobile-feed-card__content">
+        <div className="mobile-feed-card__header">
+          <span className="mobile-feed-card__id">{session.id}</span>
+          <span className="mobile-feed-card__time">
+            {formatRelativeTimeCompact(session.lastActivityAt)}
+          </span>
+        </div>
+        <div className="mobile-feed-card__title">{title}</div>
+        <div className="mobile-feed-card__meta">
+          {session.branch ? (
+            <span className="mobile-feed-card__branch">{session.branch}</span>
+          ) : null}
+          {pr ? (
+            <span className="mobile-feed-card__pr">#{pr.number}</span>
+          ) : null}
+          {pr && !isPRRateLimited(pr) && !isPRUnenriched(pr) ? (
+            <span className="mobile-feed-card__diff">
+              <span style={{ color: "var(--color-accent-green)" }}>+{pr.additions}</span>
+              {" "}
+              <span style={{ color: "var(--color-accent-red)" }}>-{pr.deletions}</span>
+            </span>
+          ) : null}
+        </div>
+        {pr && !isPRRateLimited(pr) && !isPRUnenriched(pr) ? (
+          <div className="mobile-feed-card__pills">
+            {getCiLabel(pr) ? (
+              <span className={`mobile-feed-card__pill ${getCiPillClass(pr)}`}>
+                {getCiLabel(pr)}
+              </span>
+            ) : null}
+            {getReviewLabel(pr) ? (
+              <span className={`mobile-feed-card__pill ${getReviewPillClass(pr)}`}>
+                {getReviewLabel(pr)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </button>
   );
 }
 
@@ -402,6 +501,20 @@ function DashboardInner({
     mobileFilter === "all"
       ? MOBILE_KANBAN_ORDER
       : MOBILE_KANBAN_ORDER.filter((level) => level === mobileFilter);
+
+  const mobileFeedSessions = useMemo(() => {
+    const levels = mobileFilter === "all"
+      ? MOBILE_KANBAN_ORDER
+      : MOBILE_KANBAN_ORDER.filter((level) => level === mobileFilter);
+    const feed: Array<{ session: DashboardSession; level: AttentionLevel }> = [];
+    for (const level of levels) {
+      for (const session of grouped[level]) {
+        feed.push({ session, level });
+      }
+    }
+    return feed;
+  }, [grouped, mobileFilter]);
+
   const showDesktopPrsLink = hasMounted && !isMobile;
 
   const handleSend = useCallback(
@@ -921,23 +1034,19 @@ function DashboardInner({
             {!allProjectsView && hasAnySessions && (
               <div className="kanban-board-wrap">
                 {isMobile ? (
-                  <div id="mobile-board" className="accordion-board">
-                    {visibleMobileLevels.map((level) => (
-                      <AttentionZone
-                        key={level}
-                        level={level}
-                        sessions={grouped[level]}
-                        onSend={handleSend}
-                        onKill={handleKill}
-                        onMerge={handleMerge}
-                        onRestore={handleRestore}
-                        collapsed={expandedLevel !== level}
-                        onToggle={handleAccordionToggle}
-                        compactMobile
-                        onPreview={handlePreview}
-                        resetKey={mobileFilter}
-                      />
-                    ))}
+                  <div id="mobile-board" className="mobile-feed">
+                    {mobileFeedSessions.length > 0 ? (
+                      mobileFeedSessions.map(({ session, level }) => (
+                        <MobileFeedCard
+                          key={session.id}
+                          session={session}
+                          level={level}
+                          onTap={handlePreview}
+                        />
+                      ))
+                    ) : (
+                      <div className="mobile-feed-empty">No sessions match this filter.</div>
+                    )}
                   </div>
                 ) : (
                   <div className="kanban-board">

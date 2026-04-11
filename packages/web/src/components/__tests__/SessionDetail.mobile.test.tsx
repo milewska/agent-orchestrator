@@ -60,9 +60,7 @@ describe("SessionDetail mobile navbar", () => {
       "aria-current",
       "page",
     );
-    expect(screen.getAllByText("Orchestrator session title")).toHaveLength(1);
-    expect(screen.queryByText("agents")).not.toBeInTheDocument();
-    expect(screen.queryByText("responding")).not.toBeInTheDocument();
+    expect(screen.getByText("my-app-orchestrator")).toBeInTheDocument();
   });
 
   it("routes PRs to the dedicated page from worker session pages", () => {
@@ -110,7 +108,7 @@ describe("SessionDetail mobile navbar", () => {
     expect(within(nav).queryByRole("button", { name: "Orchestrator" })).not.toBeInTheDocument();
   });
 
-  it("keeps branch and PR chips in the compact mobile header", () => {
+  it("shows session ID and PR info in the terminal-first layout", () => {
     render(
       <SessionDetail
         session={makeSession({
@@ -124,17 +122,11 @@ describe("SessionDetail mobile navbar", () => {
       />,
     );
 
-    expect(screen.getAllByText("Compact header polish")).toHaveLength(1);
-    expect(screen.getByText("feat/compact-header")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "PR #77" })).toHaveClass(
-      "session-detail-link-pill--pr",
-    );
-    expect(screen.getByRole("link", { name: "feat/compact-header" })).toHaveClass(
-      "session-detail-link-pill--branch-link",
-    );
+    expect(screen.getByText("worker-2")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /PR #77/i })).toBeInTheDocument();
   });
 
-  it("prefers issue title over changing summary text", () => {
+  it("shows session ID in floating header for terminal-first layout", () => {
     render(
       <SessionDetail
         session={makeSession({
@@ -148,11 +140,11 @@ describe("SessionDetail mobile navbar", () => {
       />,
     );
 
-    expect(screen.getAllByText("Fix stable session titles")).toHaveLength(1);
-    expect(screen.queryByText("Responding to latest review comment")).not.toBeInTheDocument();
+    expect(screen.getByText("worker-stable-title")).toBeInTheDocument();
+    expect(screen.getByLabelText("Back to dashboard")).toBeInTheDocument();
   });
 
-  it("preserves CI and unresolved review comment detail on mobile session pages", () => {
+  it("shows PR bottom sheet with CI and review summary on mobile", () => {
     render(
       <SessionDetail
         session={makeSession({
@@ -163,44 +155,20 @@ describe("SessionDetail mobile navbar", () => {
             number: 88,
             title: "Keep PR detail intact",
             ciStatus: "failing",
-            ciChecks: [
-              { name: "build", status: "failed", url: "https://ci.example/build" },
-              { name: "lint", status: "passed", url: "https://ci.example/lint" },
-            ],
             reviewDecision: "changes_requested",
-            mergeability: {
-              mergeable: false,
-              ciPassing: false,
-              approved: false,
-              noConflicts: true,
-              blockers: ["CI failing", "Changes requested"],
-            },
             unresolvedThreads: 2,
-            unresolvedComments: [
-              {
-                url: "https://github.com/acme/app/pull/88#discussion_r1",
-                path: "src/app.ts",
-                author: "bugbot",
-                body: "### Fix null handling\n<!-- DESCRIPTION START -->Handle missing data safely<!-- DESCRIPTION END -->",
-              },
-            ],
           }),
         })}
         projectOrchestratorId="my-app-orchestrator"
       />,
     );
 
-    expect(screen.getByText(/1 check failing/i)).toBeInTheDocument();
-    expect(screen.getByText(/Changes requested/i)).toBeInTheDocument();
-    expect(screen.getByText("Unresolved Comments")).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
-    expect(screen.getByText("Fix null handling")).toBeInTheDocument();
-    expect(screen.getByText((_, element) => element?.textContent === "\u2717 build")).toBeInTheDocument();
-    expect(screen.getByText((_, element) => element?.textContent === "\u2713 lint")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ask Agent to Fix" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /PR #88/i })).toBeInTheDocument();
+    expect(screen.getByText(/fail/i)).toBeInTheDocument();
+    expect(screen.getByText(/changes/i)).toBeInTheDocument();
   });
 
-  it("shows the merged badge styling for merged PR sessions", () => {
+  it("shows PR link in bottom sheet for merged PR sessions", () => {
     render(
       <SessionDetail
         session={makeSession({
@@ -217,8 +185,7 @@ describe("SessionDetail mobile navbar", () => {
       />,
     );
 
-    const mergedBadge = screen.getByText("Merged");
-    expect(mergedBadge).toBeInTheDocument();
-    expect(mergedBadge).toHaveClass("session-detail-pr-card__diff-label");
+    expect(screen.getByRole("link", { name: /PR #89/i })).toBeInTheDocument();
+    expect(screen.getByText("worker-merged")).toBeInTheDocument();
   });
 });

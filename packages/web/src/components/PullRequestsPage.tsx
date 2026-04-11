@@ -185,9 +185,43 @@ export function PullRequestsPage({
 
           {isMobile ? (
             <div className="mobile-pr-list">
-              {(prFilter === "all" ? allPRs : prFilter === "open" ? openPRs : prFilter === "merged" ? mergedPRs : closedPRs).map((pr) => (
-                <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} />
-              ))}
+              {prFilter === "all" ? (
+                <>
+                  {openPRs.length > 0 && (
+                    <>
+                      <div className="mobile-pr-section-header">Open &middot; {openPRs.length}</div>
+                      {openPRs.map((pr) => (
+                        <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} />
+                      ))}
+                    </>
+                  )}
+                  {mergedPRs.length > 0 && (
+                    <>
+                      <div className="mobile-pr-section-header">Merged &middot; {mergedPRs.length}</div>
+                      {mergedPRs.map((pr) => (
+                        <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} muted />
+                      ))}
+                    </>
+                  )}
+                  {closedPRs.length > 0 && (
+                    <>
+                      <div className="mobile-pr-section-header">Closed &middot; {closedPRs.length}</div>
+                      {closedPRs.map((pr) => (
+                        <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} muted />
+                      ))}
+                    </>
+                  )}
+                  {allPRs.length === 0 && (
+                    <div style={{ padding: "24px 12px", color: "var(--color-text-muted)", fontSize: "12px" }}>
+                      No pull requests yet.
+                    </div>
+                  )}
+                </>
+              ) : (
+                (prFilter === "open" ? openPRs : prFilter === "merged" ? mergedPRs : closedPRs).map((pr) => (
+                  <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} muted={prFilter !== "open"} />
+                ))
+              )}
             </div>
           ) : (
             <div className="overflow-hidden rounded-[7px] border border-[var(--color-border-subtle)]">

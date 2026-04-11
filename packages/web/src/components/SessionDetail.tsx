@@ -8,6 +8,8 @@ import {
   type DashboardPR,
   TERMINAL_STATUSES,
   isPRMergeReady,
+  isPRRateLimited,
+  isPRUnenriched,
 } from "@/lib/types";
 import { CI_STATUS } from "@aoagents/ao-core/types";
 import { cn } from "@/lib/cn";
@@ -47,6 +49,41 @@ interface SessionDetailProps {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+function formatTimeCompact(isoDate: string | null): string {
+  if (!isoDate) return "just now";
+  const ts = new Date(isoDate).getTime();
+  if (!Number.isFinite(ts)) return "just now";
+  const diffMs = Date.now() - ts;
+  if (diffMs <= 0) return "just now";
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${Math.floor(diffHours / 24)}d ago`;
+}
+
+function getCiDotBg(pr: DashboardPR): string {
+  if (isPRRateLimited(pr) || isPRUnenriched(pr)) return "var(--color-text-tertiary)";
+  if (pr.ciStatus === "passing") return "var(--color-accent-green)";
+  if (pr.ciStatus === "failing") return "var(--color-accent-red)";
+  return "var(--color-status-attention)";
+}
+
+function getCiShortLabel(pr: DashboardPR): string {
+  if (isPRRateLimited(pr) || isPRUnenriched(pr)) return "CI";
+  if (pr.ciStatus === "passing") return "CI passing";
+  if (pr.ciStatus === "failing") return "CI failed";
+  return "CI pending";
+}
+
+function getReviewShortLabel(pr: DashboardPR): string {
+  if (isPRRateLimited(pr) || isPRUnenriched(pr)) return "";
+  if (pr.reviewDecision === "approved") return "approved";
+  if (pr.reviewDecision === "changes_requested") return "changes";
+  return "review";
+}
 
 const activityMeta: Record<string, { label: string; color: string }> = {
   active: { label: "Active", color: "var(--color-status-working)" },
@@ -560,74 +597,94 @@ export function SessionDetail({
     );
   }
 
+  const statusPillBg = activity.color === "var(--color-status-working)"
+    ? "rgba(34,197,94,0.15)"
+    : activity.color === "var(--color-status-attention)"
+      ? "rgba(226,163,54,0.15)"
+      : activity.color === "var(--color-status-error)"
+        ? "rgba(239,68,68,0.15)"
+        : "rgba(139,156,247,0.12)";
+
   return (
-    <div className="session-detail-page min-h-screen bg-[var(--color-bg-base)]">
-      <div className="session-detail-layout">
-        <main className="min-w-0">
-          {(!isOrchestrator || isMobile || (isOrchestrator && orchestratorZones)) && (
-            <SessionTopStrip
-              headline={headline}
-              crumbId={session.id}
-              activityLabel={activity.label}
-              activityColor={activity.color}
-              branch={session.branch}
-              pr={pr}
-              isOrchestrator={isOrchestrator}
-              crumbHref={crumbHref}
-              crumbLabel={crumbLabel}
-              onKill={isOrchestrator ? undefined : () => {}}
-            />
-          )}
-
-          {pr ? (
-            <section id="session-pr-section" className="session-detail-pr-section">
-              <SessionDetailPRCard pr={pr} sessionId={session.id} metadata={session.metadata} />
-            </section>
-          ) : null}
-
-          <section className="session-detail-terminal-wrap">
-            <div id="session-terminal-section" aria-hidden="true" />
-            <div className="session-detail-section-label">
-              <div
-                className="session-detail-section-label__bar"
-                style={{ background: isOrchestrator ? accentColor : activity.color }}
-              />
-              <span className="session-detail-section-label__text">
-                Live Terminal
-              </span>
-            </div>
-            {!showTerminal ? (
-              <div className="session-detail-terminal-placeholder" style={{ height: terminalHeight }} />
-            ) : terminalEnded ? (
-              <div className="terminal-exited-placeholder" style={{ height: terminalHeight }}>
-                <span className="terminal-exited-placeholder__text">
-                  Terminal session has ended
-                </span>
-              </div>
-            ) : (
-              <DirectTerminal
-                sessionId={session.id}
-                startFullscreen={startFullscreen}
-                variant={terminalVariant}
-                appearance="dark"
-                height={terminalHeight}
-                isOpenCodeSession={isOpenCodeSession}
-                reloadCommand={isOpenCodeSession ? reloadCommand : undefined}
-              />
-            )}
-          </section>
-        </main>
+    <div className="session-detail--terminal-first">
+      {/* Floating header */}
+      <div className="session-detail__floating-header">
+        <a href={crumbHref} className="session-detail__back" aria-label="Back to dashboard">
+          <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+        </a>
+        <span className="session-detail__status-dot" style={{ background: activity.color }} />
+        <span className="session-detail__session-id">{session.id}</span>
+        <span
+          className="session-detail__status-pill"
+          style={{ background: statusPillBg, color: activity.color }}
+        >
+          {activity.label.toLowerCase()}
+        </span>
+        <span className="session-detail__time">
+          {formatTimeCompact(session.lastActivityAt)}
+        </span>
       </div>
-      {isMobile ? (
-        <MobileBottomNav
-          ariaLabel="Session navigation"
-          activeTab={isOrchestrator ? "orchestrator" : undefined}
-          dashboardHref={dashboardHref}
-          prsHref={prsHref}
-          showOrchestrator={orchestratorHref !== null}
-          orchestratorHref={orchestratorHref}
-        />
+
+      {/* Terminal fills the viewport */}
+      <div className="session-detail__terminal-full">
+        {!showTerminal ? (
+          <div className="session-detail-terminal-placeholder" style={{ height: "100%" }} />
+        ) : terminalEnded ? (
+          <div className="terminal-exited-placeholder" style={{ height: "100%" }}>
+            <span className="terminal-exited-placeholder__text">
+              Terminal session has ended
+            </span>
+          </div>
+        ) : (
+          <DirectTerminal
+            sessionId={session.id}
+            startFullscreen={startFullscreen}
+            variant={terminalVariant}
+            appearance="dark"
+            height="100%"
+            isOpenCodeSession={isOpenCodeSession}
+            reloadCommand={isOpenCodeSession ? reloadCommand : undefined}
+          />
+        )}
+      </div>
+
+      {/* Bottom sheet with PR info */}
+      {pr ? (
+        <div className="session-detail__bottom-sheet">
+          <div className="session-detail__sheet-handle" />
+          <div className="session-detail__sheet-row">
+            <a
+              href={pr.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="session-detail__sheet-pr"
+            >
+              PR #{pr.number}
+            </a>
+            <span className="session-detail__sheet-item">
+              <span
+                className="session-detail__sheet-ci-dot"
+                style={{ background: getCiDotBg(pr) }}
+              />
+              {getCiShortLabel(pr)}
+            </span>
+            <span className="session-detail__sheet-item">
+              {getReviewShortLabel(pr) || "—"}
+            </span>
+          </div>
+        </div>
       ) : null}
+
+      <MobileBottomNav
+        ariaLabel="Session navigation"
+        activeTab={isOrchestrator ? "orchestrator" : undefined}
+        dashboardHref={dashboardHref}
+        prsHref={prsHref}
+        showOrchestrator={orchestratorHref !== null}
+        orchestratorHref={orchestratorHref}
+      />
     </div>
   );
 }

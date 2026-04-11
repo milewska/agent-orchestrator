@@ -141,12 +141,38 @@ export function PRTableRow({ pr, muted = false }: PRTableRowProps) {
   );
 }
 
-export function PRCard({ pr }: PRTableRowProps) {
-  const sizeLabel = getSizeLabel(pr.additions, pr.deletions);
+function getCiDotColor(pr: DashboardPR): string {
+  if (pr.ciStatus === "passing") return "var(--color-accent-green)";
+  if (pr.ciStatus === "failing") return "var(--color-accent-red)";
+  return "var(--color-status-attention)";
+}
+
+function getCiTextColor(pr: DashboardPR): string {
+  if (pr.ciStatus === "passing") return "var(--color-accent-green)";
+  if (pr.ciStatus === "failing") return "var(--color-accent-red)";
+  return "var(--color-text-secondary)";
+}
+
+function getReviewColor(pr: DashboardPR): string {
+  if (pr.reviewDecision === "approved") return "var(--color-accent-green)";
+  if (pr.reviewDecision === "changes_requested") return "var(--color-accent-red)";
+  return "var(--color-text-secondary)";
+}
+
+export function PRCard({ pr, muted = false }: PRTableRowProps) {
   const rateLimited = isPRRateLimited(pr);
   const unenriched = isPRUnenriched(pr);
+  const hideData = rateLimited || unenriched;
 
-  const reviewLabel = rateLimited || unenriched
+  const ciLabel = hideData
+    ? "—"
+    : pr.ciStatus === "passing"
+      ? "passing"
+      : pr.ciStatus === "failing"
+        ? "failed"
+        : "pending";
+
+  const reviewLabel = hideData
     ? "—"
     : pr.isDraft
       ? "draft"
@@ -154,15 +180,7 @@ export function PRCard({ pr }: PRTableRowProps) {
         ? "approved"
         : pr.reviewDecision === "changes_requested"
           ? "changes"
-          : "review";
-
-  const ciLabel = rateLimited || unenriched
-    ? "—"
-    : pr.ciStatus === "passing"
-      ? "CI passing"
-      : pr.ciStatus === "failing"
-        ? "CI failing"
-        : "CI pending";
+          : "needs review";
 
   const shimmer = <span className="inline-block h-3 w-10 animate-pulse rounded bg-[var(--color-bg-subtle)]" />;
 
@@ -171,17 +189,33 @@ export function PRCard({ pr }: PRTableRowProps) {
       href={pr.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="mobile-pr-card"
+      className={`mobile-pr-card${muted ? " mobile-pr-card--muted" : ""}`}
     >
       <div className="mobile-pr-card__line">
         <span className="mobile-pr-card__number">#{pr.number}</span>
         <span className="mobile-pr-card__title">{pr.title}</span>
-        {!rateLimited && !unenriched ? <span className="mobile-pr-card__size">{sizeLabel}</span> : null}
       </div>
       <div className="mobile-pr-card__meta">
-        <span>{unenriched ? shimmer : ciLabel}</span>
-        <span>{unenriched ? shimmer : reviewLabel}</span>
-        <span>{unenriched ? shimmer : `${pr.unresolvedThreads} threads`}</span>
+        <span>
+          {unenriched ? shimmer : (
+            <>
+              <span
+                className="mobile-pr-card__ci-dot"
+                style={{ background: hideData ? "var(--color-text-tertiary)" : getCiDotColor(pr) }}
+              />
+              <span style={{ color: hideData ? undefined : getCiTextColor(pr) }}>{ciLabel}</span>
+            </>
+          )}
+        </span>
+        <span style={{ color: hideData ? undefined : getReviewColor(pr) }}>
+          {unenriched ? shimmer : reviewLabel}
+        </span>
+        {!hideData ? (
+          <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
+            <span style={{ color: "var(--color-accent-green)" }}>+{pr.additions}</span>
+            <span style={{ color: "var(--color-accent-red)" }}>-{pr.deletions}</span>
+          </span>
+        ) : null}
       </div>
     </a>
   );

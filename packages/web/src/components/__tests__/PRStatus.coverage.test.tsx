@@ -15,9 +15,9 @@ describe("PRCard diff coverage", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: /#635 hydrate pr details later/i })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /#635/i })).toBeTruthy();
     expect(screen.queryByText("approved")).toBeNull();
     expect(screen.queryByText("CI passing")).toBeNull();
-    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThanOrEqual(3);
+    expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThanOrEqual(2);
   });
 });
