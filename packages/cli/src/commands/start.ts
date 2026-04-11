@@ -949,8 +949,6 @@ async function runStartup(
     const knownRuntimeNames = registry.list("runtime").map((plugin) => plugin.name);
     if (runtimeOverride.effectiveRuntime === "tmux") {
       await ensureTmux();
-    } else if (runtimeOverride.effectiveRuntime === "docker") {
-      await preflight.checkDocker(runtimeOverride.effectiveRuntimeConfig);
     } else {
       await preflight.checkRuntime(
         runtimeOverride.effectiveRuntime,

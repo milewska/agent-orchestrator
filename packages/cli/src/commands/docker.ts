@@ -90,6 +90,14 @@ function getRawProjects(rawConfig: RawConfig): Record<string, RawProjectConfig> 
   return rawConfig["projects"] as Record<string, RawProjectConfig>;
 }
 
+function getRawProjectRoleConfig(rawProject: RawProjectConfig, key: "worker" | "orchestrator"): RawProjectConfig {
+  const current = rawProject[key];
+  if (!isPlainObject(current)) {
+    rawProject[key] = {};
+  }
+  return rawProject[key] as RawProjectConfig;
+}
+
 function getProjectOrExit(config: OrchestratorConfig, projectId: string): ProjectConfig {
   const project = config.projects[projectId];
   if (project) return project;
@@ -302,6 +310,9 @@ export function registerDocker(program: Command): void {
           const rawProject = rawProjects[projectId] ?? {};
           rawProjects[projectId] = rawProject;
 
+          rawProject["agent"] = agent;
+          getRawProjectRoleConfig(rawProject, "worker")["agent"] = agent;
+          getRawProjectRoleConfig(rawProject, "orchestrator")["agent"] = agent;
           const runtimeOverride = resolveRuntimeOverride(
             config,
             project,
@@ -323,7 +334,7 @@ export function registerDocker(program: Command): void {
           console.log(chalk.dim(`  Agent:   ${agent}`));
           console.log(chalk.dim(`  Image:   ${image}`));
           console.log(chalk.dim(`  Config:  ${path}`));
-          console.log(chalk.dim(`  Next:    ao spawn --agent ${agent} "your task here"`));
+          console.log(chalk.dim(`  Next:    ao spawn "your task here"`));
         });
       } catch (err) {
         console.error(chalk.red(err instanceof Error ? err.message : String(err)));

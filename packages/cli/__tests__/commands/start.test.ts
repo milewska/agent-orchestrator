@@ -886,14 +886,19 @@ describe("start command — browser open waits for port", () => {
       "/tmp",
     ]);
 
-    expect(mockCheckDocker).toHaveBeenCalledWith({
-      image: "ghcr.io/composio/ao:test",
-      limits: { cpus: "2", memory: "4g", gpus: "all" },
-      readOnlyRoot: true,
-      network: "bridge",
-      capDrop: ["ALL"],
-      tmpfs: ["/tmp"],
-    });
+    expect(mockCheckDocker).not.toHaveBeenCalled();
+    expect(mockCheckRuntime).toHaveBeenCalledWith(
+      "docker",
+      {
+        image: "ghcr.io/composio/ao:test",
+        limits: { cpus: "2", memory: "4g", gpus: "all" },
+        readOnlyRoot: true,
+        network: "bridge",
+        capDrop: ["ALL"],
+        tmpfs: ["/tmp"],
+      },
+      ["tmux", "docker", "process"],
+    );
     expect(mockSessionManager.spawnOrchestrator).toHaveBeenCalledWith({
       projectId: "my-app",
       systemPrompt: expect.any(String),

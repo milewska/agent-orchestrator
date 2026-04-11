@@ -726,6 +726,40 @@ describe("runtime.sendMessage()", () => {
       "/tmp/ao-runtime-handle/.ao-tmux-buffer-test-uuid-1234.txt",
     );
   });
+
+  it("falls back to workspace-backed buffers for legacy handles without hostRuntimeDir", async () => {
+    mockDockerSuccess();
+    mockDockerSuccess();
+    mockDockerSuccess();
+    mockDockerSuccess();
+    mockDockerSuccess();
+
+    const message = "line one\nline two";
+    await create().sendMessage(
+      makeHandle({ data: { ...makeHandle().data, hostRuntimeDir: undefined } }),
+      message,
+    );
+
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      "/tmp/workspace/.ao-tmux-buffer-test-uuid-1234.txt",
+      message,
+      { encoding: "utf-8", mode: 0o600 },
+    );
+    expect(mockExecFileCustom).toHaveBeenNthCalledWith(
+      2,
+      "docker",
+      [
+        "exec",
+        "container-1",
+        "tmux",
+        "load-buffer",
+        "-b",
+        "ao-test-uuid-1234",
+        "/tmp/workspace/.ao-tmux-buffer-test-uuid-1234.txt",
+      ],
+      expectedDockerOptions,
+    );
+  });
 });
 
 describe("runtime.getOutput()", () => {

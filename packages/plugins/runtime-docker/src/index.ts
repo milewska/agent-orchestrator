@@ -688,13 +688,25 @@ export function create(): Runtime {
 
     async sendMessage(handle: RuntimeHandle, message: string): Promise<void> {
       const hostRuntimeDir = handle.data["hostRuntimeDir"];
+      const workspacePath = handle.data["workspacePath"];
+      const useDedicatedRuntimeDir =
+        typeof hostRuntimeDir === "string" && hostRuntimeDir.length > 0;
+      const hostBufferDir =
+        useDedicatedRuntimeDir
+          ? hostRuntimeDir
+          : (typeof workspacePath === "string" ? workspacePath : undefined);
+      const containerBufferDir =
+        useDedicatedRuntimeDir
+          ? CONTAINER_RUNTIME_DIR
+          : (typeof workspacePath === "string" ? workspacePath : undefined);
+      if (!hostBufferDir || !containerBufferDir) {
+        throw new Error("Docker runtime handle is missing a writable buffer directory.");
+      }
       await sendTextToTmux(
         getContainerName(handle),
         getTmuxSessionName(handle),
-        typeof hostRuntimeDir === "string" && hostRuntimeDir.length > 0
-          ? hostRuntimeDir
-          : (handle.data["workspacePath"] as string),
-        CONTAINER_RUNTIME_DIR,
+        hostBufferDir,
+        containerBufferDir,
         getExecUser(handle),
         message,
         true,

@@ -121,6 +121,9 @@ projects:
     const raw = readConfig();
     const project = (raw["projects"] as Record<string, Record<string, unknown>>)["app"];
     expect(project["runtime"]).toBe("docker");
+    expect(project["agent"]).toBe("codex");
+    expect((project["worker"] as Record<string, unknown>)["agent"]).toBe("codex");
+    expect((project["orchestrator"] as Record<string, unknown>)["agent"]).toBe("codex");
     expect(project["runtimeConfig"]).toEqual({
       image: "ghcr.io/composio/ao-codex:latest",
     });
@@ -180,6 +183,7 @@ projects:
 
     const raw = readConfig();
     const project = (raw["projects"] as Record<string, Record<string, unknown>>)["app"];
+    expect(project["agent"]).toBe("opencode");
     expect(project["runtimeConfig"]).toEqual({
       image: "ao-real-opencode:test",
     });
@@ -217,6 +221,7 @@ projects:
 
     const raw = readConfig();
     const project = (raw["projects"] as Record<string, Record<string, unknown>>)["app"];
+    expect(project["agent"]).toBe("claude-code");
     expect(project["runtimeConfig"]).toEqual({
       image: "ghcr.io/composio/ao-claude-code:latest",
       readOnlyRoot: true,
@@ -251,6 +256,7 @@ projects:
     expect(mockExec).not.toHaveBeenCalled();
     const raw = readConfig();
     const project = (raw["projects"] as Record<string, Record<string, unknown>>)["app"];
+    expect(project["agent"]).toBe("claude-code");
     expect(project["runtimeConfig"]).toEqual({
       image: "example/custom:1.0",
     });

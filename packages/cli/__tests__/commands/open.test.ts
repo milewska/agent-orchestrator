@@ -112,8 +112,8 @@ afterEach(() => {
 describe("open command", () => {
   it("opens all sessions when target is 'all'", async () => {
     mockSessionManager.list.mockResolvedValue([
-      makeSession({ id: "app-1" }),
       makeSession({ id: "app-2", runtimeHandle: { id: "app-2", runtimeName: "tmux", data: {} } }),
+      makeSession({ id: "app-1" }),
       makeSession({
         id: "backend-1",
         projectId: "backend",
@@ -128,6 +128,7 @@ describe("open command", () => {
     expect(output).toContain("app-1");
     expect(output).toContain("app-2");
     expect(output).toContain("backend-1");
+    expect(mockExec.mock.calls.map((call) => call[1]?.[0])).toEqual(["app-1", "app-2", "backend-1"]);
   });
 
   it("opens all sessions when no target given", async () => {
