@@ -530,11 +530,49 @@ export function DirectTerminal({
         ? "text-[var(--color-status-error)]"
         : "text-[var(--color-text-tertiary)]";
   const isDarkChrome = appearance === "dark" || resolvedTheme !== "light";
+  const fullscreenButton = (
+    <button
+      onClick={() => setFullscreen(!fullscreen)}
+      className={cn(
+        "flex items-center gap-1 px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-primary)]",
+        !isOpenCodeSession && !chromeless && "ml-auto",
+      )}
+      aria-label={fullscreen ? "exit fullscreen" : "fullscreen"}
+    >
+      {fullscreen ? (
+        <>
+          <svg
+            className="h-3 w-3"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />
+          </svg>
+          exit fullscreen
+        </>
+      ) : (
+        <>
+          <svg
+            className="h-3 w-3"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
+          </svg>
+          fullscreen
+        </>
+      )}
+    </button>
+  );
 
   return (
     <div
       className={cn(
-        "overflow-hidden border border-[var(--color-border-default)]",
+        "relative overflow-hidden border border-[var(--color-border-default)]",
         isDarkChrome ? "bg-[#0a0a0f]" : "bg-[#fafafa]",
         fullscreen && "fixed inset-0 z-50 rounded-none border-0",
         chromeless && "border-0",
@@ -606,41 +644,50 @@ export function DirectTerminal({
               {reloadError}
             </span>
           ) : null}
-          <button
-            onClick={() => setFullscreen(!fullscreen)}
-            className={cn(
-              "flex items-center gap-1 px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-primary)]",
-              !isOpenCodeSession && "ml-auto",
-            )}
-          >
-            {fullscreen ? (
-              <>
-                <svg
-                  className="h-3 w-3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3" />
-                </svg>
-                exit fullscreen
-              </>
-            ) : (
-              <>
-                <svg
-                  className="h-3 w-3"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3" />
-                </svg>
-                fullscreen
-              </>
-            )}
-          </button>
+          {fullscreenButton}
+        </div>
+      ) : null}
+      {chromeless ? (
+        <div className="absolute right-3 top-3 z-10 flex items-center gap-1 rounded-[6px] border border-[var(--color-border-subtle)] bg-[color-mix(in_srgb,var(--color-bg-elevated)_92%,transparent)] px-1.5 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.18)] backdrop-blur-sm">
+          {isOpenCodeSession ? (
+            <button
+              onClick={handleReload}
+              disabled={reloading || muxStatus !== "connected"}
+              title="Restart OpenCode session (/exit then resume mapped session)"
+              aria-label="Restart OpenCode session"
+              className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-subtle)] hover:text-[var(--color-text-primary)] disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {reloading ? (
+                <>
+                  <svg
+                    className="h-3 w-3 animate-spin"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M12 3a9 9 0 109 9" />
+                  </svg>
+                  restarting
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="h-3 w-3"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path d="M21 12a9 9 0 11-2.64-6.36" />
+                    <path d="M21 3v6h-6" />
+                  </svg>
+                  restart
+                </>
+              )}
+            </button>
+          ) : null}
+          {fullscreenButton}
         </div>
       ) : null}
       {/* Terminal area */}

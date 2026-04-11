@@ -83,6 +83,10 @@ export function PRTableRow({ pr, muted = false }: PRTableRowProps) {
 
   const reviewLabel = hideData
     ? "—"
+    : pr.state === "merged"
+      ? "merged"
+      : pr.state === "closed"
+        ? "closed"
     : pr.isDraft
       ? "draft"
       : pr.reviewDecision === "approved"
@@ -174,13 +178,17 @@ export function PRCard({ pr, muted = false }: PRTableRowProps) {
 
   const reviewLabel = hideData
     ? "—"
-    : pr.isDraft
-      ? "draft"
-      : pr.reviewDecision === "approved"
-        ? "approved"
-        : pr.reviewDecision === "changes_requested"
-          ? "changes"
-          : "needs review";
+    : pr.state === "merged"
+      ? "merged"
+      : pr.state === "closed"
+        ? "closed"
+        : pr.isDraft
+          ? "draft"
+          : pr.reviewDecision === "approved"
+            ? "approved"
+            : pr.reviewDecision === "changes_requested"
+              ? "changes"
+              : "needs review";
 
   const shimmer = <span className="inline-block h-3 w-10 animate-pulse rounded bg-[var(--color-bg-subtle)]" />;
   const diffLabel = hideData ? null : `+${pr.additions} -${pr.deletions}`;

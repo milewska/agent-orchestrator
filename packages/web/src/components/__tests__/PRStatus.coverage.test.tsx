@@ -20,4 +20,20 @@ describe("PRCard diff coverage", () => {
     expect(screen.queryByText("CI passing")).toBeNull();
     expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThanOrEqual(2);
   });
+
+  it("does not show review-needed text for merged PRs", () => {
+    render(
+      <PRCard
+        pr={makePR({
+          number: 636,
+          title: "Already merged",
+          state: "merged",
+          reviewDecision: "pending",
+        })}
+      />,
+    );
+
+    expect(screen.getByText("merged")).toBeInTheDocument();
+    expect(screen.queryByText("needs review")).toBeNull();
+  });
 });
