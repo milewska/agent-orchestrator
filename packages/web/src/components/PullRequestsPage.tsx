@@ -29,6 +29,15 @@ interface PullRequestsPageProps {
 
 const EMPTY_ORCHESTRATORS: DashboardOrchestratorLink[] = [];
 
+type PRFilterValue = "all" | "open" | "merged" | "closed";
+
+function getSectionLabel(filter: PRFilterValue): string {
+  if (filter === "open") return "Open PRs";
+  if (filter === "merged") return "Merged PRs";
+  if (filter === "closed") return "Closed PRs";
+  return "All PRs";
+}
+
 export function PullRequestsPage({
   initialSessions,
   projectId,
@@ -64,7 +73,7 @@ export function PullRequestsPage({
         : null,
     [orchestratorLinks, projectId],
   );
-  const [prFilter, setPrFilter] = useState<"all" | "open" | "merged" | "closed">("all");
+  const [prFilter, setPrFilter] = useState<PRFilterValue>("all");
 
   const allPRs = useMemo(() => {
     return sessions
@@ -81,6 +90,7 @@ export function PullRequestsPage({
   const orchestratorHref = currentProjectOrchestrator
     ? `/sessions/${encodeURIComponent(currentProjectOrchestrator.id)}`
     : null;
+  const activeMobilePRs = prFilter === "open" ? openPRs : prFilter === "merged" ? mergedPRs : prFilter === "closed" ? closedPRs : allPRs;
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -104,58 +114,95 @@ export function PullRequestsPage({
       ) : null}
       <div className="dashboard-main flex-1 overflow-y-auto px-4 py-4 md:px-7 md:py-6">
         <DynamicFavicon sseAttentionLevels={sseAttentionLevels} projectName={projectName ? `${projectName} PRs` : "Pull Requests"} />
-        <section className="dashboard-hero mb-5">
-          <div className="dashboard-hero__backdrop" />
-          <div className="dashboard-hero__content">
-            {showSidebar ? (
-              <button
-                type="button"
-                className="mobile-menu-toggle"
-                onClick={() => setMobileMenuOpen(true)}
-                aria-label="Open menu"
-              >
-                <svg
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                  className="h-5 w-5"
-                >
-                  <path d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-            ) : null}
-            <div className="dashboard-hero__primary">
-              <div className="dashboard-hero__heading">
-                <div>
-                  <h1 className="dashboard-title">{projectName ? `${projectName} PRs` : "Pull Requests"}</h1>
-                  <p className="dashboard-subtitle">
-                    Open pull requests created by agents{allProjectsView ? " across all projects" : " in this project"}.
-                  </p>
-                </div>
+        {isMobile ? (
+          <section className="mobile-pr-page-header">
+            <div className="mobile-pr-page-header__top">
+              <div className="mobile-pr-page-header__title-row">
+                {showSidebar ? (
+                  <button
+                    type="button"
+                    className="mobile-menu-toggle"
+                    onClick={() => setMobileMenuOpen(true)}
+                    aria-label="Open menu"
+                  >
+                    <svg
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                    >
+                      <path d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  </button>
+                ) : null}
+                <h1 className="mobile-pr-page-header__title">
+                  {projectName ? `${projectName} PRs` : "Pull Requests"}
+                </h1>
               </div>
-              <div className="dashboard-stat-cards dashboard-stat-cards--persist-mobile">
-                <div className="dashboard-stat-card">
-                  <span className="dashboard-stat-card__value">{openPRs.length}</span>
-                  <span className="dashboard-stat-card__label">Open PRs</span>
-                  <span className="dashboard-stat-card__meta">
-                    {allProjectsView ? "Across all projects" : "In this project"}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="dashboard-hero__meta">
-              <div className="flex items-center gap-3">
+              <div className="mobile-pr-page-header__meta">
+                <span className="mobile-pr-page-header__count">{allPRs.length}</span>
                 <ThemeToggle />
               </div>
             </div>
-          </div>
-        </section>
+            <p className="mobile-pr-page-header__subtitle">
+              Open pull requests created by agents{allProjectsView ? " across projects" : " in this project"}.
+            </p>
+          </section>
+        ) : (
+          <section className="dashboard-hero mb-5">
+            <div className="dashboard-hero__backdrop" />
+            <div className="dashboard-hero__content">
+              {showSidebar ? (
+                <button
+                  type="button"
+                  className="mobile-menu-toggle"
+                  onClick={() => setMobileMenuOpen(true)}
+                  aria-label="Open menu"
+                >
+                  <svg
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5"
+                  >
+                    <path d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+              ) : null}
+              <div className="dashboard-hero__primary">
+                <div className="dashboard-hero__heading">
+                  <div>
+                    <h1 className="dashboard-title">{projectName ? `${projectName} PRs` : "Pull Requests"}</h1>
+                    <p className="dashboard-subtitle">
+                      Open pull requests created by agents{allProjectsView ? " across all projects" : " in this project"}.
+                    </p>
+                  </div>
+                </div>
+                <div className="dashboard-stat-cards dashboard-stat-cards--persist-mobile">
+                  <div className="dashboard-stat-card">
+                    <span className="dashboard-stat-card__value">{openPRs.length}</span>
+                    <span className="dashboard-stat-card__label">Open PRs</span>
+                    <span className="dashboard-stat-card__meta">
+                      {allProjectsView ? "Across all projects" : "In this project"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="dashboard-hero__meta">
+                <div className="flex items-center gap-3">
+                  <ThemeToggle />
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="mx-auto max-w-[900px]">
           {/* Filter tabs */}
-          <div className="mb-4 flex items-center gap-1.5">
+          <div className={isMobile ? "mobile-pr-filter-tabs" : "mb-4 flex items-center gap-1.5"}>
             {(
               [
                 { value: "all", label: "All", count: allPRs.length },
@@ -168,15 +215,20 @@ export function PullRequestsPage({
                 key={value}
                 type="button"
                 onClick={() => setPrFilter(value)}
-                className={[
-                  "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors",
-                  prFilter === value
-                    ? "border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]"
-                    : "border-transparent bg-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]",
-                ].join(" ")}
+                className={
+                  isMobile
+                    ? "mobile-pr-filter-tab"
+                    : [
+                        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                        prFilter === value
+                          ? "border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]"
+                          : "border-transparent bg-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]",
+                      ].join(" ")
+                }
+                data-active={isMobile ? String(prFilter === value) : undefined}
               >
                 {label}
-                <span className="rounded-full bg-[var(--color-chip-bg)] px-1.5 py-px text-[9.5px] font-mono text-[var(--color-text-muted)]">
+                <span className={isMobile ? "mobile-pr-filter-tab__count" : "rounded-full bg-[var(--color-chip-bg)] px-1.5 py-px text-[9.5px] font-mono text-[var(--color-text-muted)]"}>
                   {count}
                 </span>
               </button>
@@ -184,43 +236,70 @@ export function PullRequestsPage({
           </div>
 
           {isMobile ? (
-            <div className="mobile-pr-list">
+            <div className="mobile-pr-mobile-layout">
               {prFilter === "all" ? (
                 <>
                   {openPRs.length > 0 && (
-                    <>
-                      <div className="mobile-pr-section-header">Open &middot; {openPRs.length}</div>
-                      {openPRs.map((pr) => (
-                        <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} />
-                      ))}
-                    </>
+                    <section className="mobile-pr-group" aria-label="Open pull requests">
+                      <div className="mobile-pr-section-header">
+                        <span>Open</span>
+                        <span>{openPRs.length}</span>
+                      </div>
+                      <div className="mobile-pr-list">
+                        {openPRs.map((pr) => (
+                          <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} />
+                        ))}
+                      </div>
+                    </section>
                   )}
                   {mergedPRs.length > 0 && (
-                    <>
-                      <div className="mobile-pr-section-header">Merged &middot; {mergedPRs.length}</div>
-                      {mergedPRs.map((pr) => (
-                        <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} muted />
-                      ))}
-                    </>
+                    <section className="mobile-pr-group" aria-label="Merged pull requests">
+                      <div className="mobile-pr-section-header">
+                        <span>Merged</span>
+                        <span>{mergedPRs.length}</span>
+                      </div>
+                      <div className="mobile-pr-list">
+                        {mergedPRs.map((pr) => (
+                          <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} muted />
+                        ))}
+                      </div>
+                    </section>
                   )}
                   {closedPRs.length > 0 && (
-                    <>
-                      <div className="mobile-pr-section-header">Closed &middot; {closedPRs.length}</div>
-                      {closedPRs.map((pr) => (
-                        <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} muted />
-                      ))}
-                    </>
+                    <section className="mobile-pr-group" aria-label="Closed pull requests">
+                      <div className="mobile-pr-section-header">
+                        <span>Closed</span>
+                        <span>{closedPRs.length}</span>
+                      </div>
+                      <div className="mobile-pr-list">
+                        {closedPRs.map((pr) => (
+                          <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} muted />
+                        ))}
+                      </div>
+                    </section>
                   )}
                   {allPRs.length === 0 && (
-                    <div style={{ padding: "24px 12px", color: "var(--color-text-muted)", fontSize: "12px" }}>
+                    <div className="mobile-pr-empty">
                       No pull requests yet.
                     </div>
                   )}
                 </>
               ) : (
-                (prFilter === "open" ? openPRs : prFilter === "merged" ? mergedPRs : closedPRs).map((pr) => (
-                  <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} muted={prFilter !== "open"} />
-                ))
+                <section className="mobile-pr-group" aria-label={getSectionLabel(prFilter)}>
+                  <div className="mobile-pr-section-header">
+                    <span>{getSectionLabel(prFilter).replace(" PRs", "")}</span>
+                    <span>{activeMobilePRs.length}</span>
+                  </div>
+                  <div className="mobile-pr-list">
+                    {activeMobilePRs.length > 0 ? (
+                      activeMobilePRs.map((pr) => (
+                        <PRCard key={`${pr.owner}/${pr.repo}-${pr.number}`} pr={pr} muted={prFilter !== "open"} />
+                      ))
+                    ) : (
+                      <div className="mobile-pr-empty">No pull requests in this view.</div>
+                    )}
+                  </div>
+                </section>
               )}
             </div>
           ) : (

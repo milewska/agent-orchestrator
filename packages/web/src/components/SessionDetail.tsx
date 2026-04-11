@@ -317,12 +317,42 @@ function _OrchestratorStatusStrip({
   }, [createdAt]);
 
   const stats: Array<{ value: number; label: string; color: string; bg: string }> = [
-    { value: zones.merge, label: "merge-ready", color: "#3fb950", bg: "rgba(63,185,80,0.1)" },
-    { value: zones.respond, label: "responding", color: "#f85149", bg: "rgba(248,81,73,0.1)" },
-    { value: zones.review, label: "review", color: "#d18616", bg: "rgba(209,134,22,0.1)" },
-    { value: zones.working, label: "working", color: "#58a6ff", bg: "rgba(88,166,255,0.1)" },
-    { value: zones.pending, label: "pending", color: "#d29922", bg: "rgba(210,153,34,0.1)" },
-    { value: zones.done, label: "done", color: "#484f58", bg: "rgba(72,79,88,0.15)" },
+    {
+      value: zones.merge,
+      label: "merge-ready",
+      color: "var(--color-status-ready)",
+      bg: "color-mix(in srgb, var(--color-status-ready) 10%, transparent)",
+    },
+    {
+      value: zones.respond,
+      label: "responding",
+      color: "var(--color-status-error)",
+      bg: "color-mix(in srgb, var(--color-status-error) 10%, transparent)",
+    },
+    {
+      value: zones.review,
+      label: "review",
+      color: "var(--color-accent-orange)",
+      bg: "color-mix(in srgb, var(--color-accent-orange) 10%, transparent)",
+    },
+    {
+      value: zones.working,
+      label: "working",
+      color: "var(--color-accent-blue)",
+      bg: "color-mix(in srgb, var(--color-accent-blue) 10%, transparent)",
+    },
+    {
+      value: zones.pending,
+      label: "pending",
+      color: "var(--color-status-attention)",
+      bg: "color-mix(in srgb, var(--color-status-attention) 10%, transparent)",
+    },
+    {
+      value: zones.done,
+      label: "done",
+      color: "var(--color-text-tertiary)",
+      bg: "color-mix(in srgb, var(--color-text-tertiary) 14%, transparent)",
+    },
   ].filter((s) => s.value > 0);
 
   const total =
@@ -644,6 +674,7 @@ export function SessionDetail({
             variant={terminalVariant}
             appearance="dark"
             height="100%"
+            chromeless
             isOpenCodeSession={isOpenCodeSession}
             reloadCommand={isOpenCodeSession ? reloadCommand : undefined}
           />

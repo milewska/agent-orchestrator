@@ -183,6 +183,17 @@ export function PRCard({ pr, muted = false }: PRTableRowProps) {
           : "needs review";
 
   const shimmer = <span className="inline-block h-3 w-10 animate-pulse rounded bg-[var(--color-bg-subtle)]" />;
+  const diffLabel = hideData ? null : `+${pr.additions} -${pr.deletions}`;
+  const lineTone =
+    pr.state === "merged"
+      ? "mobile-pr-card__meta--merged"
+      : pr.state === "closed"
+        ? "mobile-pr-card__meta--closed"
+        : pr.reviewDecision === "changes_requested"
+          ? "mobile-pr-card__meta--changes"
+          : pr.reviewDecision === "approved"
+            ? "mobile-pr-card__meta--approved"
+            : "mobile-pr-card__meta--open";
 
   return (
     <a
@@ -195,27 +206,22 @@ export function PRCard({ pr, muted = false }: PRTableRowProps) {
         <span className="mobile-pr-card__number">#{pr.number}</span>
         <span className="mobile-pr-card__title">{pr.title}</span>
       </div>
-      <div className="mobile-pr-card__meta">
-        <span>
-          {unenriched ? shimmer : (
-            <>
-              <span
-                className="mobile-pr-card__ci-dot"
-                style={{ background: hideData ? "var(--color-text-tertiary)" : getCiDotColor(pr) }}
-              />
-              <span style={{ color: hideData ? undefined : getCiTextColor(pr) }}>{ciLabel}</span>
-            </>
-          )}
-        </span>
-        <span style={{ color: hideData ? undefined : getReviewColor(pr) }}>
+      <div className={`mobile-pr-card__meta ${lineTone}`}>
+        {unenriched ? shimmer : (
+          <span className="mobile-pr-card__metric-value">
+            <span
+              className="mobile-pr-card__ci-dot"
+              style={{ background: hideData ? "var(--color-text-tertiary)" : getCiDotColor(pr) }}
+            />
+            <span style={{ color: hideData ? undefined : getCiTextColor(pr) }}>{ciLabel}</span>
+          </span>
+        )}
+        <span className="mobile-pr-card__review" style={{ color: hideData ? undefined : getReviewColor(pr) }}>
           {unenriched ? shimmer : reviewLabel}
         </span>
-        {!hideData ? (
-          <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "10px" }}>
-            <span style={{ color: "var(--color-accent-green)" }}>+{pr.additions}</span>
-            <span style={{ color: "var(--color-accent-red)" }}>-{pr.deletions}</span>
-          </span>
-        ) : null}
+        <span className="mobile-pr-card__diff">
+          {hideData ? shimmer : diffLabel}
+        </span>
       </div>
     </a>
   );
