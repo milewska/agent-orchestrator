@@ -22,7 +22,7 @@ import {
   makeHandle,
   type TestContext,
 } from "../test-utils.js";
-import { installMockOpencode, installMockGit } from "./opencode-helpers.js";
+import { installMockOpencode, installMockGit, PATH_SEP } from "./opencode-helpers.js";
 
 let ctx: TestContext;
 let tmpDir: string;
@@ -208,7 +208,7 @@ describe("spawn", () => {
 
   it("skips remote session branches when allocating a fresh session id", async () => {
     const mockGitBin = installMockGit(tmpDir, ["session/app-22"]);
-    process.env.PATH = `${mockGitBin}:${originalPath ?? ""}`;
+    process.env.PATH = `${mockGitBin}${PATH_SEP}${originalPath ?? ""}`;
     mkdirSync(config.projects["my-app"]!.path, { recursive: true });
 
     const sm = createSessionManager({ config, registry: mockRegistry });
@@ -403,7 +403,7 @@ describe("spawn", () => {
   it("deletes old issue mappings and starts fresh when opencodeIssueSessionStrategy is delete", async () => {
     const deleteLogPath = join(tmpDir, "opencode-delete-issue.log");
     const mockBin = installMockOpencode(tmpDir, "[]", deleteLogPath);
-    process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+    process.env.PATH = `${mockBin}${PATH_SEP}${originalPath ?? ""}`;
 
     const opencodeAgent: Agent = {
       ...mockAgent,
@@ -1146,7 +1146,7 @@ describe("spawn", () => {
         ]),
         deleteLogPath,
       );
-      process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+      process.env.PATH = `${mockBin}${PATH_SEP}${originalPath ?? ""}`;
 
       const opencodeAgent: Agent = {
         ...mockAgent,
@@ -1209,7 +1209,7 @@ describe("spawn", () => {
         ]),
         deleteLogPath,
       );
-      process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+      process.env.PATH = `${mockBin}${PATH_SEP}${originalPath ?? ""}`;
 
       const opencodeAgent: Agent = {
         ...mockAgent,
@@ -1258,7 +1258,7 @@ describe("spawn", () => {
         ]),
         deleteLogPath,
       );
-      process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+      process.env.PATH = `${mockBin}${PATH_SEP}${originalPath ?? ""}`;
 
       const opencodeAgent: Agent = {
         ...mockAgent,
@@ -1310,7 +1310,7 @@ describe("spawn", () => {
         ]),
         deleteLogPath,
       );
-      process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+      process.env.PATH = `${mockBin}${PATH_SEP}${originalPath ?? ""}`;
 
       const opencodeAgent: Agent = {
         ...mockAgent,
@@ -1360,7 +1360,7 @@ describe("spawn", () => {
         ]),
         deleteLogPath,
       );
-      process.env.PATH = `${mockBin}:${originalPath ?? ""}`;
+      process.env.PATH = `${mockBin}${PATH_SEP}${originalPath ?? ""}`;
 
       const opencodeAgent: Agent = {
         ...mockAgent,

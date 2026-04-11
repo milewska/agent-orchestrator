@@ -70,6 +70,8 @@ import { resolveAgentSelection, resolveSessionRole } from "./agent-selection.js"
 const execFileAsync = promisify(execFile);
 const OPENCODE_DISCOVERY_TIMEOUT_MS = 10_000;
 const OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS = 10_000;
+// On Windows, execFile cannot resolve .cmd shim extensions without invoking the shell.
+const EXEC_SHELL_OPTION = process.platform === "win32" ? ({ shell: true } as const) : ({} as const);
 
 function errorIncludesSessionNotFound(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
@@ -90,6 +92,7 @@ async function deleteOpenCodeSession(sessionId: string): Promise<void> {
     try {
       await execFileAsync("opencode", ["session", "delete", validatedSessionId], {
         timeout: 30_000,
+        ...EXEC_SHELL_OPTION,
       });
       return;
     } catch (err) {
@@ -114,6 +117,7 @@ async function fetchOpenCodeSessionList(
   try {
     const { stdout } = await execFileAsync("opencode", ["session", "list", "--format", "json"], {
       timeout: timeoutMs,
+      ...EXEC_SHELL_OPTION,
     });
     const parsed = safeJsonParse<unknown>(stdout);
     if (!Array.isArray(parsed)) return [];
@@ -279,13 +283,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   }
 
   function normalizePath(path: string): string {
-    return resolve(path).replace(/\/$/, "");
+    return resolve(path).replace(/[/\\]$/, "");
   }
 
   function isPathInside(path: string, parentPath: string): boolean {
     const normalizedPath = normalizePath(path);
     const normalizedParent = normalizePath(parentPath);
-    return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`);
+    const sep = process.platform === "win32" ? "\\" : "/";
+    return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}${sep}`);
   }
 
   function getManagedWorkspaceRoots(project: ProjectConfig, projectId?: string): string[] {
@@ -612,6 +617,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         {
           cwd: project.path,
           timeout: 5_000,
+          ...EXEC_SHELL_OPTION,
         },
       );
 

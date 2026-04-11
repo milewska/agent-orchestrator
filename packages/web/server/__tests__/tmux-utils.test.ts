@@ -5,8 +5,8 @@
  * verifying the logic handles all edge cases correctly.
  */
 
-import { describe, it, expect, vi } from "vitest";
-import { findTmux, resolveTmuxSession, validateSessionId, SESSION_ID_PATTERN } from "../tmux-utils.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { findTmux, resolveTmuxSession, resolvePipePath, validateSessionId, SESSION_ID_PATTERN } from "../tmux-utils.js";
 
 // =============================================================================
 // validateSessionId
@@ -797,5 +797,47 @@ describe("resolveTmuxSession", () => {
         expect(mockExec).toHaveBeenCalledWith(tmuxPath, ["has-session", "-t", "=ao-15"], { timeout: 5000 });
       }
     });
+  });
+});
+
+// =============================================================================
+// resolvePipePath
+// =============================================================================
+
+describe("resolvePipePath", () => {
+  const originalPlatform = process.platform;
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", { value: originalPlatform });
+    process.env = { ...originalEnv };
+  });
+
+  it("returns null on non-Windows platforms", () => {
+    Object.defineProperty(process, "platform", { value: "linux" });
+    process.env["AO_CONFIG_PATH"] = "/some/path/agent-orchestrator.yaml";
+    expect(resolvePipePath("ao-1")).toBeNull();
+  });
+
+  it("returns null when AO_CONFIG_PATH is not set", () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    delete process.env["AO_CONFIG_PATH"];
+    expect(resolvePipePath("ao-1")).toBeNull();
+  });
+
+  it("returns pipe path with config hash when config exists", () => {
+    // Build path BEFORE overriding platform (so path separator is correct for OS)
+    const configPath = process.cwd() + "/package.json";
+    Object.defineProperty(process, "platform", { value: "win32" });
+    process.env["AO_CONFIG_PATH"] = configPath;
+    const result = resolvePipePath("ao-1");
+    expect(result).not.toBeNull();
+    expect(result).toMatch(/^\\\\\.\\pipe\\ao-pty-[a-f0-9]{12}-ao-1$/);
+  });
+
+  it("returns null when config path cannot be resolved", () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    process.env["AO_CONFIG_PATH"] = "/nonexistent/path/to/config.yaml";
+    expect(resolvePipePath("ao-1")).toBeNull();
   });
 });

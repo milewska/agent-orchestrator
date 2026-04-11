@@ -160,10 +160,14 @@ describe("getLaunchCommand", () => {
     expect(cmd).toContain("--model 'claude-sonnet-4-5-20250929'");
   });
 
-  it("escapes single quotes in prompt (POSIX shell escaping)", () => {
+  it("escapes single quotes in prompt", () => {
     const cmd = agent.getLaunchCommand(makeLaunchConfig({ prompt: "it's broken" }));
     expect(cmd).toContain("opencode run --format json --title 'AO:sess-1'");
-    expect(cmd).toContain("exec opencode --session \"$SES_ID\" --prompt 'it'\\''s broken'");
+    if (process.platform === "win32") {
+      expect(cmd).toContain("--prompt 'it''s broken'");
+    } else {
+      expect(cmd).toContain("exec opencode --session \"$SES_ID\" --prompt 'it'\\''s broken'");
+    }
   });
 
   it("omits optional flags when not provided", () => {
@@ -282,7 +286,11 @@ do the task'`,
 
   it("escapes single quotes in systemPrompt", () => {
     const cmd = agent.getLaunchCommand(makeLaunchConfig({ systemPrompt: "it's important" }));
-    expect(cmd).toContain("exec opencode --session \"$SES_ID\" --prompt 'it'\\''s important'");
+    if (process.platform === "win32") {
+      expect(cmd).toContain("--prompt 'it''s important'");
+    } else {
+      expect(cmd).toContain("exec opencode --session \"$SES_ID\" --prompt 'it'\\''s important'");
+    }
   });
 
   it("handles very long systemPrompt", () => {
@@ -299,13 +307,24 @@ do the task'`,
   });
 
   it("escapes path in systemPromptFile", () => {
-    const cmd = agent.getLaunchCommand(
-      makeLaunchConfig({ systemPromptFile: "/tmp/it's-prompt.md" }),
-    );
-    expect(cmd).toContain("opencode run --format json --title 'AO:sess-1'");
-    expect(cmd).toContain(
-      "exec opencode --session \"$SES_ID\" --prompt \"$(cat '/tmp/it'\\''s-prompt.md')\"",
-    );
+    if (process.platform === "win32") {
+      mockIsWindows.mockReturnValueOnce(true);
+      mockReadFileSync.mockReturnValueOnce("file content");
+      const cmd = agent.getLaunchCommand(
+        makeLaunchConfig({ systemPromptFile: "/tmp/it's-prompt.md" }),
+      );
+      expect(cmd).toContain("opencode run --format json --title 'AO:sess-1'");
+      expect(cmd).not.toContain("$(cat");
+      expect(cmd).toContain("--prompt 'file content'");
+    } else {
+      const cmd = agent.getLaunchCommand(
+        makeLaunchConfig({ systemPromptFile: "/tmp/it's-prompt.md" }),
+      );
+      expect(cmd).toContain("opencode run --format json --title 'AO:sess-1'");
+      expect(cmd).toContain(
+        "exec opencode --session \"$SES_ID\" --prompt \"$(cat '/tmp/it'\\''s-prompt.md')\"",
+      );
+    }
   });
 
   it("systemPromptFile takes precedence over systemPrompt", () => {
@@ -886,7 +905,7 @@ describe("getEnvironment PATH", () => {
 
   it("prepends ~/.ao/bin to PATH", () => {
     const env = agent.getEnvironment(makeLaunchConfig());
-    expect(env["PATH"]).toMatch(/\.ao\/bin/);
+    expect(env["PATH"]).toMatch(/\.ao[/\\]bin/);
   });
 
   it("sets GH_PATH", () => {

@@ -156,16 +156,32 @@ export function registerSession(program: Command): void {
 
       if (isWindows()) {
         // Windows: connect to PTY host named pipe and relay raw terminal I/O
-        const handleId =
-          sessionInfo?.runtimeHandle?.id ??
-          (config.configPath
-            ? `${generateConfigHash(config.configPath)}-${sessionName}`
-            : sessionName);
-        const pipePath = `\\\\.\\pipe\\ao-pty-${handleId}`;
+        // Prefer explicit pipePath from runtimeHandle.data if it's a valid string
+        const dataPipePath = sessionInfo?.runtimeHandle?.data?.["pipePath"];
+        const pipePath = typeof dataPipePath === "string" && dataPipePath
+          ? dataPipePath
+          : `\\\\.\\pipe\\ao-pty-${
+              sessionInfo?.runtimeHandle?.id ??
+              (config.configPath
+                ? `${generateConfigHash(config.configPath)}-${sessionName}`
+                : sessionName)
+            }`;
 
         const sock = netConnect(pipePath);
 
+        // Handler refs — set in connect, cleaned up on exit
+        let sendResize: (() => void) | null = null;
+        let stdinHandler: ((data: Buffer) => void) | null = null;
+
+        const cleanup = () => {
+          if (process.stdin.isTTY) process.stdin.setRawMode(false);
+          if (sendResize) process.stdout.removeListener("resize", sendResize);
+          if (stdinHandler) process.stdin.removeListener("data", stdinHandler);
+          sock.destroy();
+        };
+
         sock.on("error", (err: Error) => {
+          cleanup();
           console.error(chalk.red(`Cannot attach to ${sessionName}: ${err.message}`));
           process.exit(1);
         });
@@ -210,7 +226,7 @@ export function registerSession(program: Command): void {
 
           // stdin → PTY host (MSG_TERMINAL_INPUT = 0x02)
           // Ctrl+\ (0x1c) = detach without killing (like tmux Ctrl+B,D)
-          process.stdin.on("data", (data: Buffer) => {
+          stdinHandler = (data: Buffer) => {
             if (data.length === 1 && data[0] === 0x1c) {
               console.log("\n[detached]");
               cleanup();
@@ -221,10 +237,11 @@ export function registerSession(program: Command): void {
             header.writeUInt8(0x02, 0);
             header.writeUInt32BE(data.length, 1);
             sock.write(Buffer.concat([header, data]));
-          });
+          };
+          process.stdin.on("data", stdinHandler);
 
           // Send terminal resize (MSG_RESIZE = 0x03)
-          const sendResize = () => {
+          sendResize = () => {
             const payload = Buffer.from(
               JSON.stringify({ cols: process.stdout.columns, rows: process.stdout.rows }),
             );
@@ -235,11 +252,6 @@ export function registerSession(program: Command): void {
           };
           process.stdout.on("resize", sendResize);
           sendResize(); // send initial size
-
-          const cleanup = () => {
-            if (process.stdin.isTTY) process.stdin.setRawMode(false);
-            sock.destroy();
-          };
 
           sock.on("close", () => {
             cleanup();

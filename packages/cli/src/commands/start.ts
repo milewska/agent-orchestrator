@@ -1146,6 +1146,8 @@ async function runStartup(
     // On Unix the dashboard is spawned with detached:true (own process group)
     // so Ctrl+C only reaches AO's process group, not the dashboard's. Forward
     // SIGINT/SIGTERM so the dashboard group is also cleaned up on exit.
+    // On Windows, detached:false keeps child in the same console —
+    // Ctrl+C reaches both processes. No signal forwarding needed.
     if (!isWindows() && pid) {
       forwardSignalsToChild(pid, dashboardProcess);
     }

@@ -257,37 +257,37 @@ describe("Path Construction", () => {
   it("getProjectBaseDir returns correct format", () => {
     const baseDir = getProjectBaseDir(configPath, "/repos/integrator");
 
-    expect(baseDir).toMatch(/^.*\/.agent-orchestrator\/[a-f0-9]{12}-integrator$/);
+    expect(baseDir).toMatch(/^.*[/\\]\.agent-orchestrator[/\\][a-f0-9]{12}-integrator$/);
   });
 
   it("getSessionsDir returns {baseDir}/sessions", () => {
     const sessionsDir = getSessionsDir(configPath, "/repos/integrator");
 
-    expect(sessionsDir).toMatch(/\.agent-orchestrator\/[a-f0-9]{12}-integrator\/sessions$/);
+    expect(sessionsDir).toMatch(/\.agent-orchestrator[/\\][a-f0-9]{12}-integrator[/\\]sessions$/);
   });
 
   it("getWorktreesDir returns {baseDir}/worktrees", () => {
     const worktreesDir = getWorktreesDir(configPath, "/repos/integrator");
 
-    expect(worktreesDir).toMatch(/\.agent-orchestrator\/[a-f0-9]{12}-integrator\/worktrees$/);
+    expect(worktreesDir).toMatch(/\.agent-orchestrator[/\\][a-f0-9]{12}-integrator[/\\]worktrees$/);
   });
 
   it("getFeedbackReportsDir returns {baseDir}/feedback-reports", () => {
     const reportsDir = getFeedbackReportsDir(configPath, "/repos/integrator");
 
-    expect(reportsDir).toMatch(/\.agent-orchestrator\/[a-f0-9]{12}-integrator\/feedback-reports$/);
+    expect(reportsDir).toMatch(/\.agent-orchestrator[/\\][a-f0-9]{12}-integrator[/\\]feedback-reports$/);
   });
 
   it("getArchiveDir returns {baseDir}/sessions/archive", () => {
     const archiveDir = getArchiveDir(configPath, "/repos/integrator");
 
-    expect(archiveDir).toMatch(/\.agent-orchestrator\/[a-f0-9]{12}-integrator\/sessions\/archive$/);
+    expect(archiveDir).toMatch(/\.agent-orchestrator[/\\][a-f0-9]{12}-integrator[/\\]sessions[/\\]archive$/);
   });
 
   it("getOriginFilePath returns {baseDir}/.origin", () => {
     const originPath = getOriginFilePath(configPath, "/repos/integrator");
 
-    expect(originPath).toMatch(/\.agent-orchestrator\/[a-f0-9]{12}-integrator\/\.origin$/);
+    expect(originPath).toMatch(/\.agent-orchestrator[/\\][a-f0-9]{12}-integrator[/\\]\.origin$/);
   });
 
   it("all paths share the same base directory", () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { join as pathJoin } from "node:path";
 import type { Session, RuntimeHandle, AgentLaunchConfig, WorkspaceHooksConfig } from "@aoagents/ao-core";
 
 // ---------------------------------------------------------------------------
@@ -520,7 +521,7 @@ describe("getSessionInfo", () => {
       mockJsonlFiles('{"type":"user","message":{"content":"hello"}}');
       await agent.getSessionInfo(makeSession({ workspacePath: "/Users/dev/.worktrees/ao/ao-3" }));
       expect(mockReaddir).toHaveBeenCalledWith(
-        "/mock/home/.claude/projects/-Users-dev--worktrees-ao-ao-3",
+        pathJoin("/mock/home", ".claude", "projects", "-Users-dev--worktrees-ao-ao-3"),
       );
     });
   });
@@ -893,7 +894,7 @@ describe("hook setup — relative path (symlink-safe)", () => {
     );
     expect(scriptWrite).toBeDefined();
     expect(scriptWrite![0]).toBe(
-      "/Users/equinox/.worktrees/integrator/integrator-5/.claude/metadata-updater.sh",
+      pathJoin("/Users/equinox/.worktrees/integrator/integrator-5", ".claude", "metadata-updater.sh"),
     );
   });
 

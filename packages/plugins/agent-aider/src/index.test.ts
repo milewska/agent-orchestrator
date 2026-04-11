@@ -189,9 +189,13 @@ describe("getLaunchCommand", () => {
     expect(cmd).toBe("aider --yes --model 'sonnet' --message 'Go'");
   });
 
-  it("escapes single quotes in prompt (POSIX shell escaping)", () => {
+  it("escapes single quotes in prompt", () => {
     const cmd = agent.getLaunchCommand(makeLaunchConfig({ prompt: "it's broken" }));
-    expect(cmd).toContain("--message 'it'\\''s broken'");
+    if (process.platform === "win32") {
+      expect(cmd).toContain("--message 'it''s broken'");
+    } else {
+      expect(cmd).toContain("--message 'it'\\''s broken'");
+    }
   });
 
   it("omits optional flags when not provided", () => {
@@ -465,7 +469,7 @@ describe("getEnvironment PATH", () => {
 
   it("prepends ~/.ao/bin to PATH", () => {
     const env = agent.getEnvironment(makeLaunchConfig());
-    expect(env["PATH"]).toMatch(/\.ao\/bin/);
+    expect(env["PATH"]).toMatch(/\.ao[/\\]bin/);
   });
 
   it("sets GH_PATH", () => {

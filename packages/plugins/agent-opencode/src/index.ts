@@ -275,6 +275,16 @@ function createOpenCodeAgent(): Agent {
         const missingSessionError = shellEscape(
           `failed to discover OpenCode session ID for AO:${config.sessionId}`,
         );
+
+        if (isWindows()) {
+          // PowerShell: capture session ID, fallback to lookup, then resume
+          return [
+            `$SES_ID = (${runCommand} | node -e ${shellEscape(captureScript)})`,
+            `if (-not $SES_ID) { $SES_ID = (opencode session list --format json | node -e ${shellEscape(fallbackScript)} ${shellEscape(`AO:${config.sessionId}`)}) }`,
+            `if ($SES_ID) { opencode --session $SES_ID${resumeOptionsSuffix} } else { Write-Error ${missingSessionError}; exit 1 }`,
+          ].join("; ");
+        }
+
         return [
           `SES_ID=$(${runCommand} | node -e ${shellEscape(captureScript)})`,
           `if [ -z "$SES_ID" ]; then SES_ID=$(opencode session list --format json | node -e ${shellEscape(fallbackScript)} ${shellEscape(`AO:${config.sessionId}`)}); fi`,
