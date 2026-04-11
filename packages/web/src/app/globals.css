@@ -4746,17 +4746,23 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   .mobile-feed-card {
     display: flex;
     gap: 12px;
-    background: var(--color-bg-card);
-    border: 1px solid var(--color-border-default);
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
     border-radius: 6px;
     padding: 12px;
     text-decoration: none;
     color: var(--color-text-primary);
-    transition: background 0.12s ease;
+    box-shadow: var(--card-shadow);
+    transition:
+      background 0.12s ease,
+      border-color 0.12s ease,
+      box-shadow 0.12s ease;
   }
 
   .mobile-feed-card:active {
-    background: var(--color-bg-elevated);
+    background: var(--card-expanded-bg);
+    border-color: var(--color-border-strong);
+    box-shadow: var(--card-shadow-hover);
   }
 
   .mobile-feed-card__strip {
@@ -4835,7 +4841,8 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     font-family: var(--font-mono);
     font-size: 10px;
     color: var(--color-text-secondary);
-    background: var(--color-bg-subtle);
+    background: color-mix(in srgb, var(--color-bg-subtle) 88%, var(--color-bg-surface));
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 88%, transparent);
     padding: 2px 6px;
     border-radius: 4px;
     white-space: nowrap;
@@ -4867,24 +4874,29 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     font-size: 10px;
     font-family: var(--font-mono);
     padding: 2px 6px;
+    border: 1px solid transparent;
     border-radius: 4px;
     font-weight: 500;
   }
 
   .mobile-feed-card__pill--green {
-    background: rgba(34, 197, 94, 0.15);
+    background: color-mix(in srgb, var(--color-accent-green) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent-green) 22%, transparent);
     color: var(--color-accent-green);
   }
   .mobile-feed-card__pill--amber {
-    background: rgba(226, 163, 54, 0.15);
+    background: color-mix(in srgb, var(--color-status-attention) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-status-attention) 22%, transparent);
     color: var(--color-status-attention);
   }
   .mobile-feed-card__pill--red {
-    background: rgba(239, 68, 68, 0.15);
+    background: color-mix(in srgb, var(--color-accent-red) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent-red) 22%, transparent);
     color: var(--color-accent-red);
   }
   .mobile-feed-card__pill--accent {
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
     color: var(--color-accent);
   }
 
@@ -4902,7 +4914,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     height: 100vh;
     height: 100dvh;
     overflow: hidden;
-    background: #0c0b0a;
+    background: var(--color-bg-base);
   }
 
   .session-detail__floating-header {
@@ -4914,9 +4926,10 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     align-items: center;
     gap: 10px;
     padding: max(env(safe-area-inset-top, 8px), 8px) 16px 8px;
-    background: rgba(12, 11, 10, 0.85);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: color-mix(in srgb, var(--color-bg-base) 88%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-border-subtle) 92%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     z-index: 10;
   }
 
@@ -4949,6 +4962,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     font-size: 10px;
     font-family: var(--font-mono);
     padding: 2px 8px;
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
     border-radius: 10px;
   }
 
@@ -4989,17 +5003,18 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
     bottom: calc(60px + env(safe-area-inset-bottom, 0px));
     left: 0;
     right: 0;
-    background: var(--color-bg-surface);
-    border-top: 1px solid var(--color-border-default);
+    background: color-mix(in srgb, var(--color-bg-surface) 96%, var(--color-bg-base));
+    border-top: 1px solid color-mix(in srgb, var(--color-border-default) 88%, transparent);
     border-radius: 12px 12px 0 0;
     padding: 8px 16px 12px;
+    box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.22);
     z-index: 10;
   }
 
   .session-detail__sheet-handle {
     width: 36px;
     height: 4px;
-    background: var(--color-text-tertiary);
+    background: color-mix(in srgb, var(--color-text-tertiary) 72%, transparent);
     border-radius: 2px;
     margin: 0 auto 10px;
   }

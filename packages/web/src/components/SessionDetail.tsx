@@ -598,12 +598,12 @@ export function SessionDetail({
   }
 
   const statusPillBg = activity.color === "var(--color-status-working)"
-    ? "rgba(34,197,94,0.15)"
+    ? "color-mix(in srgb, var(--color-status-working) 12%, transparent)"
     : activity.color === "var(--color-status-attention)"
-      ? "rgba(226,163,54,0.15)"
+      ? "color-mix(in srgb, var(--color-status-attention) 12%, transparent)"
       : activity.color === "var(--color-status-error)"
-        ? "rgba(239,68,68,0.15)"
-        : "rgba(139,156,247,0.12)";
+        ? "color-mix(in srgb, var(--color-status-error) 12%, transparent)"
+        : "color-mix(in srgb, var(--color-accent) 12%, transparent)";
 
   return (
     <div className="session-detail--terminal-first">
