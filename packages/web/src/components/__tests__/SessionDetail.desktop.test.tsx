@@ -255,4 +255,30 @@ describe("SessionDetail desktop layout", () => {
     expect(screen.getByText("review")).toBeInTheDocument();
     expect(screen.getByText("working")).toBeInTheDocument();
   });
+
+  it("keeps the orchestrator header aligned and shows an empty state when all zones are zero", () => {
+    const { container } = render(
+      <SessionDetail
+        session={makeSession({
+          id: "my-app-orchestrator",
+          projectId: "my-app",
+          metadata: { role: "orchestrator" },
+          summary: "Idle orchestrator",
+          branch: null,
+          createdAt: new Date().toISOString(),
+        })}
+        isOrchestrator
+        orchestratorZones={{ merge: 0, respond: 0, review: 0, pending: 0, working: 0, done: 0 }}
+        projectOrchestratorId="my-app-orchestrator"
+      />,
+    );
+
+    expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.getByText("no active agents")).toBeInTheDocument();
+
+    const contentMain = container.querySelector(".session-detail-layout > main");
+    const topStrip = container.querySelector(".session-detail-top-strip");
+    expect(contentMain).toContainElement(topStrip);
+    expect(topStrip?.parentElement).toBe(contentMain);
+  });
 });
