@@ -1,4 +1,4 @@
-import { ACTIVITY_STATE, isOrchestratorSession } from "@aoagents/ao-core";
+import { ACTIVITY_STATE, isOrchestratorSession, TERMINAL_STATUSES } from "@aoagents/ao-core";
 import { getServices, getSCM } from "@/lib/services";
 import {
   sessionToDashboard,
@@ -92,6 +92,7 @@ export async function GET(request: Request) {
       for (let i = 0; i < workerSessions.length; i++) {
         const core = workerSessions[i];
         if (!core?.pr) continue;
+        if (TERMINAL_STATUSES.has(core.status)) continue;
 
         const project = resolveProject(core, config.projects);
         const scm = getSCM(registry, project);
