@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
-import { getAttentionLevel, type AttentionLevel, type DashboardSession, type PortfolioProjectSummary } from "@/lib/types";
+import { getAttentionLevel, type DashboardSession, type PortfolioProjectSummary } from "@/lib/types";
 import { getProjectSessionHref } from "@/lib/project-utils";
 import { getSessionTitle } from "@/lib/format";
 import { isOrchestratorSession } from "@aoagents/ao-core/types";
@@ -26,7 +26,6 @@ import {
   AGENT_DOT_COLORS,
   AgentFaviconIcon,
   ATTENTION_BORDER_CLASS,
-  CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ClockIcon,
@@ -39,7 +38,6 @@ import {
   LinkIcon,
   MoreIcon,
   PlusIcon,
-  SelectChevronIcon,
   SidebarAgentIcon,
   SortIcon,
   StarIcon,

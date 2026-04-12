@@ -355,7 +355,7 @@ export async function pollBacklog(): Promise<void> {
     );
 
     // Auto-scaling: respect max concurrent agents
-    let availableSlots = MAX_CONCURRENT_AGENTS - workerSessions.length;
+    const availableSlots = MAX_CONCURRENT_AGENTS - workerSessions.length;
     if (availableSlots <= 0) return; // At capacity
     await claimBacklogIssues(config, registry, sessionManager, activeIssueIds, availableSlots);
   } catch (err) {
