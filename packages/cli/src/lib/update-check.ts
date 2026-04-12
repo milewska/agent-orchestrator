@@ -266,7 +266,7 @@ export function scheduleBackgroundRefresh(): void {
 // ---------------------------------------------------------------------------
 
 /** Simple semver comparison: returns true if current < latest. */
-function isVersionOutdated(current: string, latest: string): boolean {
+export function isVersionOutdated(current: string, latest: string): boolean {
   const currentParts = current.split(".").map(Number);
   const latestParts = latest.split(".").map(Number);
   for (let i = 0; i < 3; i++) {

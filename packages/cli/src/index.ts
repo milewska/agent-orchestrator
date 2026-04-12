@@ -5,8 +5,20 @@ import { maybeShowUpdateNotice, scheduleBackgroundRefresh } from "./lib/update-c
 // Synchronous cache read — no network call on startup.
 maybeShowUpdateNotice();
 
+import { ConfigNotFoundError } from "@aoagents/ao-core";
 import { createProgram } from "./program.js";
-createProgram().parse();
 
-// Background cache refresh so next run has fresh data.
-scheduleBackgroundRefresh();
+createProgram()
+  .parseAsync()
+  .catch((err) => {
+    if (err instanceof ConfigNotFoundError) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+      return;
+    }
+    throw err;
+  })
+  .finally(() => {
+    // Background cache refresh so next run has fresh data.
+    scheduleBackgroundRefresh();
+  });

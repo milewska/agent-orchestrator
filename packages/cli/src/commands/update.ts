@@ -120,6 +120,8 @@ async function handleNpmUpdate(opts: {
   if (exitCode === 0) {
     invalidateCache();
     console.log(chalk.green("\nUpdate complete."));
+  } else {
+    process.exit(exitCode);
   }
 }
 

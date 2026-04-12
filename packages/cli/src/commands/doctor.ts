@@ -16,7 +16,7 @@ import {
 import { runRepoScript } from "../lib/script-runner.js";
 import { detectOpenClawInstallation, validateToken } from "../lib/openclaw-probe.js";
 import { importPluginModuleFromSource } from "../lib/plugin-store.js";
-import { getCurrentVersion, readCachedUpdateInfo } from "../lib/update-check.js";
+import { getCurrentVersion, isVersionOutdated, readCachedUpdateInfo } from "../lib/update-check.js";
 
 // ---------------------------------------------------------------------------
 // Helpers — match the PASS / WARN / FAIL style of ao-doctor.sh
@@ -394,20 +394,7 @@ function checkVersionFreshness(): void {
     return;
   }
 
-  const currentParts = current.split(".").map(Number);
-  const latestParts = cached.latestVersion.split(".").map(Number);
-  let outdated = false;
-  for (let i = 0; i < 3; i++) {
-    const c = currentParts[i] ?? 0;
-    const l = latestParts[i] ?? 0;
-    if (c < l) {
-      outdated = true;
-      break;
-    }
-    if (c > l) break;
-  }
-
-  if (outdated) {
+  if (isVersionOutdated(current, cached.latestVersion)) {
     warn(`ao v${current} is outdated (latest: v${cached.latestVersion}). Run: ao update`);
   } else {
     pass(`ao v${current} is the latest version`);

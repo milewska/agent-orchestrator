@@ -53,6 +53,15 @@ vi.mock("../../src/lib/openclaw-probe.js", () => ({
 vi.mock("../../src/lib/update-check.js", () => ({
   getCurrentVersion: () => mockGetCurrentVersion(),
   readCachedUpdateInfo: () => mockReadCachedUpdateInfo(),
+  isVersionOutdated: (current: string, latest: string) => {
+    const cp = current.split(".").map(Number);
+    const lp = latest.split(".").map(Number);
+    for (let i = 0; i < 3; i++) {
+      if ((cp[i] ?? 0) < (lp[i] ?? 0)) return true;
+      if ((cp[i] ?? 0) > (lp[i] ?? 0)) return false;
+    }
+    return false;
+  },
 }));
 
 import { registerDoctor } from "../../src/commands/doctor.js";
