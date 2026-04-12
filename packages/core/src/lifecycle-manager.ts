@@ -475,10 +475,12 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         if (detectedPR) {
           session.pr = detectedPR;
           // Persist PR URL so subsequent polls don't need to re-query.
-          // Don't write status here — step 4 below will determine the
-          // correct status (merged, ci_failed, etc.) on this same cycle.
+          // Detect-and-stop: don't check status this cycle — the batch
+          // will include this PR next cycle. This avoids individual REST
+          // calls that previously caused rate limit cascades (F-02).
           const sessionsDir = getSessionsDir(config.configPath, project.path);
           updateMetadata(sessionsDir, session.id, { pr: detectedPR.url });
+          return session.status === "spawning" ? "working" : session.status;
         }
       } catch {
         // SCM detection failed — will retry next poll
@@ -524,38 +526,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           return "pr_open";
         }
 
-        // Fall back to individual API calls if no cached data
-        const prState = await scm.getPRState(session.pr);
-        if (prState === PR_STATE.MERGED) return "merged";
-        if (prState === PR_STATE.CLOSED) return "killed";
-
-        // Check CI
-        const ciStatus = await scm.getCISummary(session.pr);
-        if (ciStatus === CI_STATUS.FAILING) return "ci_failed";
-
-        // Check reviews
-        const reviewDecision = await scm.getReviewDecision(session.pr);
-        if (reviewDecision === "changes_requested") return "changes_requested";
-        if (reviewDecision === "approved" || reviewDecision === "none") {
-          // Check merge readiness — treat "none" (no reviewers required)
-          // as "approved" so CI-green PRs reach "mergeable" status
-          // and fire the merge.ready event / approved-and-green reaction.
-          const mergeReady = await scm.getMergeability(session.pr);
-          if (mergeReady.mergeable) return "mergeable";
-          if (reviewDecision === "approved") return "approved";
-        }
-        if (reviewDecision === "pending") return "review_pending";
-
-        // 4b. Post-PR stuck detection: agent has a PR open but is idle beyond
-        // threshold. This catches the case where step 2's stuck check was
-        // bypassed (getActivityState returned null) or the idle timestamp
-        // wasn't available during step 2 but the session has been at pr_open
-        // for a long time. Without this, sessions get stuck at "pr_open" forever.
-        if (detectedIdleTimestamp && isIdleBeyondThreshold(session, detectedIdleTimestamp)) {
-          return "stuck";
-        }
-
-        return "pr_open";
+        // Batch cache miss — keep current status, defer to next cycle.
+        // The batch runs every 30s and will include this PR next time.
+        // This avoids spawning 4-7 individual REST calls per session on
+        // cache miss, which previously caused rate limit cascades (F-02).
+        return session.status;
       } catch {
         // SCM check failed — keep current status
       }
@@ -782,27 +757,23 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     // Throttle review backlog API calls to at most once per 2 minutes.
     // Comments don't change faster than this in practice, and the SCM calls
     // (getPendingComments + getAutomatedComments) consume API quota on every poll.
-    //
-    // Exception: bypass throttle when a transition reaction just fired for a
-    // review reaction key. The transitionReaction branch records
-    // lastPendingReviewDispatchHash, which requires the current fingerprint from
-    // the API. If we throttle here, that metadata never gets written and the
-    // next unthrottled poll sees a "new" fingerprint, clears the reaction tracker,
-    // and fires a duplicate dispatch.
-    const hasRelevantTransition =
-      transitionReaction?.key === humanReactionKey ||
-      transitionReaction?.key === automatedReactionKey;
-    if (!hasRelevantTransition) {
-      const lastCheckAt = lastReviewBacklogCheckAt.get(session.id) ?? 0;
-      if (Date.now() - lastCheckAt < REVIEW_BACKLOG_THROTTLE_MS) {
-        return;
-      }
+    // No bypass exceptions — with `since` parameter on getAutomatedComments,
+    // delta fetches are cheap and the bypass is unnecessary (F-05).
+    const lastCheckAt = lastReviewBacklogCheckAt.get(session.id) ?? 0;
+    if (Date.now() - lastCheckAt < REVIEW_BACKLOG_THROTTLE_MS) {
+      return;
     }
     lastReviewBacklogCheckAt.set(session.id, Date.now());
 
+    // Pass `since` timestamp to getAutomatedComments for delta fetches.
+    // On the first call (no previous check), fetch all comments.
+    const sinceTimestamp = lastCheckAt > 0
+      ? new Date(lastCheckAt).toISOString()
+      : undefined;
+
     const [pendingResult, automatedResult] = await Promise.allSettled([
       scm.getPendingComments(session.pr),
-      scm.getAutomatedComments(session.pr),
+      scm.getAutomatedComments(session.pr, sinceTimestamp),
     ]);
 
     // null means "failed to fetch" — preserve existing metadata.
@@ -997,17 +968,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
     const cachedEnrichment = prEnrichmentCache.get(prKey);
 
-    let checks: CICheck[];
-    if (cachedEnrichment?.ciChecks !== undefined) {
-      checks = cachedEnrichment.ciChecks;
-    } else {
-      try {
-        checks = await scm.getCIChecks(session.pr);
-      } catch {
-        // Failed to fetch checks — skip this cycle
-        return;
-      }
-    }
+    // Use batch enrichment data only — no fallback to individual REST calls.
+    // If the batch didn't include CI checks this cycle, defer to next cycle.
+    if (cachedEnrichment?.ciChecks === undefined) return;
+    const checks: CICheck[] = cachedEnrichment.ciChecks;
 
     const failedChecks = checks.filter(
       (c) => c.status === "failed" || c.conclusion?.toUpperCase() === "FAILURE",
@@ -1124,19 +1088,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
     const cachedData = prEnrichmentCache.get(prKey);
 
-    let hasConflicts: boolean;
-    if (cachedData) {
-      // Batch ran — trust its data (undefined means CONFLICTING wasn't set → no conflicts)
-      hasConflicts = cachedData.hasConflicts ?? false;
-    } else {
-      // Batch didn't run this cycle — fall back to individual API call
-      try {
-        const mergeReadiness = await scm.getMergeability(session.pr);
-        hasConflicts = !mergeReadiness.noConflicts;
-      } catch {
-        return;
-      }
-    }
+    // Use batch enrichment data only — no fallback to individual REST calls.
+    // If the batch didn't run this cycle, defer to next cycle.
+    if (!cachedData) return;
+    const hasConflicts = cachedData.hasConflicts ?? false;
 
     const lastDispatched = session.metadata["lastMergeConflictDispatched"] ?? "";
 
@@ -1445,6 +1400,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     async check(sessionId: SessionId): Promise<void> {
       const session = await sessionManager.get(sessionId);
       if (!session) throw new Error(`Session ${sessionId} not found`);
+      // Populate enrichment cache for this single session so determineStatus()
+      // can use batch data even when called outside pollAll().
+      await populatePREnrichmentCache([session]);
       await checkSession(session);
     },
   };
