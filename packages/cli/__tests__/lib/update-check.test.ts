@@ -14,7 +14,7 @@ const { mockExistsSync, mockReadFileSync, mockWriteFileSync, mockUnlinkSync, moc
   }));
 
 vi.mock("node:fs", async () => {
-  const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+  const actual = await vi.importActual("node:fs");
   return {
     ...actual,
     existsSync: (...args: unknown[]) => mockExistsSync(args[0] as string),

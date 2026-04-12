@@ -59,7 +59,7 @@ const { mockSpawn } = vi.hoisted(() => ({
 }));
 
 vi.mock("node:child_process", async () => {
-  const actual = await vi.importActual<typeof import("node:child_process")>("node:child_process");
+  const actual = await vi.importActual("node:child_process");
   return {
     ...actual,
     spawn: (...args: unknown[]) => mockSpawn(...args),
