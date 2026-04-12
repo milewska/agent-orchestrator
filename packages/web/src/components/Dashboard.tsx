@@ -9,6 +9,7 @@ import {
   type AttentionLevel,
   type GlobalPauseState,
   type DashboardOrchestratorLink,
+  type GlobalPauseState,
   getAttentionLevel,
   isPRRateLimited,
   isPRMergeReady,
@@ -18,7 +19,6 @@ import { DynamicFavicon } from "./DynamicFavicon";
 import { useSessionEvents } from "@/hooks/useSessionEvents";
 
 import type { ProjectInfo } from "@/lib/project-name";
-import type { GlobalPauseState } from "@/lib/types";
 import { EmptyState } from "./Skeleton";
 import { ToastProvider, useToast } from "./Toast";
 import { BottomSheet } from "./BottomSheet";
