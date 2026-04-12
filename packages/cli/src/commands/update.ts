@@ -112,9 +112,10 @@ async function handleNpmUpdate(opts: {
   const command = "npm install -g @aoagents/ao@latest";
 
   if (!isTTY()) {
-    // Non-interactive: print command but exit non-zero so scripts know no upgrade happened
+    // Non-interactive: print the command. Exit 0 because this isn't an error,
+    // the user just needs to run the command manually.
     console.log(`Run: ${chalk.cyan(command)}`);
-    process.exit(1);
+    return;
   }
 
   const confirmed = await promptConfirm(`Run ${chalk.cyan(command)}?`);
@@ -136,11 +137,7 @@ function runNpmInstall(command: string): Promise<number> {
     child.on("error", reject);
     child.on("exit", (code) => {
       if (code !== 0) {
-        console.error(
-          chalk.yellow(
-            `\nnpm exited with code ${code}. If this is a permissions issue, try:\n  ${chalk.cyan(`sudo ${command}`)}`,
-          ),
-        );
+        console.error(chalk.yellow(`\nnpm exited with code ${code}.`));
       }
       resolveExit(code ?? 1);
     });

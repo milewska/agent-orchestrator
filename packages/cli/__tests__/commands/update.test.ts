@@ -250,26 +250,14 @@ describe("update command", () => {
       expect(mockCheckForUpdate).toHaveBeenCalledWith({ force: true });
     });
 
-    it("exits non-zero in non-TTY mode without prompting", async () => {
-      Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
-      Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
-
-      await expect(
-        program.parseAsync(["node", "test", "update"]),
-      ).rejects.toThrow("process.exit(1)");
-      expect(mockPromptConfirm).not.toHaveBeenCalled();
-    });
-
-    it("prints the npm command in non-TTY mode", async () => {
+    it("prints command and exits cleanly in non-TTY mode without prompting", async () => {
       Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
       Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
 
       const logSpy = vi.mocked(console.log);
-      try {
-        await program.parseAsync(["node", "test", "update"]);
-      } catch {
-        // process.exit throws
-      }
+      await program.parseAsync(["node", "test", "update"]);
+
+      expect(mockPromptConfirm).not.toHaveBeenCalled();
       const allOutput = logSpy.mock.calls.map((c) => c[0]).join("\n");
       expect(allOutput).toContain("npm install -g @aoagents/ao@latest");
     });
@@ -298,7 +286,7 @@ describe("update command", () => {
       expect(mockInvalidateCache).not.toHaveBeenCalled();
     });
 
-    it("prints sudo suggestion when npm install fails", async () => {
+    it("prints exit code when npm install fails", async () => {
       Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
       Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
       mockPromptConfirm.mockResolvedValue(true);
@@ -310,7 +298,7 @@ describe("update command", () => {
         // process.exit throws
       }
       expect(vi.mocked(console.error)).toHaveBeenCalledWith(
-        expect.stringContaining("sudo"),
+        expect.stringContaining("exited with code 1"),
       );
     });
 
