@@ -220,6 +220,7 @@ export function setPRMetadata(
 export function clearPRMetadataCache(): void {
   prMetadataCache.clear();
   prEnrichmentDataCache.clear();
+  lastBatchRefreshAt = 0;
 }
 
 /**
