@@ -138,7 +138,7 @@ function runNpmInstall(command: string): Promise<number> {
     child.on("error", reject);
     child.on("exit", (code) => {
       if (code !== 0) {
-        console.error(chalk.yellow(`\nnpm exited with code ${code}.`));
+        console.error(chalk.yellow(`\n${cmd} exited with code ${code}.`));
       }
       resolveExit(code ?? 1);
     });
