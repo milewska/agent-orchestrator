@@ -36,6 +36,9 @@ import {
   registerProjectInGlobalConfig,
   isProjectShadowStale,
   getGlobalConfigPath,
+  isOldConfigFormat,
+  migrateToGlobalConfig,
+  loadPreferences,
   type OrchestratorConfig,
   type ProjectConfig,
   type ParsedRepoUrl,
@@ -119,6 +122,12 @@ async function resolveProject(
   const matchedProjectId = findProjectForDirectory(config.projects, currentDir);
   if (matchedProjectId) {
     return { projectId: matchedProjectId, project: config.projects[matchedProjectId] };
+  }
+
+  // Default project preference — use it before prompting
+  const defaultProjectId = loadPreferences().defaultProjectId;
+  if (defaultProjectId && config.projects[defaultProjectId]) {
+    return { projectId: defaultProjectId, project: config.projects[defaultProjectId] };
   }
 
   // No match — prompt if interactive, otherwise error
@@ -794,7 +803,9 @@ async function addProjectToConfig(
   };
 
   writeFileSync(config.configPath, yamlStringify(rawConfig, { indent: 2 }));
-  console.log(chalk.green(`\n✓ Added "${projectId}" to ${config.configPath}\n`));
+  const dashboardPort = config.port ?? DEFAULT_PORT;
+  console.log(chalk.green(`\n✓ Added "${projectId}" to ${config.configPath}`));
+  console.log(chalk.dim(`  Dashboard: http://localhost:${dashboardPort}/projects/${projectId}\n`));
 
   if (!ownerRepo) {
     console.log(chalk.yellow("⚠ No repo configured — issue tracking and PR features will be unavailable."));
@@ -1313,7 +1324,7 @@ export function registerStart(program: Command): void {
   program
     .command("start [project]")
     .description(
-      "Start orchestrator agent and dashboard (auto-creates config on first run, adds projects by path/URL)",
+      "Start orchestrator agent and dashboard (auto-creates config on first run, adds projects by path/URL). To register a project without starting the orchestrator, use `ao project add <path>`.",
     )
     .option("--no-dashboard", "Skip starting the dashboard server")
     .option("--no-orchestrator", "Skip starting the orchestrator agent")
@@ -1412,13 +1423,21 @@ export function registerStart(program: Command): void {
             }
 
             if (!configPath) {
+              // No existing config. If the path arg points elsewhere, don't auto-create
+              // in cwd — that would surprise the user with an unexpected config file.
+              // Instead, run setup from within the target directory.
               if (resolve(cwd()) !== resolvedPath) {
-                // Target path differs from cwd — create config at the target repo
-                config = await autoCreateConfig(resolvedPath);
-              } else {
-                // cwd is the target — auto-create config here
-                config = await autoCreateConfig(cwd());
+                console.error(chalk.red(`\n✗ No agent-orchestrator.yaml found.\n`));
+                console.log(
+                  chalk.dim(`  Run \`ao start\` from inside ${resolvedPath} to set it up first,`),
+                );
+                console.log(
+                  chalk.dim(`  then run \`ao start ${projectArg}\` to add it to your portfolio.\n`),
+                );
+                process.exit(1);
               }
+              // Path matches cwd — auto-create config here as expected
+              config = await autoCreateConfig(cwd());
               ({ projectId, project } = await resolveProject(config));
             } else {
               config = loadConfig(configPath);
@@ -1451,6 +1470,53 @@ export function registerStart(program: Command): void {
                 loadedConfig = await autoCreateConfig(cwd());
               } else {
                 throw err;
+              }
+            }
+
+            // ── Migration: detect old single-file format and offer upgrade ──
+            // Old format: single file with `projects:` wrapper at the project root.
+            // New format: global config + flat per-project local configs.
+            // Only prompt when the global config doesn't exist yet (first migration).
+            const loadedPath = loadedConfig.configPath;
+            if (loadedPath && !existsSync(getGlobalConfigPath())) {
+              try {
+                const rawContent = readFileSync(loadedPath, "utf-8");
+                const rawParsed = yamlParse(rawContent);
+                if (isOldConfigFormat(rawParsed)) {
+                  console.log(chalk.yellow("\n  Detected single-project config format."));
+                  console.log(
+                    chalk.dim(
+                      "  The new format separates identity (global registry) from behavior (local config).\n" +
+                      "  This enables multi-project support and remote CLI access.\n",
+                    ),
+                  );
+                  const shouldMigrate = await askYesNo("  Migrate to multi-project format now?", true);
+                  if (shouldMigrate) {
+                    const spinner = ora("  Migrating config...").start();
+                    try {
+                      migrateToGlobalConfig(loadedPath);
+                      spinner.succeed("  Migration complete");
+                      const newGlobalPath = getGlobalConfigPath();
+                      const projectIds = Object.keys(loadedConfig.projects);
+                      console.log(chalk.green(`  ✓ Global config: ${newGlobalPath}`));
+                      for (const id of projectIds) {
+                        console.log(chalk.green(`  ✓ Registered project "${id}"`));
+                      }
+                      console.log(chalk.green("  ✓ Shadow synced\n"));
+                      // Reload from new global config
+                      loadedConfig = loadConfig();
+                    } catch (migErr) {
+                      spinner.fail("  Migration failed — continuing with existing config");
+                      console.log(chalk.dim(`  Cause: ${migErr instanceof Error ? migErr.message : String(migErr)}`));
+                      console.log(chalk.dim(`  Your config at ${loadedPath} was not changed.`));
+                      console.log(chalk.dim(`  To register manually: ao project add ${resolve(cwd())}\n`));
+                    }
+                  } else {
+                    console.log(chalk.dim("  Skipping migration. Run `ao start` again to migrate later.\n"));
+                  }
+                }
+              } catch {
+                // Migration detection failed — ignore, continue normally
               }
             }
             config = loadedConfig;
