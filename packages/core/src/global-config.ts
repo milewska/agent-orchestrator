@@ -662,15 +662,13 @@ export function migrateToGlobalConfig(oldConfigPath: string, globalConfigPath?: 
     void _name;
     void _path;
     void _sessionPrefix;
-    for (const key of Object.keys(behaviorFields)) {
-      if (key.startsWith(INTERNAL_FIELD_PREFIX)) {
-        delete behaviorFields[key];
-      }
-    }
+    const localBehaviorFields = Object.fromEntries(
+      Object.entries(behaviorFields).filter(([key]) => !key.startsWith(INTERNAL_FIELD_PREFIX)),
+    );
 
     // Write flat local config
     const localConfigPath = join(projectPath, basename(oldConfigPath));
-    atomicWriteFileSync(localConfigPath, stringifyYaml(behaviorFields, { indent: 2 }));
+    atomicWriteFileSync(localConfigPath, stringifyYaml(localBehaviorFields, { indent: 2 }));
   }
 
   return targetGlobalPath;
