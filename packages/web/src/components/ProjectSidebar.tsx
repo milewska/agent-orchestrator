@@ -7,7 +7,6 @@ import type { ProjectInfo } from "@/lib/project-name";
 import { getAttentionLevel, type DashboardSession, type AttentionLevel } from "@/lib/types";
 import { isOrchestratorSession } from "@composio/ao-core/types";
 import { getSessionTitle } from "@/lib/format";
-import { getProjectSessionHref } from "@/lib/project-utils";
 import { ProjectAvatar } from "./ProjectAvatar";
 
 interface ProjectSidebarProps {

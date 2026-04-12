@@ -5,7 +5,6 @@ import { randomUUID } from "node:crypto";
 import { writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-<<<<<<< HEAD
 import {
   type PluginModule,
   type Runtime,

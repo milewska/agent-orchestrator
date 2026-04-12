@@ -36,7 +36,7 @@ export function PullRequestsPage({
   const orchestratorLinks = orchestrators ?? EMPTY_ORCHESTRATORS;
   const initialAttentionLevels = useMemo(() => {
     const levels: Record<string, ReturnType<typeof getAttentionLevel>> = {};
-    for (const s of initialSessions) {
+  for (const s of initialSessions) {
       levels[s.id] = getAttentionLevel(s);
     }
     return levels;
