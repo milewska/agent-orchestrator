@@ -64,14 +64,28 @@ vi.mock("../../src/lib/shell.js", () => ({
 }));
 
 vi.mock("ora", () => ({
-  default: () => ({
-    start: vi.fn().mockReturnThis(),
-    stop: vi.fn().mockReturnThis(),
-    succeed: vi.fn().mockReturnThis(),
-    fail: vi.fn().mockReturnThis(),
-    info: vi.fn().mockReturnThis(),
-    text: "",
-  }),
+  default: () => {
+    const spinner = {
+      text: "",
+      start: vi.fn(function (this: typeof spinner) {
+        return this;
+      }),
+      stop: vi.fn(function (this: typeof spinner) {
+        return this;
+      }),
+      succeed: vi.fn(function (this: typeof spinner, msg?: string) {
+        if (msg !== undefined) console.log(msg);
+        return this;
+      }),
+      fail: vi.fn(function (this: typeof spinner) {
+        return this;
+      }),
+      info: vi.fn(function (this: typeof spinner) {
+        return this;
+      }),
+    };
+    return spinner;
+  },
 }));
 
 vi.mock("@aoagents/ao-core", async (importOriginal) => {
