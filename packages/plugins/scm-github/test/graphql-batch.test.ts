@@ -29,7 +29,6 @@ import {
   extractPREnrichment,
   clearETagCache,
   getPRListETag,
-  getCommitStatusETag,
   setPRListETag,
   setPRMetadata,
   getPRMetadataCache,
@@ -738,13 +737,6 @@ describe("ETag Cache", () => {
       expect(getPRListETag(owner, repo)).toBeUndefined();
     });
 
-    it("should return undefined for commit status ETag not in cache", () => {
-      const owner = "testowner";
-      const repo = "testrepo";
-      const sha = "abc123def456";
-
-      expect(getCommitStatusETag(owner, repo, sha)).toBeUndefined();
-    });
   });
 
   describe("PR Metadata Cache", () => {

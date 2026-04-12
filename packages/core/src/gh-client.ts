@@ -78,7 +78,7 @@ function isRateLimitError(message: string): boolean {
 function isRetryableError(message: string): boolean {
   const lower = message.toLowerCase();
   return (
-    isRateLimitError(lower) ||
+    isRateLimitError(message) ||
     lower.includes("http 502") ||
     lower.includes("http 503") ||
     lower.includes("etimedout") ||

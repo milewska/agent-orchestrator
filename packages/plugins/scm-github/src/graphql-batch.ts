@@ -22,7 +22,6 @@ import { LRUCache } from "./lru-cache.js";
  * LRU cache automatically evicts oldest entries when these limits are reached.
  */
 const MAX_PR_LIST_ETAGS = 100;  // Number of repos to cache
-const MAX_COMMIT_STATUS_ETAGS = 500;  // Number of commits to cache
 const MAX_PR_METADATA = 200;  // Number of PRs to cache full data
 
 /**
@@ -31,11 +30,9 @@ const MAX_PR_METADATA = 200;  // Number of PRs to cache full data
  *
  * Keys:
  * - PR list: "prList:{owner}/{repo}"
- * - Commit status: "commit:{owner}/{repo}#{sha}"
  */
 interface ETagCache {
   prList: LRUCache<string, string>; // Key: "owner/repo", Value: ETag
-  commitStatus: LRUCache<string, string>; // Key: "owner/repo#sha", Value: ETag
 }
 
 /**
@@ -47,7 +44,6 @@ interface ETagCache {
  */
 const etagCache: ETagCache = {
   prList: new LRUCache(MAX_PR_LIST_ETAGS),
-  commitStatus: new LRUCache(MAX_COMMIT_STATUS_ETAGS),
 };
 
 /**
@@ -64,7 +60,6 @@ interface ETagGuardResult {
  */
 export function clearETagCache(): void {
   etagCache.prList.clear();
-  etagCache.commitStatus.clear();
 }
 
 /**
@@ -75,35 +70,11 @@ export function getPRListETag(owner: string, repo: string): string | undefined {
 }
 
 /**
- * Get commit status ETag for a specific commit.
- */
-export function getCommitStatusETag(
-  owner: string,
-  repo: string,
-  sha: string,
-): string | undefined {
-  return etagCache.commitStatus.get(`${owner}/${repo}#${sha}`);
-}
-
-/**
  * Set PR list ETag for a repository.
  * Exported for testing.
  */
 export function setPRListETag(owner: string, repo: string, etag: string): void {
   etagCache.prList.set(`${owner}/${repo}`, etag);
-}
-
-/**
- * Set commit status ETag for a specific commit.
- * Exported for testing.
- */
-export function setCommitStatusETag(
-  owner: string,
-  repo: string,
-  sha: string,
-  etag: string,
-): void {
-  etagCache.commitStatus.set(`${owner}/${repo}#${sha}`, etag);
 }
 
 /**
@@ -315,67 +286,8 @@ async function checkPRListETag(
 }
 
 /**
- * Guard 2: Commit Status ETag Check (per PR with pending CI)
- *
- * Detects if CI status has changed for a specific commit using REST ETag.
- *
- * - Endpoint: GET /repos/{owner}/{repo}/commits/{head_sha}/status
- * - Detects: CI check starts, passes, fails, or external status updates
- * - Only checked for PRs with ciStatus === "pending" to minimize calls
- *
- * @returns true if CI status has changed (200 OK), false if unchanged (304 Not Modified)
- */
-async function checkCommitStatusETag(
-  owner: string,
-  repo: string,
-  sha: string,
-): Promise<boolean> {
-  const commitKey = `${owner}/${repo}#${sha}`;
-  const cachedETag = etagCache.commitStatus.get(commitKey);
-
-  // Build gh CLI args for REST API call
-  const url = `repos/${owner}/${repo}/commits/${sha}/status`;
-  const args = ["api", "--method", "GET", url, "-i"]; // -i includes headers
-
-  // Add If-None-Match header if we have a cached ETag
-  if (cachedETag) {
-    args.push("-H", `If-None-Match: ${cachedETag}`);
-  }
-
-  try {
-    const output = await getGhClient().exec(args, { timeout: 10_000 });
-
-    // Check for HTTP 304 Not Modified response
-    if (output.includes("HTTP/1.1 304") || output.includes("HTTP/2 304")) {
-      // No CI changes detected - cost: 0 GraphQL points
-      return false;
-    }
-
-    // Extract new ETag from response headers
-    const etagMatch = output.match(/etag:\s*(.+)/i);
-    if (etagMatch) {
-      // Trim to remove trailing whitespace/newlines that could cause comparison issues
-      const newETag = etagMatch[1].trim();
-      setCommitStatusETag(owner, repo, sha, newETag);
-    }
-
-    // CI status changed - cost: 1 REST point
-    return true;
-  } catch (err) {
-    // On error, assume change to ensure we don't miss anything
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    // eslint-disable-next-line no-console -- Observability logging for ETag errors
-    console.warn(
-      `[ETag Guard 2] Commit status check failed for ${commitKey}: ${errorMsg}`,
-    );
-    return true; // Assume changed to be safe
-  }
-}
-
-/**
  * GraphQL fields to fetch for each PR.
  * This includes all data needed for orchestrator status detection.
- * Includes head SHA for ETag Guard 2 (commit status checks).
  */
 const PR_FIELDS = `
   title
@@ -947,7 +859,6 @@ export {
   parsePRState,
   extractPREnrichment,
   checkPRListETag,
-  checkCommitStatusETag,
   // shouldRefreshPREnrichment is already exported as async function
   updatePRMetadataCache,
 };
