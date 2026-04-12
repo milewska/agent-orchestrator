@@ -1385,13 +1385,14 @@ export function registerStart(program: Command): void {
               console.log("  2. Start new orchestrator on this project");
               console.log("  3. Override — restart everything");
               console.log("  4. Quit\n");
-              const choice = await promptWithReadline("  Choice [1-4]: ");
+              const choice = await promptWithReadline("  Choice [1-4, default 1]: ");
+              const choiceTrimmed = choice.trim() || "1";
 
-              if (choice.trim() === "1") {
+              if (choiceTrimmed === "1") {
                 const url = `http://localhost:${running.port}`;
                 openUrl(url);
                 process.exit(0);
-              } else if (choice.trim() === "2") {
+              } else if (choiceTrimmed === "2") {
                 // Generate unique orchestrator: same project, new session
                 const rawYaml = readFileSync(config.configPath, "utf-8");
                 const rawConfig = yamlParse(rawYaml);
@@ -1421,7 +1422,7 @@ export function registerStart(program: Command): void {
                 projectId = newId;
                 project = config.projects[newId];
                 // Continue to startup below
-              } else if (choice.trim() === "3") {
+              } else if (choiceTrimmed === "3") {
                 try { process.kill(running.pid, "SIGTERM"); } catch { /* already dead */ }
                 if (!(await waitForExit(running.pid, 5000))) {
                   console.log(chalk.yellow("  Process didn't exit cleanly, sending SIGKILL..."));
