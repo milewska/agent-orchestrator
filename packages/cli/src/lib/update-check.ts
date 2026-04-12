@@ -51,11 +51,32 @@ const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
  * Classify a resolved file path as npm-global, git source, or unknown.
  * Extracted for testability — `detectInstallMethod` calls this with
  * the resolved `import.meta.url` path.
+ *
+ * Distinguishes global npm installs (e.g. /usr/local/lib/node_modules,
+ * ~/.nvm/.../lib/node_modules, pnpm global store) from local project
+ * node_modules by checking for `lib/node_modules` (global) vs a bare
+ * `node_modules` that sits inside a project directory (local/npx).
  */
 export function classifyInstallPath(resolvedPath: string): InstallMethod {
-  // Running from inside node_modules → npm/yarn/pnpm global install
-  if (resolvedPath.includes("/node_modules/") || resolvedPath.includes("\\node_modules\\")) {
-    return "npm-global";
+  const hasNodeModules =
+    resolvedPath.includes("/node_modules/") || resolvedPath.includes("\\node_modules\\");
+
+  if (hasNodeModules) {
+    // Global installs typically live under .../lib/node_modules/... or
+    // pnpm global store paths. Local project installs have node_modules
+    // directly inside a project dir (often alongside package.json).
+    const isLikelyGlobal =
+      resolvedPath.includes("/lib/node_modules/") ||
+      resolvedPath.includes("\\lib\\node_modules\\") ||
+      resolvedPath.includes("/.pnpm/") ||
+      resolvedPath.includes("\\.pnpm\\");
+
+    if (isLikelyGlobal) {
+      return "npm-global";
+    }
+    // Local node_modules (e.g. npx, project-local install) — treat as unknown
+    // so we don't suggest "npm install -g" to someone using npx
+    return "unknown";
   }
 
   // Running from a source checkout → git install

@@ -120,16 +120,35 @@ describe("update-check", () => {
   // -----------------------------------------------------------------------
 
   describe("classifyInstallPath", () => {
-    it("returns 'npm-global' when path contains /node_modules/", () => {
+    it("returns 'npm-global' for /usr/local/lib/node_modules path", () => {
       expect(
         classifyInstallPath("/usr/local/lib/node_modules/@aoagents/ao-cli/dist/lib/update-check.js"),
       ).toBe("npm-global");
     });
 
-    it("returns 'npm-global' when path contains backslash node_modules (Windows)", () => {
+    it("returns 'npm-global' for nvm global path", () => {
       expect(
-        classifyInstallPath("C:\\Users\\test\\node_modules\\@aoagents\\ao-cli\\dist\\lib\\update-check.js"),
+        classifyInstallPath("/home/user/.nvm/versions/node/v20.0.0/lib/node_modules/@aoagents/ao-cli/dist/lib/update-check.js"),
       ).toBe("npm-global");
+    });
+
+    it("returns 'npm-global' for Windows global path", () => {
+      expect(
+        classifyInstallPath("C:\\Users\\test\\AppData\\Roaming\\npm\\lib\\node_modules\\@aoagents\\ao-cli\\dist\\lib\\update-check.js"),
+      ).toBe("npm-global");
+    });
+
+    it("returns 'npm-global' for pnpm global store path", () => {
+      expect(
+        classifyInstallPath("/home/user/.local/share/pnpm/global/5/node_modules/.pnpm/@aoagents+ao-cli@0.2.2/node_modules/@aoagents/ao-cli/dist/lib/update-check.js"),
+      ).toBe("npm-global");
+    });
+
+    it("returns 'unknown' for local project node_modules (npx)", () => {
+      mockExistsSync.mockReturnValue(false);
+      expect(
+        classifyInstallPath("/home/user/my-project/node_modules/@aoagents/ao-cli/dist/lib/update-check.js"),
+      ).toBe("unknown");
     });
 
     it("returns 'git' when repo root has scripts/ao-update.sh and .git", () => {

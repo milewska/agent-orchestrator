@@ -5,6 +5,10 @@ import { maybeShowUpdateNotice, scheduleBackgroundRefresh } from "./lib/update-c
 // Synchronous cache read — no network call on startup.
 maybeShowUpdateNotice();
 
+// Start background cache refresh early so it runs in parallel with the command.
+// The unref'd timer lets the process exit without waiting if the command finishes first.
+scheduleBackgroundRefresh();
+
 import { ConfigNotFoundError } from "@aoagents/ao-core";
 import { createProgram } from "./program.js";
 
@@ -17,8 +21,4 @@ createProgram()
       return;
     }
     throw err;
-  })
-  .finally(() => {
-    // Background cache refresh so next run has fresh data.
-    scheduleBackgroundRefresh();
   });
