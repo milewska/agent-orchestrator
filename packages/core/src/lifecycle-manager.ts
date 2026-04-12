@@ -233,7 +233,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     await Promise.all(
       [...sessionsByProject.entries()].map(async ([projectId, projectSessions]) => {
         const project = config.projects[projectId];
-        if (!project?.scm) return;
+        if (!project?.scm?.plugin) return;
         const scm = registry.get<SCM>("scm", project.scm.plugin);
         if (!scm?.enrichSessionsPRBatch) return;
 

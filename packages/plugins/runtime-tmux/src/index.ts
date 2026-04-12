@@ -12,7 +12,6 @@ import {
   type RuntimeHandle,
   type RuntimeMetrics,
   type AttachInfo,
-  shellEscape,
 } from "@composio/ao-core";
 
 const execFileAsync = promisify(execFile);

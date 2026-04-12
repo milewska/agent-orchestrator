@@ -842,13 +842,13 @@ describe("session ID capture from JSON stream", () => {
     expect(cmd).not.toContain("node -e");
   });
 
-  it("capture script file contains session_id parsing logic", () => {
+  it("capture script file contains session_id parsing logic", async () => {
     const agent = create();
     agent.getLaunchCommand(makeLaunchConfig());
 
-    const fs = require("node:fs");
-    const os = require("node:os");
-    const path = require("node:path");
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
     const scriptPath = path.join(os.tmpdir(), "ao-opencode-scripts", "capture-session-id.js");
     const content = fs.readFileSync(scriptPath, "utf-8");
 
@@ -869,13 +869,13 @@ describe("title-based fallback sorting with newest-first", () => {
     expect(cmd).toContain("lookup-session-id.js");
   });
 
-  it("lookup script file contains sorting and validation logic", () => {
+  it("lookup script file contains sorting and validation logic", async () => {
     const agent = create();
     agent.getLaunchCommand(makeLaunchConfig());
 
-    const fs = require("node:fs");
-    const os = require("node:os");
-    const path = require("node:path");
+    const fs = await import("node:fs");
+    const os = await import("node:os");
+    const path = await import("node:path");
     const scriptPath = path.join(os.tmpdir(), "ao-opencode-scripts", "lookup-session-id.js");
     const content = fs.readFileSync(scriptPath, "utf-8");
 

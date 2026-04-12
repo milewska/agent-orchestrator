@@ -17,7 +17,6 @@ import dynamic from "next/dynamic";
 import { getProjectSessionHref } from "@/lib/project-utils";
 import { getSessionTitle } from "@/lib/format";
 import type { ProjectInfo } from "@/lib/project-name";
-import { CICheckList } from "./CIBadge";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { ProjectSidebar } from "./ProjectSidebar";
 
