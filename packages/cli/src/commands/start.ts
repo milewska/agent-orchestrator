@@ -1444,10 +1444,21 @@ export function registerStop(program: Command): void {
 
           if (allSessions.length > 0) {
             const spinner = ora(`Stopping ${allSessions.length} session(s)`).start();
+            let failedStops = 0;
             for (const session of allSessions) {
-              await sm.kill(session.id, { purgeOpenCode });
+              try {
+                await sm.kill(session.id, { purgeOpenCode });
+              } catch {
+                failedStops += 1;
+              }
             }
-            spinner.succeed(`Stopped ${allSessions.length} session(s)`);
+            if (failedStops > 0) {
+              spinner.warn(
+                `Stopped ${allSessions.length - failedStops}/${allSessions.length} session(s)`,
+              );
+            } else {
+              spinner.succeed(`Stopped ${allSessions.length} session(s)`);
+            }
           } else {
             console.log(chalk.yellow("No running sessions found"));
           }
