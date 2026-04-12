@@ -135,6 +135,10 @@ export interface DashboardOrchestratorLink {
   id: string;
   projectId: string;
   projectName: string;
+  status: SessionStatus;
+  activity: ActivityState | null;
+  createdAt: string;
+  lastActivityAt: string;
 }
 
 /** SSE snapshot event from /api/events */
