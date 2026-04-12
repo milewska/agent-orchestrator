@@ -144,6 +144,13 @@ describe("update-check", () => {
       ).toBe("npm-global");
     });
 
+    it("returns 'unknown' for local pnpm node_modules/.pnpm (not global)", () => {
+      mockExistsSync.mockReturnValue(false);
+      expect(
+        classifyInstallPath("/home/user/my-project/node_modules/.pnpm/@aoagents+ao-cli@0.2.2/node_modules/@aoagents/ao-cli/dist/lib/update-check.js"),
+      ).toBe("unknown");
+    });
+
     it("returns 'unknown' for local project node_modules (npx)", () => {
       mockExistsSync.mockReturnValue(false);
       expect(

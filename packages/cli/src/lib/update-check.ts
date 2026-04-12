@@ -62,14 +62,16 @@ export function classifyInstallPath(resolvedPath: string): InstallMethod {
     resolvedPath.includes("/node_modules/") || resolvedPath.includes("\\node_modules\\");
 
   if (hasNodeModules) {
-    // Global installs typically live under .../lib/node_modules/... or
-    // pnpm global store paths. Local project installs have node_modules
-    // directly inside a project dir (often alongside package.json).
+    // Global installs live under .../lib/node_modules/... (npm/nvm/fnm/volta)
+    // or pnpm's global store (.../pnpm/global/.../node_modules/...).
+    // Local project installs have node_modules directly inside a project dir.
+    // Note: /.pnpm/ alone is NOT a global signal — pnpm creates node_modules/.pnpm/
+    // for local installs too. Only pnpm/global paths indicate a global install.
     const isLikelyGlobal =
       resolvedPath.includes("/lib/node_modules/") ||
       resolvedPath.includes("\\lib\\node_modules\\") ||
-      resolvedPath.includes("/.pnpm/") ||
-      resolvedPath.includes("\\.pnpm\\");
+      resolvedPath.includes("/pnpm/global/") ||
+      resolvedPath.includes("\\pnpm\\global\\");
 
     if (isLikelyGlobal) {
       return "npm-global";
