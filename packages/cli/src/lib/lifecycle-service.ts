@@ -14,16 +14,13 @@ interface ActiveLoop {
 }
 
 const active = new Map<string, ActiveLoop>();
-let signalsRegistered = false;
 
-function registerSignalsOnce(): void {
-  if (signalsRegistered) return;
-  signalsRegistered = true;
-
-  process.on("SIGINT", stopAllLifecycleWorkers);
-  process.on("SIGTERM", stopAllLifecycleWorkers);
-  process.on("beforeExit", stopAllLifecycleWorkers);
-}
+// Note: no SIGINT/SIGTERM listeners are installed here. Adding a listener for
+// those signals removes Node.js's default "exit on signal" behavior, which
+// would leave `ao start` hanging when `ao stop` sends SIGTERM (the setInterval
+// keeps the event loop alive forever). Default signal handling terminates the
+// process cleanly; the OS reclaims the interval timer. Callers that need to
+// flush state explicitly before exit can call `stopAllLifecycleWorkers()`.
 
 export interface LifecycleWorkerStatus {
   running: boolean;
@@ -42,8 +39,6 @@ export async function ensureLifecycleWorker(
   if (active.has(projectId)) {
     return { running: true, started: false };
   }
-
-  registerSignalsOnce();
 
   const observer = createProjectObserver(config, "lifecycle-service");
   const lifecycle = await getLifecycleManager(config, projectId);
