@@ -136,7 +136,12 @@ function runNpmInstall(command: string): Promise<number> {
   return new Promise<number>((resolveExit, reject) => {
     const child = spawn(cmd!, args, { stdio: "inherit" });
     child.on("error", reject);
-    child.on("exit", (code) => {
+    child.on("exit", (code, signal) => {
+      if (signal) {
+        resolveExit(1);
+        return;
+      }
+
       if (code !== 0) {
         console.error(chalk.yellow(`\n${cmd} exited with code ${code}.`));
       }

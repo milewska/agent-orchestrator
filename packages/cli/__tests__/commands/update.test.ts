@@ -81,9 +81,9 @@ function makeNpmUpdateInfo(overrides = {}) {
   };
 }
 
-function createMockChild(exitCode: number) {
+function createMockChild(exitCode: number | null, signal?: NodeJS.Signals) {
   const child = new EventEmitter();
-  setTimeout(() => child.emit("exit", exitCode), 0);
+  setTimeout(() => child.emit("exit", exitCode, signal ?? null), 0);
   return child;
 }
 
@@ -300,6 +300,22 @@ describe("update command", () => {
       expect(vi.mocked(console.error)).toHaveBeenCalledWith(
         expect.stringContaining("exited with code 1"),
       );
+    });
+
+    it("does not print a null exit code when npm install is killed by a signal", async () => {
+      Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+      Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+      mockPromptConfirm.mockResolvedValue(true);
+      mockSpawn.mockReturnValue(createMockChild(null, "SIGTERM"));
+
+      await expect(
+        program.parseAsync(["node", "test", "update"]),
+      ).rejects.toThrow("process.exit(1)");
+
+      expect(vi.mocked(console.error)).not.toHaveBeenCalledWith(
+        expect.stringContaining("exited with code null"),
+      );
+      expect(mockInvalidateCache).not.toHaveBeenCalled();
     });
 
     it("handles spawn error (e.g. npm not found)", async () => {
