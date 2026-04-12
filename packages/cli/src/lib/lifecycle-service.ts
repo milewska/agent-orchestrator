@@ -28,7 +28,7 @@ function getProjectBase(config: OrchestratorConfig, projectId: string): string {
   if (!project) {
     throw new Error(`Unknown project: ${projectId}`);
   }
-  return getProjectBaseDir(config.configPath, project.path);
+  return getProjectBaseDir(config.configPath, project.path, project.storageKey);
 }
 
 export function getLifecyclePidFile(config: OrchestratorConfig, projectId: string): string {
