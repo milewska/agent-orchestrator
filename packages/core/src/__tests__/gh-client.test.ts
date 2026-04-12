@@ -152,11 +152,11 @@ describe("GhClient", () => {
       expect(client.getStats().retries).toBe(1);
     });
 
-    it("retries on rate limit error", async () => {
+    it("does not retry rate limit errors (trips circuit instead)", async () => {
       mockFailure("HTTP 429 rate limit exceeded");
-      mockSuccess("recovered");
-      const result = await client.exec(["pr", "view"]);
-      expect(result).toBe("recovered");
+      await expect(client.exec(["pr", "view"])).rejects.toThrow(RateLimitError);
+      expect(mockExecFile).toHaveBeenCalledTimes(1);
+      expect(client.getStats().circuitState).toBe("open");
     });
 
     it("does not retry on HTTP 401", async () => {

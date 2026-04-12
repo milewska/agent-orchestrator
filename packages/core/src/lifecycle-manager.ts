@@ -1404,21 +1404,36 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     async check(sessionId: SessionId): Promise<void> {
       const session = await sessionManager.get(sessionId);
       if (!session) throw new Error(`Session ${sessionId} not found`);
-      // Populate enrichment cache for this single session's PR without clearing
-      // the shared cache — a concurrent pollAll() may be using it.
+      // Build enrichment data from individual SCM calls for this single session.
+      // We don't use enrichSessionsPRBatch here because it updates the shared
+      // lastBatchRefreshAt staleness timer, which would suppress the next
+      // pollAll() batch refresh for all PRs.
       if (session.pr) {
         const project = config.projects[session.projectId];
         const scmPlugin = project?.scm?.plugin;
         if (scmPlugin) {
           const scm = registry.get<SCM>("scm", scmPlugin);
-          if (scm?.enrichSessionsPRBatch) {
+          if (scm) {
             try {
-              const data = await scm.enrichSessionsPRBatch([session.pr]);
-              for (const [key, value] of data) {
-                prEnrichmentCache.set(key, value);
-              }
+              const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
+              const [prState, ciStatus, reviewDecision, mergeReady, ciChecks] = await Promise.all([
+                scm.getPRState(session.pr),
+                scm.getCISummary(session.pr),
+                scm.getReviewDecision(session.pr),
+                scm.getMergeability(session.pr),
+                scm.getCIChecks(session.pr).catch(() => undefined),
+              ]);
+              prEnrichmentCache.set(prKey, {
+                state: prState,
+                ciStatus,
+                reviewDecision,
+                mergeable: mergeReady.mergeable,
+                hasConflicts: !mergeReady.noConflicts,
+                blockers: mergeReady.blockers,
+                ...(ciChecks !== undefined ? { ciChecks } : {}),
+              });
             } catch {
-              // Batch failed — checkSession will use whatever's in the cache
+              // SCM calls failed — checkSession will use whatever's in the cache
             }
           }
         }

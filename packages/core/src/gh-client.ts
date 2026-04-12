@@ -76,9 +76,12 @@ function isRateLimitError(message: string): boolean {
 }
 
 function isRetryableError(message: string): boolean {
+  // Rate limit errors are NOT retried — they should trip the circuit breaker
+  // immediately rather than consuming quota with retry attempts (F-11).
+  if (isRateLimitError(message)) return false;
+
   const lower = message.toLowerCase();
   return (
-    isRateLimitError(message) ||
     lower.includes("http 502") ||
     lower.includes("http 503") ||
     lower.includes("etimedout") ||

@@ -49,7 +49,6 @@ import type {
   SessionManager,
   Session,
   SCM,
-  PREnrichmentData,
 } from "../types.js";
 
 // ---------------------------------------------------------------------------
@@ -485,18 +484,12 @@ describe("plugin integration", () => {
         spawnOrchestrator: vi.fn(),
       };
 
-      // Mock enrichSessionsPRBatch on the real SCM plugin to populate the cache
+      // Mock individual SCM methods (check() calls these directly, not enrichSessionsPRBatch)
       const scm = registry.get<SCM>("scm", "github")!;
-      scm.enrichSessionsPRBatch = vi.fn().mockResolvedValue(
-        new Map<string, PREnrichmentData>([
-          [`${pr.owner}/${pr.repo}#${pr.number}`, {
-            state: "open",
-            ciStatus: "failing",
-            reviewDecision: "none",
-            mergeable: false,
-          }],
-        ]),
-      );
+      scm.getPRState = vi.fn().mockResolvedValue("open");
+      scm.getCISummary = vi.fn().mockResolvedValue("failing");
+      scm.getReviewDecision = vi.fn().mockResolvedValue("none");
+      scm.getMergeability = vi.fn().mockResolvedValue({ mergeable: false, noConflicts: true, blockers: [] });
 
       const lm = createLifecycleManager({
         config,
@@ -510,7 +503,7 @@ describe("plugin integration", () => {
       expect(states.get("app-1")).toBe("ci_failed");
     });
 
-    it("check() detects merged via batch enrichment", async () => {
+    it("check() detects merged via individual SCM calls", async () => {
       seedSession({ status: "pr_open", pr });
 
       const mockSM: SessionManager = {
@@ -523,18 +516,11 @@ describe("plugin integration", () => {
         spawnOrchestrator: vi.fn(),
       };
 
-      // Mock enrichSessionsPRBatch on the real SCM plugin to populate the cache
       const scm = registry.get<SCM>("scm", "github")!;
-      scm.enrichSessionsPRBatch = vi.fn().mockResolvedValue(
-        new Map<string, PREnrichmentData>([
-          [`${pr.owner}/${pr.repo}#${pr.number}`, {
-            state: "merged",
-            ciStatus: "passing",
-            reviewDecision: "approved",
-            mergeable: false,
-          }],
-        ]),
-      );
+      scm.getPRState = vi.fn().mockResolvedValue("merged");
+      scm.getCISummary = vi.fn().mockResolvedValue("passing");
+      scm.getReviewDecision = vi.fn().mockResolvedValue("approved");
+      scm.getMergeability = vi.fn().mockResolvedValue({ mergeable: false, noConflicts: true, blockers: [] });
 
       const lm = createLifecycleManager({
         config,
@@ -548,7 +534,7 @@ describe("plugin integration", () => {
       expect(states.get("app-1")).toBe("merged");
     });
 
-    it("check() detects changes_requested via batch enrichment", async () => {
+    it("check() detects changes_requested via individual SCM calls", async () => {
       seedSession({ status: "pr_open", pr });
 
       const mockSM: SessionManager = {
@@ -561,18 +547,11 @@ describe("plugin integration", () => {
         spawnOrchestrator: vi.fn(),
       };
 
-      // Mock enrichSessionsPRBatch on the real SCM plugin to populate the cache
       const scm = registry.get<SCM>("scm", "github")!;
-      scm.enrichSessionsPRBatch = vi.fn().mockResolvedValue(
-        new Map<string, PREnrichmentData>([
-          [`${pr.owner}/${pr.repo}#${pr.number}`, {
-            state: "open",
-            ciStatus: "passing",
-            reviewDecision: "changes_requested",
-            mergeable: false,
-          }],
-        ]),
-      );
+      scm.getPRState = vi.fn().mockResolvedValue("open");
+      scm.getCISummary = vi.fn().mockResolvedValue("passing");
+      scm.getReviewDecision = vi.fn().mockResolvedValue("changes_requested");
+      scm.getMergeability = vi.fn().mockResolvedValue({ mergeable: false, noConflicts: true, blockers: [] });
 
       const lm = createLifecycleManager({
         config,
