@@ -146,6 +146,7 @@ export class GhClient {
   private circuitState: CircuitState = "closed";
   private reopenAt = 0;
   private consecutiveFailures = 0;
+  private halfOpenProbeInFlight = false;
 
   // -- Stats --
   private stats: GhClientStats = {
@@ -244,8 +245,9 @@ export class GhClient {
 
     if (this.circuitState === "open") {
       if (Date.now() >= this.reopenAt) {
-        // Transition to half-open: allow one probe
+        // Transition to half-open: allow exactly one probe request
         this.circuitState = "half-open";
+        this.halfOpenProbeInFlight = true;
         // eslint-disable-next-line no-console
         console.warn("[GhClient] circuit half-open — probing");
         return;
@@ -253,13 +255,17 @@ export class GhClient {
       throw new CircuitOpenError(this.reopenAt);
     }
 
-    // half-open: allow through (one at a time via semaphore)
+    // half-open: only the single probe is allowed through; reject others
+    if (this.halfOpenProbeInFlight) {
+      throw new CircuitOpenError(this.reopenAt);
+    }
   }
 
   private _recordSuccess(): void {
     this.consecutiveFailures = 0;
     if (this.circuitState === "half-open") {
       this.circuitState = "closed";
+      this.halfOpenProbeInFlight = false;
       // eslint-disable-next-line no-console
       console.info("[GhClient] circuit recovered — closed");
     }
@@ -271,6 +277,7 @@ export class GhClient {
 
     if (this.circuitState === "half-open") {
       // Probe failed — back to open
+      this.halfOpenProbeInFlight = false;
       const cooldown = this._cooldownMs(msg);
       this._tripCircuit(cooldown);
       // eslint-disable-next-line no-console

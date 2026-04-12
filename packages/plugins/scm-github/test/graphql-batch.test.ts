@@ -37,29 +37,6 @@ import {
   shouldRefreshPREnrichment,
 } from "../src/graphql-batch.js";
 
-// Backward-compatible mock wrapper: tests use mockExecFileImpl with { stdout, stderr }
-// but the new GhClient.exec returns just the trimmed stdout string.
-type ExecFileResult = { stdout: string; stderr: string };
-
-// We use mockExec directly and provide a thin wrapper for the old { stdout, stderr } pattern
-const mockExecFileImpl = Object.assign(
-  (..._args: unknown[]) => mockExec(...(_args as [string[], Record<string, unknown>?])),
-  {
-    mockResolvedValueOnce(result: ExecFileResult) {
-      mockExec.mockResolvedValueOnce(result.stdout.trim());
-      return mockExecFileImpl;
-    },
-    mockRejectedValueOnce(err: Error) {
-      mockExec.mockRejectedValueOnce(err);
-      return mockExecFileImpl;
-    },
-    mockReset() { mockExec.mockReset(); },
-    mockClear() { mockExec.mockClear(); },
-    get mock() { return mockExec.mock; },
-    // toHaveBeenCalledTimes and other matchers work via mockExec
-  },
-);
-
 // Setup mock before each test
 beforeEach(() => {
   mockExec.mockReset();

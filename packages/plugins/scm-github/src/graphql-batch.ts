@@ -933,10 +933,9 @@ export async function enrichSessionsPRBatch(
     }
   }
 
-  // Record successful refresh timestamp for staleness cap
-  if (result.size > 0) {
-    lastBatchRefreshAt = Date.now();
-  }
+  // Record refresh timestamp unconditionally — even if all PRs were missing
+  // or returned errors, the batch ran and we shouldn't re-run on every poll.
+  lastBatchRefreshAt = Date.now();
 
   return result;
 }
