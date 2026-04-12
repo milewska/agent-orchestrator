@@ -1028,15 +1028,29 @@ describe("start command — orchestrator session strategy display", () => {
 // ---------------------------------------------------------------------------
 
 describe("stop command", () => {
-  it("stops orchestrator session and dashboard", async () => {
+  it("kills all project sessions via sm.list()", async () => {
     mockConfigRef.current = makeConfig({ "my-app": makeProject() });
-    mockSessionManager.get.mockResolvedValue({ id: "app-orchestrator", status: "running" });
+    mockSessionManager.list.mockResolvedValue([
+      { id: "app-orchestrator-1", status: "running" },
+      { id: "ao-155", status: "running" },
+      { id: "ao-156", status: "running" },
+    ]);
     mockSessionManager.kill.mockResolvedValue(undefined);
     mockExec.mockResolvedValue({ stdout: "12345", stderr: "" });
 
     await program.parseAsync(["node", "test", "stop"]);
 
-    expect(mockSessionManager.kill).toHaveBeenCalledWith("app-orchestrator", {
+    // sm.list called with project ID
+    expect(mockSessionManager.list).toHaveBeenCalledWith("my-app");
+    // sm.kill called for every session returned
+    expect(mockSessionManager.kill).toHaveBeenCalledTimes(3);
+    expect(mockSessionManager.kill).toHaveBeenCalledWith("app-orchestrator-1", {
+      purgeOpenCode: false,
+    });
+    expect(mockSessionManager.kill).toHaveBeenCalledWith("ao-155", {
+      purgeOpenCode: false,
+    });
+    expect(mockSessionManager.kill).toHaveBeenCalledWith("ao-156", {
       purgeOpenCode: false,
     });
     expect(mockStopLifecycleWorker).toHaveBeenCalledWith(
@@ -1047,12 +1061,27 @@ describe("stop command", () => {
       .mocked(console.log)
       .mock.calls.map((c) => c.join(" "))
       .join("\n");
-    expect(output).toContain("Orchestrator stopped");
+    expect(output).toContain("Stopped 3 session(s)");
   });
 
-  it("handles missing orchestrator session gracefully", async () => {
+  it("kills orchestrator-only session (no workers)", async () => {
     mockConfigRef.current = makeConfig({ "my-app": makeProject() });
-    mockSessionManager.get.mockResolvedValue(null);
+    mockSessionManager.list.mockResolvedValue([
+      { id: "app-orchestrator-1", status: "running" },
+    ]);
+    mockSessionManager.kill.mockResolvedValue(undefined);
+
+    await program.parseAsync(["node", "test", "stop"]);
+
+    expect(mockSessionManager.kill).toHaveBeenCalledTimes(1);
+    expect(mockSessionManager.kill).toHaveBeenCalledWith("app-orchestrator-1", {
+      purgeOpenCode: false,
+    });
+  });
+
+  it("handles no running sessions gracefully", async () => {
+    mockConfigRef.current = makeConfig({ "my-app": makeProject() });
+    mockSessionManager.list.mockResolvedValue([]);
     mockExec.mockRejectedValue(new Error("no process"));
 
     await program.parseAsync(["node", "test", "stop"]);
@@ -1066,19 +1095,37 @@ describe("stop command", () => {
       .mocked(console.log)
       .mock.calls.map((c) => c.join(" "))
       .join("\n");
-    expect(output).toContain("is not running");
+    expect(output).toContain("No running sessions found");
   });
 
-  it("passes purge flag when stopping orchestrator with --purge-session", async () => {
+  it("passes purge flag to all sessions with --purge-session", async () => {
     mockConfigRef.current = makeConfig({ "my-app": makeProject() });
-    mockSessionManager.get.mockResolvedValue({ id: "app-orchestrator", status: "running" });
+    mockSessionManager.list.mockResolvedValue([
+      { id: "app-orchestrator-1", status: "running" },
+      { id: "ao-155", status: "running" },
+    ]);
     mockSessionManager.kill.mockResolvedValue(undefined);
 
     await program.parseAsync(["node", "test", "stop", "--purge-session"]);
 
-    expect(mockSessionManager.kill).toHaveBeenCalledWith("app-orchestrator", {
+    expect(mockSessionManager.kill).toHaveBeenCalledWith("app-orchestrator-1", {
       purgeOpenCode: true,
     });
+    expect(mockSessionManager.kill).toHaveBeenCalledWith("ao-155", {
+      purgeOpenCode: true,
+    });
+  });
+
+  it("stops lifecycle worker even when no sessions exist", async () => {
+    mockConfigRef.current = makeConfig({ "my-app": makeProject() });
+    mockSessionManager.list.mockResolvedValue([]);
+
+    await program.parseAsync(["node", "test", "stop"]);
+
+    expect(mockStopLifecycleWorker).toHaveBeenCalledWith(
+      expect.objectContaining({ configPath: expect.any(String) }),
+      "my-app",
+    );
   });
 });
 
