@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { OrchestratorSelector, type Orchestrator } from "@/components/OrchestratorSelector";
 import { getServices } from "@/lib/services";
 import { getAllProjects } from "@/lib/project-name";
-import { generateSessionPrefix } from "@composio/ao-core";
 import { mapSessionsToOrchestrators } from "@/lib/orchestrator-utils";
 
 export const dynamic = "force-dynamic";
@@ -56,12 +55,8 @@ export default async function OrchestratorsRoute(props: {
       error = `Project "${projectId}" not found`;
     } else {
       projectName = project.name;
-      const sessionPrefix = project.sessionPrefix ?? projectId;
       const allSessions = await sessionManager.list(projectId);
-      const allSessionPrefixes = Object.entries(config.projects).map(
-        ([, p]) => p.sessionPrefix ?? generateSessionPrefix(p.name ?? ""),
-      );
-      orchestrators = mapSessionsToOrchestrators(allSessions, sessionPrefix, project.name, allSessionPrefixes);
+      orchestrators = mapSessionsToOrchestrators(allSessions, project.name);
     }
   } catch (err) {
     error = err instanceof Error ? err.message : "Failed to load orchestrators";

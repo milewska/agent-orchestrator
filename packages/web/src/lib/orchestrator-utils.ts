@@ -8,9 +8,7 @@ import type { Orchestrator } from "@/components/OrchestratorSelector";
  */
 export function mapSessionsToOrchestrators(
   sessions: Session[],
-  _sessionPrefix: string,
   projectName: string,
-  _allSessionPrefixes?: string[],
 ): Orchestrator[] {
   return sessions
     .filter((s) => isOrchestratorSession(s) && !isTerminalSession(s))

@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { generateOrchestratorPrompt, generateSessionPrefix } from "@composio/ao-core";
+import { generateOrchestratorPrompt } from "@composio/ao-core";
 import { getServices } from "@/lib/services";
 import { validateIdentifier, validateConfiguredProject } from "@/lib/validation";
 import { mapSessionsToOrchestrators } from "@/lib/orchestrator-utils";
@@ -27,13 +27,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: configProjectErr }, { status: 404 });
     }
     const project = config.projects[projectId];
-    const sessionPrefix = project.sessionPrefix ?? projectId;
-
     const allSessions = await sessionManager.list(projectId);
-    const allSessionPrefixes = Object.entries(config.projects).map(
-      ([, p]) => p.sessionPrefix ?? generateSessionPrefix(p.name ?? ""),
-    );
-    const orchestrators = mapSessionsToOrchestrators(allSessions, sessionPrefix, project.name, allSessionPrefixes);
+    const orchestrators = mapSessionsToOrchestrators(allSessions, project.name);
 
     return NextResponse.json({ orchestrators, projectName: project.name });
   } catch (err) {
