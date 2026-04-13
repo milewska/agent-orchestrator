@@ -52,8 +52,15 @@ export function humanizeBranch(branch: string, sessionId?: string): string {
  * Fallback chain (ordered by signal quality):
  *   1. PR title          — human-visible deliverable name
  *   2. Issue title       — human-written task description (live from tracker)
- *   3. User prompt       — freeform spawn instructions (prompt-only sessions)
- *   4. Display name      — persisted task context captured at spawn time
+ *   3. Display name      — cleaned, single-line, 80-char-truncated task
+ *                          context captured at spawn time. Sits above
+ *                          `userPrompt` because for prompt-only sessions both
+ *                          are populated from the same `spawnConfig.prompt` —
+ *                          `displayName` is the cleaned version and should
+ *                          win so kanban cards don't show raw multi-line
+ *                          prompts.
+ *   4. User prompt       — raw freeform spawn instructions (fallback for
+ *                          sessions spawned before `displayName` existed)
  *   5. Humanized branch  — stable task identifier when no explicit title exists
  *                          (skipped when it collapses to just the session ID)
  *   6. Pinned summary    — first quality summary, stable across agent updates
@@ -68,14 +75,19 @@ export function getSessionTitle(session: DashboardSession): string {
   // 2. Issue title — human-written task description
   if (session.issueTitle) return session.issueTitle;
 
-  // 3. User prompt — freeform spawn instructions (prompt-only sessions have no issue)
-  if (session.userPrompt) return session.userPrompt;
-
-  // 4. Display name — persisted at spawn time from issue title / user prompt /
-  // orchestrator system prompt. Sits above the branch fallback so sessions
-  // remain identifiable even when the tracker API is unavailable or the
-  // session is an orchestrator with no attached issue.
+  // 3. Display name — persisted at spawn time from issue title / user prompt /
+  // orchestrator system prompt. Intentionally ordered ABOVE `userPrompt`
+  // because for prompt-only sessions both are derived from the same
+  // `spawnConfig.prompt`: `displayName` is the single-line, 80-char-truncated
+  // version and `userPrompt` is the raw multi-line original. If `userPrompt`
+  // were checked first, the raw prompt would always shadow the cleaned one on
+  // kanban cards and session tabs.
   if (session.displayName) return session.displayName;
+
+  // 4. User prompt — raw freeform spawn instructions. Only reached when
+  // `displayName` is absent (older sessions spawned before this field existed,
+  // or sessions where derivation failed).
+  if (session.userPrompt) return session.userPrompt;
 
   // 5. Humanized branch — stable semantic fallback.
   // humanizeBranch returns "" when the branch is just the session ID

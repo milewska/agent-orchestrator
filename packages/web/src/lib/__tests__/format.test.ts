@@ -201,6 +201,38 @@ describe("getSessionTitle", () => {
     expect(getSessionTitle(session)).toBe("Add OAuth2 refresh token support");
   });
 
+  it("prefers cleaned displayName over raw userPrompt for prompt-only sessions", () => {
+    // Regression: both `userPrompt` and `displayName` come from the same
+    // `spawnConfig.prompt` for prompt-only sessions. `userPrompt` stores the
+    // raw multi-line prompt; `displayName` is the single-line 80-char-
+    // truncated version. If `userPrompt` were checked first, kanban cards
+    // would show the raw multi-line text and the deriveDisplayName cleanup
+    // would never surface.
+    const session = makeSession({
+      id: "ao-42",
+      summary: null,
+      issueTitle: null,
+      userPrompt:
+        "Add rate limiting to /api/upload\n\nUse a sliding-window counter keyed by IP.",
+      displayName: "Add rate limiting to /api/upload",
+      branch: "session/ao-42",
+    });
+    expect(getSessionTitle(session)).toBe("Add rate limiting to /api/upload");
+  });
+
+  it("falls through to raw userPrompt when displayName is absent", () => {
+    // Backwards-compat safety net for sessions spawned before displayName.
+    const session = makeSession({
+      summary: null,
+      issueTitle: null,
+      displayName: null,
+      userPrompt: "Fix the race condition",
+      branch: "session/ao-42",
+      id: "ao-42",
+    });
+    expect(getSessionTitle(session)).toBe("Fix the race condition");
+  });
+
   it("prefers issue title over displayName when both are present", () => {
     const session = makeSession({
       issueTitle: "Live issue title",
