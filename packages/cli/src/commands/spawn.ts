@@ -57,16 +57,24 @@ interface SpawnClaimOptions {
 /**
  * Lifecycle polling runs in-process inside the long-lived `ao start` process.
  * `ao spawn` is a one-shot CLI — it can't start polling in its own process
- * (the interval would keep the CLI alive forever and duplicate work). If `ao
- * start` isn't running, nothing will poll the newly spawned session, so warn
- * the user.
+ * (the interval would keep the CLI alive forever and duplicate work). Warn
+ * when no `ao start` is running, or when the running instance isn't covering
+ * this project (e.g. `ao start A` then `ao spawn` in B).
  */
-async function warnIfAONotRunning(): Promise<void> {
+async function warnIfAONotRunning(projectId: string): Promise<void> {
   const running = await getRunning();
   if (!running) {
     console.log(
       chalk.yellow(
         "⚠ AO is not running — lifecycle polling is inactive. Run `ao start` so the new session is tracked.",
+      ),
+    );
+    return;
+  }
+  if (!running.projects.includes(projectId)) {
+    console.log(
+      chalk.yellow(
+        `⚠ The running AO instance (pid ${running.pid}) is not polling project "${projectId}". Run \`ao start ${projectId}\` so the new session is tracked.`,
       ),
     );
   }
@@ -248,7 +256,7 @@ export function registerSpawn(program: Command): void {
 
         try {
           await runSpawnPreflight(config, projectId, claimOptions);
-          await warnIfAONotRunning();
+          await warnIfAONotRunning(projectId);
 
           await spawnSession(config, projectId, issueId, opts.open, opts.agent, claimOptions, opts.prompt);
         } catch (err) {
@@ -294,7 +302,7 @@ export function registerBatchSpawn(program: Command): void {
       // Pre-flight once before the loop so a missing prerequisite fails fast
       try {
         await runSpawnPreflight(config, projectId);
-        await warnIfAONotRunning();
+        await warnIfAONotRunning(projectId);
       } catch (err) {
         console.error(chalk.red(`✗ ${err instanceof Error ? err.message : String(err)}`));
         process.exit(1);

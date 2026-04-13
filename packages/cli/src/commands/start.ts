@@ -38,7 +38,7 @@ import {
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { exec, execSilent, git } from "../lib/shell.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
-import { ensureLifecycleWorker } from "../lib/lifecycle-service.js";
+import { ensureLifecycleWorker, stopAllLifecycleWorkers } from "../lib/lifecycle-service.js";
 import {
   findWebDir,
   buildDashboardEnv,
@@ -1367,13 +1367,35 @@ export function registerStart(program: Command): void {
           const actualPort = await runStartup(config, projectId, project, opts);
 
           // ── Register in running.json (Step 11) ──
+          // Only record the project this invocation actually polls. Other
+          // configured projects are not covered by this lifecycle loop, and
+          // `ao spawn` relies on this list to decide whether to warn users.
           await register({
             pid: process.pid,
             configPath: config.configPath,
             port: actualPort,
             startedAt: new Date().toISOString(),
-            projects: Object.keys(config.projects),
+            projects: [projectId],
           });
+
+          // Install shutdown handlers so `ao stop` (which sends SIGTERM to
+          // this pid) flushes lifecycle health state before exit. Handlers
+          // MUST call process.exit() — installing a SIGINT/SIGTERM listener
+          // removes Node's default exit behavior, so without an explicit
+          // exit the interval timer would keep the event loop alive.
+          let shuttingDown = false;
+          const shutdown = (signal: NodeJS.Signals): void => {
+            if (shuttingDown) return;
+            shuttingDown = true;
+            try {
+              stopAllLifecycleWorkers();
+            } catch {
+              // Best-effort cleanup — never block shutdown on observability.
+            }
+            process.exit(signal === "SIGINT" ? 130 : 0);
+          };
+          process.once("SIGINT", shutdown);
+          process.once("SIGTERM", shutdown);
         } catch (err) {
           if (err instanceof Error) {
             console.error(chalk.red("\nError:"), err.message);
