@@ -1179,7 +1179,11 @@ function ProjectOverviewGrid({
                 <ProjectMetric label="Review" value={counts.review} tone="orange" />
               </>
             ) : (
-              <ProjectMetric label="Action" value={counts.action} tone="error" />
+              // "action" collapses respond + review — use orange (the less
+              // severe of the two merged tones) to match the favicon's
+              // yellow-severity treatment. Red would cry wolf on routine
+              // review work like ci_failed / changes_requested.
+              <ProjectMetric label="Action" value={counts.action} tone="orange" />
             )}
             <ProjectMetric label="Pending" value={counts.pending} tone="attention" />
             <ProjectMetric label="Working" value={counts.working} tone="working" />

@@ -302,8 +302,13 @@ function SessionStateChip({
       label = "changes";
     } else if (session.activity === "waiting_input") {
       label = "waiting";
-    } else if (session.activity === "blocked" || session.activity === "exited") {
-      label = "needs input";
+    } else if (session.activity === "exited") {
+      // Exited agent with non-terminal status = the process crashed. The
+      // user needs to investigate or restart it, not send a message — so
+      // don't mislabel this as "needs input".
+      label = "crashed";
+    } else if (session.activity === "blocked") {
+      label = "blocked";
     } else if (session.pr?.ciStatus === "failing") {
       label = "ci failed";
     } else if (session.pr?.reviewDecision === "changes_requested") {
