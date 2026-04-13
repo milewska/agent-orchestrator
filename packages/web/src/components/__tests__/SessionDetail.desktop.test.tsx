@@ -186,4 +186,22 @@ describe("SessionDetail desktop layout", () => {
     expect(screen.getByText(/Terminal session has ended/i)).toBeInTheDocument();
     expect(screen.queryByTestId("direct-terminal")).not.toBeInTheDocument();
   });
+
+  it("treats exited activity as terminal and restorable on desktop", () => {
+    render(
+      <SessionDetail
+        session={makeSession({
+          id: "worker-exited",
+          projectId: "my-app",
+          status: "working",
+          activity: "exited",
+          pr: null,
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Restore" })).toBeInTheDocument();
+    expect(screen.getByText(/Terminal session has ended/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("direct-terminal")).not.toBeInTheDocument();
+  });
 });

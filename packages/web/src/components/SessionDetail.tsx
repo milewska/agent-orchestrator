@@ -6,13 +6,11 @@ import { useMediaQuery, MOBILE_BREAKPOINT } from "@/hooks/useMediaQuery";
 import {
   type DashboardSession,
   type DashboardPR,
-  TERMINAL_STATUSES,
-  NON_RESTORABLE_STATUSES,
   isPRMergeReady,
   isPRRateLimited,
   isPRUnenriched,
 } from "@/lib/types";
-import { CI_STATUS } from "@aoagents/ao-core/types";
+import { CI_STATUS, isRestorable, isTerminalSession } from "@aoagents/ao-core/types";
 import { cn } from "@/lib/cn";
 import dynamic from "next/dynamic";
 import { getSessionTitle } from "@/lib/format";
@@ -458,8 +456,8 @@ export function SessionDetail({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const pr = session.pr;
-  const terminalEnded = TERMINAL_STATUSES.has(session.status);
-  const isRestorable = terminalEnded && !NON_RESTORABLE_STATUSES.has(session.status);
+  const terminalEnded = isTerminalSession(session);
+  const sessionIsRestorable = isRestorable(session);
   const activity = (session.activity && activityMeta[session.activity]) ?? {
     label: session.activity ?? "unknown",
     color: "var(--color-text-muted)",
@@ -616,7 +614,7 @@ export function SessionDetail({
                       crumbHref={crumbHref}
                       crumbLabel={crumbLabel}
                       onKill={isOrchestrator || terminalEnded ? undefined : handleKill}
-                      onRestore={isOrchestrator || !isRestorable ? undefined : handleRestore}
+                      onRestore={isOrchestrator || !sessionIsRestorable ? undefined : handleRestore}
                     />
                   )}
 
