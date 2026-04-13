@@ -12,6 +12,7 @@ import {
   configToYaml,
   sanitizeProjectId,
   generateOrchestratorPrompt,
+  isPortfolioEnabled,
 } from "@aoagents/ao-core";
 import { getAllProjects } from "@/lib/project-name";
 import { RegisterProjectSchema } from "@/lib/api-schemas";
@@ -86,6 +87,12 @@ export async function GET(request: NextRequest) {
     const scope = request.nextUrl.searchParams.get("scope");
 
     if (scope === "portfolio") {
+      if (!isPortfolioEnabled()) {
+        return NextResponse.json(
+          { error: "Portfolio mode is disabled" },
+          { status: 404 },
+        );
+      }
       const { portfolio } = getPortfolioServices();
       // Strip sensitive paths before returning to the client
       const sanitized = portfolio.map((p) => ({
@@ -116,6 +123,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!isPortfolioEnabled()) {
+      return NextResponse.json({ error: "Portfolio mode is disabled" }, { status: 404 });
+    }
+
     const body = await request.json();
     const parsed = RegisterProjectSchema.safeParse(body);
     if (!parsed.success) {

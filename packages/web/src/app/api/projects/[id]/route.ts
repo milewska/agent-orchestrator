@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getPortfolio,
+  isPortfolioEnabled,
   loadPreferences,
   updatePreferences,
   unregisterProject,
@@ -39,6 +40,10 @@ export async function PUT(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
+    if (!isPortfolioEnabled()) {
+      return NextResponse.json({ error: "Portfolio mode is disabled" }, { status: 404 });
+    }
+
     const { id } = await context.params;
     const portfolio = getPortfolio();
     const project = portfolio.find((entry) => entry.id === id);
@@ -88,6 +93,10 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> },
 ) {
   try {
+    if (!isPortfolioEnabled()) {
+      return NextResponse.json({ error: "Portfolio mode is disabled" }, { status: 404 });
+    }
+
     const { id } = await context.params;
     const portfolio = getPortfolio();
     const project = portfolio.find((entry) => entry.id === id);
