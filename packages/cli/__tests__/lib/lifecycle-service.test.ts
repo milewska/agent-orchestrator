@@ -10,7 +10,6 @@ vi.mock("../../src/lib/create-session-manager.js", () => ({
 // Import after mocks
 import {
   ensureLifecycleWorker,
-  stopLifecycleWorker,
   stopAllLifecycleWorkers,
   isLifecycleWorkerRunning,
   listLifecycleWorkers,
@@ -102,21 +101,9 @@ describe("lifecycle-service", () => {
     expect(isLifecycleWorkerRunning("healthy")).toBe(true);
   });
 
-  it("stopLifecycleWorker stops the per-project loop and returns true", async () => {
-    const lifecycle = makeFakeLifecycle();
-    mockGetLifecycleManager.mockResolvedValue(lifecycle);
-
-    await ensureLifecycleWorker(makeConfig(["app"]), "app");
-    const stopped = await stopLifecycleWorker(makeConfig(["app"]), "app");
-
-    expect(stopped).toBe(true);
-    expect(lifecycle.stop).toHaveBeenCalledTimes(1);
-    expect(isLifecycleWorkerRunning("app")).toBe(false);
-  });
-
-  it("stopLifecycleWorker returns false when no loop is active", async () => {
-    const stopped = await stopLifecycleWorker(makeConfig(["app"]), "app");
-    expect(stopped).toBe(false);
+  it("stopAllLifecycleWorkers is a no-op when nothing is active", () => {
+    expect(() => stopAllLifecycleWorkers()).not.toThrow();
+    expect(listLifecycleWorkers()).toEqual([]);
   });
 
   it("stopAllLifecycleWorkers stops every registered project", async () => {

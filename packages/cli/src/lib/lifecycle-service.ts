@@ -74,22 +74,6 @@ export async function ensureLifecycleWorker(
   return { running: true, started: true };
 }
 
-export async function stopLifecycleWorker(
-  _config: OrchestratorConfig,
-  projectId: string,
-): Promise<boolean> {
-  const entry = active.get(projectId);
-  if (!entry) return false;
-
-  try {
-    entry.stop();
-  } catch {
-    // Best-effort cleanup
-  }
-  active.delete(projectId);
-  return true;
-}
-
 export function stopAllLifecycleWorkers(): void {
   for (const projectId of Array.from(active.keys())) {
     const entry = active.get(projectId);
