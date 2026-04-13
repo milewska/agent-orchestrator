@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     const repo = parseRepoUrl(parsed.data.url);
     const cloneRoot = assertWorkspacePathAllowed(parsed.data.location, "Clone location");
     const targetDir = resolve(cloneRoot, repo.repo);
-    let projectKey = sanitizeProjectId(repo.repo);
+    const projectKey = sanitizeProjectId(repo.repo);
 
     await ensureDirectory(cloneRoot);
     await ensureMissingOrEmptyDirectory(targetDir);
