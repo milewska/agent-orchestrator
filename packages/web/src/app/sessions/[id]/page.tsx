@@ -39,6 +39,7 @@ function buildSessionTitle(
 
 interface ZoneCounts {
   merge: number;
+  action: number;
   respond: number;
   review: number;
   pending: number;
@@ -170,6 +171,7 @@ export default function SessionPage() {
 
       const counts: ZoneCounts = {
         merge: 0,
+        action: 0,
         respond: 0,
         review: 0,
         pending: 0,

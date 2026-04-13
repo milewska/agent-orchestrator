@@ -39,6 +39,10 @@ const zoneConfig: Record<
     label: "Ready",
     emptyMessage: "Nothing cleared to land yet.",
   },
+  action: {
+    label: "Action",
+    emptyMessage: "No agents need your input.",
+  },
   respond: {
     label: "Respond",
     emptyMessage: "No agents need your input.",
@@ -280,6 +284,20 @@ function SessionStateChip({
 
   if (level === "merge" && session.pr && isPRMergeReady(session.pr)) {
     label = "ready";
+  } else if (level === "action") {
+    // Simple-mode collapsed chip: prefer the more specific underlying state
+    // when we can derive it from session/activity/PR data.
+    if (
+      session.activity === "waiting_input" ||
+      session.activity === "blocked" ||
+      session.activity === "exited"
+    ) {
+      label = session.activity === "waiting_input" ? "waiting" : "needs input";
+    } else if (session.pr?.reviewDecision === "changes_requested") {
+      label = "changes";
+    } else {
+      label = "action";
+    }
   } else if (level === "respond") {
     label = session.activity === "waiting_input" ? "waiting" : "needs input";
   } else if (level === "review") {

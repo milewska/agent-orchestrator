@@ -4,6 +4,7 @@ import { useEffect, useReducer, useRef, useCallback } from "react";
 import {
   getAttentionLevel,
   type AttentionLevel,
+  type DashboardAttentionZoneMode,
   type DashboardSession,
   type SSESnapshotEvent,
 } from "@/lib/types";
@@ -99,6 +100,7 @@ export function useSessionEvents(
   muxSessions?: Array<{ id: string; status: string; activity: string | null; attentionLevel: string; lastActivityAt: string }>,
   initialAttentionLevels?: SSEAttentionMap,
   disabled = false,
+  attentionZones: DashboardAttentionZoneMode = "simple",
 ): State {
   const [state, dispatch] = useReducer(reducer, {
     sessions: initialSessions,
@@ -161,7 +163,7 @@ export function useSessionEvents(
 
             lastRefreshAtRef.current = Date.now();
             const sseAttentionLevels = Object.fromEntries(
-              updated.sessions.map((s) => [s.id, getAttentionLevel(s)]),
+              updated.sessions.map((s) => [s.id, getAttentionLevel(s, attentionZones)]),
             ) as SSEAttentionMap;
             dispatch({
               type: "reset",
@@ -202,7 +204,7 @@ export function useSessionEvents(
           pendingMembershipKeyRef.current = null;
         });
     }, MEMBERSHIP_REFRESH_DELAY_MS);
-  }, [project]);
+  }, [project, attentionZones]);
 
   // Mux-based session updates (replaces SSE when available)
   useEffect(() => {

@@ -20,7 +20,14 @@ interface ProjectSidebarProps {
   onMobileClose?: () => void;
 }
 
-type SessionDotLevel = "respond" | "review" | "pending" | "working" | "merge" | "done";
+type SessionDotLevel =
+  | "respond"
+  | "review"
+  | "action"
+  | "pending"
+  | "working"
+  | "merge"
+  | "done";
 
 function SessionDot({ level }: { level: SessionDotLevel }) {
   return (
@@ -39,6 +46,7 @@ const LEVEL_LABELS: Record<AttentionLevel, string> = {
   pending: "pending",
   review: "review",
   respond: "respond",
+  action: "action",
   merge: "merge",
   done: "done",
 };

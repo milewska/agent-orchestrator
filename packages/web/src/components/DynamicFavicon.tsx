@@ -16,7 +16,8 @@ function computeHealthFromLevels(levels: SSEAttentionMap): "green" | "yellow" | 
   let hasYellow = false;
 
   for (const level of entries) {
-    if (level === "respond") return "red";
+    // "respond" (detailed) and "action" (simple) both signal urgent intervention.
+    if (level === "respond" || level === "action") return "red";
     if (level === "review" || level === "merge") hasYellow = true;
   }
 
@@ -38,11 +39,16 @@ function generateFaviconSvg(initial: string, color: string): string {
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
-/** Count sessions that need human attention (respond, review, merge). */
+/** Count sessions that need human attention (respond, review, action, merge). */
 export function countNeedingAttention(levels: SSEAttentionMap): number {
   let count = 0;
   for (const level of Object.values(levels)) {
-    if (level === "respond" || level === "review" || level === "merge") {
+    if (
+      level === "respond" ||
+      level === "review" ||
+      level === "action" ||
+      level === "merge"
+    ) {
       count++;
     }
   }
