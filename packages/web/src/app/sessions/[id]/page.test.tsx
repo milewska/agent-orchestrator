@@ -1,5 +1,5 @@
 import React, { type ReactNode } from "react";
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, cleanup } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { DashboardSession } from "@/lib/types";
 
@@ -86,6 +86,7 @@ describe("SessionPage project polling", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.useRealTimers();
     vi.restoreAllMocks();
     notFoundSpy.mockReset();
@@ -312,5 +313,64 @@ describe("SessionPage project polling", () => {
 
     expect(latestAfterSidebarResolve.sidebarLoading).toBe(false);
     expect(latestAfterSidebarResolve.sidebarSessions).toEqual([workerSession]);
+  });
+
+  it("revalidates projects and sidebar sessions on remount even when cache exists", async () => {
+    const workerSession = makeWorkerSession();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/projects") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            projects: [{ id: "my-app", name: "My App", sessionPrefix: "my-app" }],
+          }),
+        } as Response;
+      }
+
+      if (url === "/api/sessions/worker-1") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => workerSession,
+        } as Response;
+      }
+
+      if (url === "/api/sessions") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ sessions: [workerSession] }),
+        } as Response;
+      }
+
+      if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ orchestratorId: "my-app-orchestrator" }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    global.fetch = fetchMock as typeof fetch;
+
+    const { default: SessionPage } = await import("./page");
+
+    const firstRender = render(<SessionPage />);
+    await flushAsyncWork();
+    firstRender.unmount();
+
+    render(<SessionPage />);
+    await flushAsyncWork();
+
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === "/api/projects"),
+    ).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === "/api/sessions"),
+    ).toHaveLength(2);
   });
 });

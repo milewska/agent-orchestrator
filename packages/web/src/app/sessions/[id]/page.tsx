@@ -57,6 +57,17 @@ interface ProjectSessionsBody {
 let cachedProjects: ProjectInfo[] | null = null;
 let cachedSidebarSessions: DashboardSession[] | null = null;
 
+function areProjectsEqual(previous: ProjectInfo[] | null, next: ProjectInfo[]): boolean {
+  if (!previous || previous.length !== next.length) {
+    return false;
+  }
+
+  return previous.every((project, index) => {
+    const candidate = next[index];
+    return JSON.stringify(project) === JSON.stringify(candidate);
+  });
+}
+
 function areSidebarSessionsEqual(
   previous: DashboardSession[] | null,
   next: DashboardSession[],
@@ -67,12 +78,7 @@ function areSidebarSessionsEqual(
 
   return previous.every((session, index) => {
     const candidate = next[index];
-    return (
-      session.id === candidate?.id &&
-      session.status === candidate.status &&
-      session.activity === candidate.activity &&
-      session.lastActivityAt === candidate.lastActivityAt
-    );
+    return JSON.stringify(session) === JSON.stringify(candidate);
   });
 }
 
@@ -148,7 +154,6 @@ export default function SessionPage() {
       setPrefixByProject(
         new Map(cachedProjects.map((p) => [p.id, p.sessionPrefix ?? p.id])),
       );
-      return;
     }
 
     try {
@@ -156,11 +161,13 @@ export default function SessionPage() {
       if (!res.ok) return;
       const data = (await res.json()) as { projects?: ProjectInfo[] } | null;
       if (!data?.projects) return;
-      cachedProjects = data.projects;
-      setProjects(data.projects);
-      setPrefixByProject(
-        new Map(data.projects.map((p) => [p.id, p.sessionPrefix ?? p.id])),
-      );
+      if (!areProjectsEqual(cachedProjects, data.projects)) {
+        cachedProjects = data.projects;
+        setProjects(data.projects);
+        setPrefixByProject(
+          new Map(data.projects.map((p) => [p.id, p.sessionPrefix ?? p.id])),
+        );
+      }
     } catch {
       // non-critical — falls back to role metadata check
     }
@@ -314,9 +321,9 @@ export default function SessionPage() {
     void Promise.all([
       fetchProjects(),
       fetchSession(),
-      sidebarSessions === null ? fetchSidebarSessions() : Promise.resolve(),
+      fetchSidebarSessions(),
     ]);
-  }, [fetchProjects, fetchSession, fetchSidebarSessions, sidebarSessions]);
+  }, [fetchProjects, fetchSession, fetchSidebarSessions]);
 
   useEffect(() => {
     if (!sessionProjectId) return;
