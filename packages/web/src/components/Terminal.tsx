@@ -24,9 +24,14 @@ export function Terminal({ sessionId }: TerminalProps) {
         return res.json() as Promise<{ url: string; token: string }>;
       })
       .then((data) => {
-        const u = new URL(data.url, typeof window !== "undefined" ? window.location.origin : "http://localhost");
-        u.searchParams.set("token", data.token);
-        setTerminalUrl(u.toString());
+        // SECURITY NOTE: The token is intentionally NOT embedded in the URL query
+        // string here.  The route handler returns the base ttyd URL (with only the
+        // session param) and the token separately in the JSON body.  The mux
+        // WebSocket path (MuxProvider) sends the token via WS message body, which
+        // is the recommended production path.  This legacy Terminal component is
+        // retained only for the /dev/terminal-test comparison page and should not
+        // be used in production.
+        setTerminalUrl(data.url);
       })
       .catch((err) => {
         console.error("[Terminal] Failed to get terminal URL:", err);

@@ -27,7 +27,7 @@ describe("Terminal", () => {
     await waitFor(() =>
       expect(screen.getByTitle("Terminal: ao-77")).toHaveAttribute(
         "src",
-        "http://localhost:14800/terminal?session=demo&token=abc",
+        "http://localhost:14800/terminal?session=demo",
       ),
     );
 
