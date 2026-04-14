@@ -315,6 +315,108 @@ describe("mux terminal cross-connection isolation", () => {
     wsA.close();
     wsB.close();
   });
+
+  it("rejects resize from a connection that did not open the terminal", async () => {
+    const wsA = await connectMux();
+    const wsB = await connectMux();
+    const { token } = issueTerminalAccess(TEST_SESSION);
+
+    wsA.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "open", token }));
+    await waitForMessage(wsA, (m) => m.ch === "terminal" && m.type === "opened");
+
+    wsB.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "resize", cols: 200, rows: 50 }));
+
+    const err = await waitForMessage(wsB, (m) => m.ch === "terminal" && m.type === "error");
+    expect(String(err.message)).toMatch(/not opened/i);
+
+    wsA.close();
+    wsB.close();
+  });
+
+  it("does not deliver terminal data to a connection that did not subscribe", async () => {
+    const wsA = await connectMux();
+    const wsB = await connectMux();
+    const { token } = issueTerminalAccess(TEST_SESSION);
+
+    // Only wsA opens the terminal
+    wsA.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "open", token }));
+    await waitForMessage(wsA, (m) => m.ch === "terminal" && m.type === "opened");
+
+    // wsB subscribes to a different channel to avoid connection-level issues
+    let bReceivedTerminalData = false;
+    wsB.on("message", (raw: Buffer | string) => {
+      try {
+        const msg = JSON.parse(raw.toString()) as MuxMessage;
+        if (msg.ch === "terminal" && msg.id === TEST_SESSION && msg.type === "data") {
+          bReceivedTerminalData = true;
+        }
+      } catch { /* ignore */ }
+    });
+
+    // wsA sends data that produces output
+    const marker = `ISOLATE_${Date.now()}`;
+    wsA.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "data", data: `echo ${marker}\n` }));
+
+    // Wait for wsA to see the echo
+    await waitForMessage(wsA, (m) => m.ch === "terminal" && m.type === "data", 5000);
+
+    // Give wsB a moment to potentially receive leaked data
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(bReceivedTerminalData).toBe(false);
+
+    wsA.close();
+    wsB.close();
+  });
+
+  it("allows both connections to independently open and use the same terminal", async () => {
+    const wsA = await connectMux();
+    const wsB = await connectMux();
+    const tokenA = issueTerminalAccess(TEST_SESSION);
+    const tokenB = issueTerminalAccess(TEST_SESSION);
+
+    // Both open the same terminal with their own tokens
+    wsA.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "open", token: tokenA.token }));
+    await waitForMessage(wsA, (m) => m.ch === "terminal" && m.type === "opened");
+
+    wsB.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "open", token: tokenB.token }));
+    await waitForMessage(wsB, (m) => m.ch === "terminal" && m.type === "opened");
+
+    // Drain initial output on both
+    await new Promise((r) => setTimeout(r, 300));
+
+    // wsA sends data — both should receive it
+    const markerA = `BOTH_A_${Date.now()}`;
+    let aReceived = "";
+    let bReceived = "";
+    const collectA = (raw: Buffer | string) => {
+      try {
+        const msg = JSON.parse(raw.toString()) as MuxMessage;
+        if (msg.ch === "terminal" && msg.type === "data") aReceived += msg.data as string;
+      } catch { /* */ }
+    };
+    const collectB = (raw: Buffer | string) => {
+      try {
+        const msg = JSON.parse(raw.toString()) as MuxMessage;
+        if (msg.ch === "terminal" && msg.type === "data") bReceived += msg.data as string;
+      } catch { /* */ }
+    };
+    wsA.on("message", collectA);
+    wsB.on("message", collectB);
+
+    wsA.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "data", data: `echo ${markerA}\n` }));
+
+    await new Promise((r) => setTimeout(r, 2000));
+
+    wsA.off("message", collectA);
+    wsB.off("message", collectB);
+
+    expect(aReceived).toContain(markerA);
+    expect(bReceived).toContain(markerA);
+
+    wsA.close();
+    wsB.close();
+  });
 });
 
 // =============================================================================
