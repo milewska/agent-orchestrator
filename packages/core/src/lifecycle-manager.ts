@@ -1466,10 +1466,8 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         // Skip PR-managed statuses — lifecycle poll tracks these via PR state, not running agent
         if (status && PR_MANAGED_STATUSES.has(status)) continue;
 
-        // Skip orchestrator sessions — they manage themselves
-        if (raw["role"] === "orchestrator" || sessionId.endsWith("-orchestrator")) continue;
-        // Also skip prefix-orchestrator-N pattern (e.g., "web-orchestrator-1") when sessionPrefix is configured
-        if (sessionPrefix && new RegExp(`^${escapeRegex(sessionPrefix)}-orchestrator-\\d+$`).test(sessionId)) continue;
+        // Orchestrator sessions are recovered too — if the VM died mid-flight,
+        // the orchestrator needs to come back to continue driving workers.
 
         // Resolve agent plugin for optional isProcessRunning fallback
         const agentName = raw["agent"] ?? config.defaults.agent;

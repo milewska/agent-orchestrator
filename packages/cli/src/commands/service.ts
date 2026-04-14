@@ -83,8 +83,7 @@ export function generateLaunchdPlist(
   <key>ProgramArguments</key>
   <array>
     <string>${escapeXml(aoBinary)}</string>
-    <string>lifecycle-worker</string>
-    <string>${escapeXml(projectId)}</string>
+    <string>start</string>
   </array>
 
   <key>EnvironmentVariables</key>
@@ -124,12 +123,12 @@ export function generateSystemdUnit(
   const safeId = sanitizeProjectId(projectId);
   // ExecStart and Environment values are quoted to handle spaces/special chars
   return `[Unit]
-Description=AO Lifecycle Worker (${safeId})
+Description=AO Service (${safeId})
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=${quoteSystemdValue(aoBinary)} lifecycle-worker ${quoteSystemdValue(projectId)}
+ExecStart=${quoteSystemdValue(aoBinary)} start
 Environment=${quoteSystemdValue(`AO_CONFIG_PATH=${configPath}`)}
 Restart=on-failure
 RestartSec=30

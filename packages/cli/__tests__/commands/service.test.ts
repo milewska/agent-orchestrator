@@ -168,7 +168,7 @@ describe("generateLaunchdPlist", () => {
     expect(plist).toContain('<?xml version="1.0"');
     expect(plist).toContain("<string>com.composio.ao-lifecycle.my-app</string>");
     expect(plist).toContain("<string>/usr/bin/ao</string>");
-    expect(plist).toContain("<string>my-app</string>");
+    expect(plist).toContain("<string>start</string>");
     expect(plist).toContain("<string>/home/user/config.yaml</string>");
     expect(plist).toContain("<true/>");
     expect(plist).toContain("RunAtLoad");
@@ -178,10 +178,11 @@ describe("generateLaunchdPlist", () => {
     expect(plist).toContain("lifecycle-my-app.log");
   });
 
-  it("escapes XML-unsafe characters in projectId", () => {
+  it("sanitizes projectId in label and uses start command", () => {
     const plist = generateLaunchdPlist("my<app", "/usr/bin/ao", "/config.yaml");
-    expect(plist).toContain("<string>my&lt;app</string>");
+    // projectId no longer in ProgramArguments (uses `ao start`), but label is sanitized
     expect(plist).toContain("com.composio.ao-lifecycle.my-app");
+    expect(plist).toContain("<string>start</string>");
   });
 
   it("escapes XML-unsafe characters in binary path", () => {
@@ -202,8 +203,8 @@ describe("generateSystemdUnit", () => {
     expect(unit).toContain("[Unit]");
     expect(unit).toContain("[Service]");
     expect(unit).toContain("[Install]");
-    expect(unit).toContain("AO Lifecycle Worker (my-app)");
-    expect(unit).toContain('ExecStart="/usr/bin/ao" lifecycle-worker "my-app"');
+    expect(unit).toContain("AO Service (my-app)");
+    expect(unit).toContain('ExecStart="/usr/bin/ao" start');
     expect(unit).toContain('"AO_CONFIG_PATH=/home/user/config.yaml"');
     expect(unit).toContain("SyslogIdentifier=ao-lifecycle-my-app");
     expect(unit).toContain("Restart=on-failure");
@@ -213,9 +214,9 @@ describe("generateSystemdUnit", () => {
 
   it("properly quotes paths with spaces", () => {
     const unit = generateSystemdUnit("my app", "/path/with spaces/ao", "/config path/config.yaml");
-    expect(unit).toContain('ExecStart="/path/with spaces/ao" lifecycle-worker "my app"');
+    expect(unit).toContain('ExecStart="/path/with spaces/ao" start');
     expect(unit).toContain('"AO_CONFIG_PATH=/config path/config.yaml"');
-    expect(unit).toContain("AO Lifecycle Worker (my-app)");
+    expect(unit).toContain("AO Service (my-app)");
   });
 
   it("escapes shell-special characters in binary path", () => {
