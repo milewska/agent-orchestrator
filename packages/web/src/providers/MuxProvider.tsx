@@ -99,6 +99,16 @@ export function MuxProvider({ children }: { children: ReactNode }) {
     return openedTerminalsRef.current.has(id) || (subscribersRef.current.get(id)?.size ?? 0) > 0;
   }, []);
 
+  /** Drop cached / in-flight grants when nothing wants this terminal (avoids unbounded map growth). */
+  const pruneTerminalGrantStateIfIdle = useCallback(
+    (id: string) => {
+      if (isTerminalDesired(id)) return;
+      terminalGrantCacheRef.current.delete(id);
+      terminalGrantInflightRef.current.delete(id);
+    },
+    [isTerminalDesired],
+  );
+
   const fetchTerminalGrant = useCallback(async (id: string, forceRefresh = false): Promise<string> => {
     const cached = terminalGrantCacheRef.current.get(id);
     const now = Date.now();
@@ -131,7 +141,9 @@ export function MuxProvider({ children }: { children: ReactNode }) {
         throw new Error("Terminal authorization expiry was invalid");
       }
 
-      terminalGrantCacheRef.current.set(id, { token: data.token, expiresAtMs });
+      if (isTerminalDesired(id)) {
+        terminalGrantCacheRef.current.set(id, { token: data.token, expiresAtMs });
+      }
       return data.token;
     })();
 
@@ -144,7 +156,7 @@ export function MuxProvider({ children }: { children: ReactNode }) {
         terminalGrantInflightRef.current.delete(id);
       }
     }
-  }, []);
+  }, [isTerminalDesired]);
 
   const sendTerminalOpen = useCallback(async (id: string, forceRefresh = false) => {
     const ws = wsRef.current;
@@ -238,11 +250,13 @@ export function MuxProvider({ children }: { children: ReactNode }) {
                   type: "close",
                 };
                 ws.send(JSON.stringify(closeMsg));
+                pruneTerminalGrantStateIfIdle(msg.id);
               }
             } else if (msg.type === "exited") {
               // PTY exited and could not be re-attached — remove so it isn't
               // re-opened on reconnect, and surface a terminal-level error chunk
               openedTerminalsRef.current.delete(msg.id);
+              pruneTerminalGrantStateIfIdle(msg.id);
               const subs = subscribersRef.current.get(msg.id);
               if (subs) {
                 const notice = `\r\n\x1b[31m[Terminal exited with code ${msg.code}]\x1b[0m\r\n`;
@@ -286,7 +300,7 @@ export function MuxProvider({ children }: { children: ReactNode }) {
       console.error("[MuxProvider] Failed to create WebSocket:", err);
       setStatus("disconnected");
     }
-  }, [isTerminalDesired, sendTerminalOpen]);
+  }, [isTerminalDesired, pruneTerminalGrantStateIfIdle, sendTerminalOpen]);
 
   // Fetch runtime config then connect. This ensures buildMuxWsUrl() has the
   // server-configured port/path before the WebSocket is opened.
@@ -346,11 +360,12 @@ export function MuxProvider({ children }: { children: ReactNode }) {
           subs.delete(callback);
           if (subs.size === 0) {
             subscribersRef.current.delete(id);
+            pruneTerminalGrantStateIfIdle(id);
           }
         }
       };
     },
-    [sendTerminalOpen],
+    [pruneTerminalGrantStateIfIdle, sendTerminalOpen],
   );
 
   const writeTerminal = useCallback((id: string, data: string) => {
@@ -374,6 +389,7 @@ export function MuxProvider({ children }: { children: ReactNode }) {
 
   const closeTerminal = useCallback((id: string) => {
     openedTerminalsRef.current.delete(id);
+    pruneTerminalGrantStateIfIdle(id);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const msg: ClientMessage = {
         ch: "terminal",
@@ -382,7 +398,7 @@ export function MuxProvider({ children }: { children: ReactNode }) {
       };
       wsRef.current.send(JSON.stringify(msg));
     }
-  }, []);
+  }, [pruneTerminalGrantStateIfIdle]);
 
   const resizeTerminal = useCallback((id: string, cols: number, rows: number) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {

@@ -826,16 +826,18 @@ describe("buildMuxWsUrl", () => {
 
   it("refreshes terminal grants after they expire", async () => {
     vi.useFakeTimers();
+    let terminalGrantFetchCount = 0;
     const fetchMock = vi.fn(async (input: string) => {
       if (input === "/api/runtime/terminal") {
         return { ok: true, json: async () => ({ proxyWsPath: "/ao-terminal-ws" }) };
       }
       if (input.startsWith("/api/sessions/") && input.endsWith("/terminal")) {
+        terminalGrantFetchCount += 1;
         const sessionId = decodeURIComponent(input.split("/")[3] ?? "");
         return {
           ok: true,
           json: async () => ({
-            token: `token-${sessionId}-${fetchMock.mock.calls.length}`,
+            token: `token-${sessionId}-${terminalGrantFetchCount}`,
             expiresAt: new Date(Date.now() + 1_000).toISOString(),
           }),
         };
@@ -866,7 +868,7 @@ describe("buildMuxWsUrl", () => {
         .filter((m) => m.ch === "terminal" && m.type === "open" && m.id === "session-expiring");
 
       expect(openMessages).toHaveLength(1);
-      expect(openMessages[0]?.["token"]).toBe("token-session-expiring-3");
+      expect(openMessages[0]?.["token"]).toBe("token-session-expiring-2");
     } finally {
       vi.useRealTimers();
     }

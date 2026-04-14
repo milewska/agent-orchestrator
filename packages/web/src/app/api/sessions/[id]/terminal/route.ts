@@ -29,8 +29,8 @@ export async function GET(
     const terminalPort = normalizePort(process.env.TERMINAL_PORT, 14800);
     const protocol = getRequestProtocol(request);
     const hostname = getRequestHostname(request);
-    // ttyd base URL only (no token in query). Clients append `token` when building the
-    // iframe src so reverse-proxy access logs for this JSON response do not embed secrets.
+    // Return the ttyd URL with the session identifier in the query string. The access
+    // token is returned separately in this JSON payload and is not embedded in `url`.
     const url =
       `${protocol}://${hostname}:${terminalPort}/terminal` +
       `?session=${encodeURIComponent(grant.sessionId)}`;

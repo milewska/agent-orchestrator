@@ -114,23 +114,6 @@ function collectNotifierRegistrations(
   }));
 }
 
-function extractPluginConfig(
-  slot: PluginSlot,
-  _name: string,
-  _config: OrchestratorConfig,
-  _isExternalLoad = false,
-): Record<string, unknown> | undefined {
-  // Notifiers register via registerNotifier + collectNotifierRegistrations (multi-alias).
-  if (slot === "notifier") {
-    return undefined;
-  }
-  // Tracker and SCM plugins receive project config per-call, not at create() time.
-  if (slot === "tracker" || slot === "scm") {
-    return undefined;
-  }
-  return undefined;
-}
-
 /**
  * Internal helper to validate and strip loading metadata from a plugin configuration.
  * Reserved fields (plugin, package, path) are used for plugin resolution and stripped.
@@ -474,10 +457,7 @@ export function createPluginRegistry(): PluginRegistry {
             if (orchestratorConfig && mod.manifest.slot === "notifier") {
               registerNotifier(mod, orchestratorConfig);
             } else {
-              const pluginConfig = orchestratorConfig
-                ? extractPluginConfig(builtin.slot, builtin.name, orchestratorConfig)
-                : undefined;
-              this.register(mod, pluginConfig);
+              this.register(mod);
             }
           } catch (error) {
             process.stderr.write(
@@ -536,8 +516,7 @@ export function createPluginRegistry(): PluginRegistry {
           if (mod.manifest.slot === "notifier") {
             registerNotifier(mod, config, true);
           } else {
-            const pluginConfig = extractPluginConfig(mod.manifest.slot, mod.manifest.name, config, true);
-            this.register(mod, pluginConfig);
+            this.register(mod);
           }
         } catch (error) {
           process.stderr.write(`[plugin-registry] Failed to load plugin "${specifier}": ${error}\n`);
