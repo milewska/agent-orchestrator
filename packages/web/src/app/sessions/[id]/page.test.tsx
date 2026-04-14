@@ -2,16 +2,22 @@ import React, { type ReactNode } from "react";
 import { act, render, screen, cleanup } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import type { DashboardSession } from "@/lib/types";
+import type { SessionPatch } from "@/lib/mux-protocol";
 
 const sessionDetailSpy = vi.fn();
 const notFoundError = new Error("NEXT_NOT_FOUND");
 const notFoundSpy = vi.fn(() => {
   throw notFoundError;
 });
+const mockMuxState: { current?: { sessions: SessionPatch[] } } = {};
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "worker-1" }),
   notFound: notFoundSpy,
+}));
+
+vi.mock("@/providers/MuxProvider", () => ({
+  useMuxOptional: () => mockMuxState.current,
 }));
 
 vi.mock("@/components/SessionDetail", () => ({
@@ -73,6 +79,8 @@ describe("SessionPage project polling", () => {
     vi.resetModules();
     sessionDetailSpy.mockClear();
     vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    mockMuxState.current = undefined;
 
     const eventSourceMock = {
       addEventListener: vi.fn(),
@@ -372,5 +380,144 @@ describe("SessionPage project polling", () => {
     expect(
       fetchMock.mock.calls.filter(([url]) => url === "/api/sessions"),
     ).toHaveLength(2);
+  });
+
+  it("surfaces sidebar fetch failures instead of leaving the loading skeleton active", async () => {
+    const workerSession = makeWorkerSession();
+
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/projects") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            projects: [{ id: "my-app", name: "My App", sessionPrefix: "my-app" }],
+          }),
+        } as Response;
+      }
+
+      if (url === "/api/sessions/worker-1") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => workerSession,
+        } as Response;
+      }
+
+      if (url === "/api/sessions") {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({}),
+        } as Response;
+      }
+
+      if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ orchestratorId: "my-app-orchestrator" }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    const { default: SessionPage } = await import("./page");
+
+    render(<SessionPage />);
+    await flushAsyncWork();
+
+    const latestProps = sessionDetailSpy.mock.lastCall?.[0] as {
+      sidebarError?: boolean;
+      sidebarLoading?: boolean;
+      sidebarSessions?: DashboardSession[] | null;
+    };
+
+    expect(latestProps.sidebarLoading).toBe(false);
+    expect(latestProps.sidebarError).toBe(true);
+    expect(latestProps.sidebarSessions).toEqual([]);
+  });
+
+  it("applies mux snapshots that arrive before the initial sidebar fetch resolves", async () => {
+    const workerSession = makeWorkerSession();
+    const muxPatchedLastActivityAt = "2026-04-14T12:00:00.000Z";
+    let resolveSidebarSessions: ((value: Response) => void) | null = null;
+
+    mockMuxState.current = {
+      sessions: [
+        {
+          id: "worker-1",
+          status: "working",
+          activity: "ready",
+          attentionLevel: "pending",
+          lastActivityAt: muxPatchedLastActivityAt,
+        },
+      ],
+    };
+
+    global.fetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/projects") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            projects: [{ id: "my-app", name: "My App", sessionPrefix: "my-app" }],
+          }),
+        } as Response);
+      }
+
+      if (url === "/api/sessions/worker-1") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => workerSession,
+        } as Response);
+      }
+
+      if (url === "/api/sessions") {
+        return new Promise<Response>((resolve) => {
+          resolveSidebarSessions = resolve;
+        });
+      }
+
+      if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ orchestratorId: "my-app-orchestrator" }),
+        } as Response);
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    }) as typeof fetch;
+
+    const { default: SessionPage } = await import("./page");
+
+    render(<SessionPage />);
+    await flushAsyncWork();
+
+    await act(async () => {
+      resolveSidebarSessions?.({
+        ok: true,
+        status: 200,
+        json: async () => ({ sessions: [workerSession] }),
+      } as Response);
+      await Promise.resolve();
+    });
+
+    const latestProps = sessionDetailSpy.mock.lastCall?.[0] as {
+      sidebarSessions?: DashboardSession[] | null;
+    };
+
+    expect(latestProps.sidebarSessions).toEqual([
+      {
+        ...workerSession,
+        activity: "ready",
+        lastActivityAt: muxPatchedLastActivityAt,
+      },
+    ]);
   });
 });

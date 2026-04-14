@@ -48,6 +48,8 @@ interface SessionDetailProps {
   projects?: ProjectInfo[];
   sidebarSessions?: DashboardSession[] | null;
   sidebarLoading?: boolean;
+  sidebarError?: boolean;
+  onRetrySidebar?: () => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -453,6 +455,8 @@ export function SessionDetail({
   projects = [],
   sidebarSessions = [],
   sidebarLoading = false,
+  sidebarError = false,
+  onRetrySidebar,
 }: SessionDetailProps) {
   const searchParams = useSearchParams();
   const isMobile = useMediaQuery(MOBILE_BREAKPOINT);
@@ -596,6 +600,8 @@ export function SessionDetail({
               projects={projects}
               sessions={sidebarSessions}
               loading={sidebarLoading}
+              error={sidebarError}
+              onRetry={onRetrySidebar}
               activeProjectId={session.projectId}
               activeSessionId={session.id}
               collapsed={sidebarCollapsed}

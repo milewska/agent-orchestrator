@@ -15,6 +15,8 @@ interface ProjectSidebarProps {
   activeProjectId: string | undefined;
   activeSessionId: string | undefined;
   loading?: boolean;
+  error?: boolean;
+  onRetry?: () => void;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
   mobileOpen?: boolean;
@@ -57,12 +59,15 @@ function ProjectSidebarInner({
   activeProjectId,
   activeSessionId,
   loading = false,
+  error = false,
+  onRetry,
   collapsed = false,
   onToggleCollapsed: _onToggleCollapsed,
   mobileOpen = false,
   onMobileClose,
 }: ProjectSidebarProps) {
   const router = useRouter();
+  const isLoading = loading || sessions === null;
 
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(
     () => new Set(activeProjectId && activeProjectId !== "all" ? [activeProjectId] : []),
@@ -200,7 +205,7 @@ function ProjectSidebarInner({
                 {/* Sessions */}
                 {isExpanded && (
                   <div className="project-sidebar__sessions">
-                    {loading ? (
+                    {isLoading ? (
                       <div className="space-y-2 px-3 py-2" aria-label="Loading sessions">
                         {Array.from({ length: 3 }, (_, index) => (
                           <div
@@ -249,6 +254,17 @@ function ProjectSidebarInner({
                           </button>
                         );
                       })
+                    ) : error ? (
+                      <div className="px-3 py-2">
+                        <div className="project-sidebar__empty">Failed to load sessions</div>
+                        <button
+                          type="button"
+                          className="mt-2 text-xs font-medium text-[var(--color-link)] hover:underline"
+                          onClick={onRetry}
+                        >
+                          Retry
+                        </button>
+                      </div>
                     ) : (
                       <div className="project-sidebar__empty">No active sessions</div>
                     )}
