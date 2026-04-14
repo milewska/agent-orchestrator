@@ -178,11 +178,11 @@ describe("generateLaunchdPlist", () => {
     expect(plist).toContain("lifecycle-my-app.log");
   });
 
-  it("sanitizes projectId in label and uses start command", () => {
+  it("passes projectId to ao start and sanitizes label", () => {
     const plist = generateLaunchdPlist("my<app", "/usr/bin/ao", "/config.yaml");
-    // projectId no longer in ProgramArguments (uses `ao start`), but label is sanitized
     expect(plist).toContain("com.composio.ao-lifecycle.my-app");
     expect(plist).toContain("<string>start</string>");
+    expect(plist).toContain("<string>my&lt;app</string>");
   });
 
   it("escapes XML-unsafe characters in binary path", () => {
@@ -204,7 +204,7 @@ describe("generateSystemdUnit", () => {
     expect(unit).toContain("[Service]");
     expect(unit).toContain("[Install]");
     expect(unit).toContain("AO Service (my-app)");
-    expect(unit).toContain('ExecStart="/usr/bin/ao" start');
+    expect(unit).toContain('ExecStart="/usr/bin/ao" start "my-app"');
     expect(unit).toContain('"AO_CONFIG_PATH=/home/user/config.yaml"');
     expect(unit).toContain("SyslogIdentifier=ao-lifecycle-my-app");
     expect(unit).toContain("Restart=on-failure");
@@ -214,7 +214,7 @@ describe("generateSystemdUnit", () => {
 
   it("properly quotes paths with spaces", () => {
     const unit = generateSystemdUnit("my app", "/path/with spaces/ao", "/config path/config.yaml");
-    expect(unit).toContain('ExecStart="/path/with spaces/ao" start');
+    expect(unit).toContain('ExecStart="/path/with spaces/ao" start "my app"');
     expect(unit).toContain('"AO_CONFIG_PATH=/config path/config.yaml"');
     expect(unit).toContain("AO Service (my-app)");
   });

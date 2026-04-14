@@ -84,6 +84,7 @@ export function generateLaunchdPlist(
   <array>
     <string>${escapeXml(aoBinary)}</string>
     <string>start</string>
+    <string>${escapeXml(projectId)}</string>
   </array>
 
   <key>EnvironmentVariables</key>
@@ -128,7 +129,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${quoteSystemdValue(aoBinary)} start
+ExecStart=${quoteSystemdValue(aoBinary)} start ${quoteSystemdValue(projectId)}
 Environment=${quoteSystemdValue(`AO_CONFIG_PATH=${configPath}`)}
 Restart=on-failure
 RestartSec=30
