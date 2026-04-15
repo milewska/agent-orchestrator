@@ -54,7 +54,7 @@ vi.mock("@aoagents/ao-core", () => ({
       .replace(/-{2,}/g, "-"),
 }));
 
-import { sanitizeProjectId } from "@aoagents/ao-core";
+import { sanitizeProjectId, type OrchestratorConfig } from "@aoagents/ao-core";
 import {
   escapeXml,
   quoteSystemdValue,
@@ -66,8 +66,6 @@ import {
   uninstallService,
   getServiceStatus,
 } from "../../src/commands/service.js";
-
-import type { OrchestratorConfig } from "@aoagents/ao-core";
 
 // ---------------------------------------------------------------------------
 // Setup
