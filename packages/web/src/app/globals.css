@@ -1689,7 +1689,7 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 
 .session-detail-identity-card {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
   padding: 14px 16px 14px 18px;
@@ -1730,6 +1730,11 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   align-items: center;
   gap: 10px;
   min-width: 0;
+}
+
+.session-detail-identity__actions--inline {
+  margin-left: auto;
+  padding-left: 8px;
 }
 
 .session-detail-identity__title {
@@ -1808,6 +1813,12 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
 .session-detail-link-pill--branch {
   font-family: var(--font-mono);
   font-size: 10px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  line-height: 18px;
 }
 
 .session-detail-link-pill--branch-link {
@@ -3148,6 +3159,27 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   background: color-mix(in srgb, var(--color-accent-red, var(--color-status-error)) 8%, transparent);
   border-color: color-mix(in srgb, var(--color-accent-red, var(--color-status-error)) 40%, var(--color-border-default));
   color: var(--color-accent-red, var(--color-status-error));
+}
+
+.session-detail-action-btn--ghost {
+  padding: 3px 8px;
+  font-size: 10.5px;
+  border-color: transparent;
+  color: var(--color-text-tertiary);
+  opacity: 0.75;
+}
+
+.session-detail-action-btn--ghost:hover {
+  opacity: 1;
+}
+
+.session-detail-action-btn--ghost.session-detail-action-btn--danger {
+  color: var(--color-text-tertiary);
+}
+
+.session-detail-action-btn--ghost.session-detail-action-btn--danger:hover {
+  color: var(--color-accent-red, var(--color-status-error));
+  border-color: color-mix(in srgb, var(--color-accent-red, var(--color-status-error)) 30%, transparent);
 }
 
 /* Diff stat colors (for PR card and pills) */

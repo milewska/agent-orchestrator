@@ -195,7 +195,7 @@ function SessionTopStrip({
       >
         <div className="session-detail-identity__info">
           <div className="session-detail-identity__primary">
-            <h1 className="session-detail-identity__title">
+            <h1 className="session-detail-identity__title" title={headline}>
               {headline}
             </h1>
             <div
@@ -213,6 +213,40 @@ function SessionTopStrip({
                 {activityLabel}
               </span>
             </div>
+            {!rightSlot && (onRestore || onKill) ? (
+              <div className="session-detail-identity__actions session-detail-identity__actions--inline">
+                {onRestore ? (
+                  <button
+                    type="button"
+                    className="done-restore-btn"
+                    onClick={onRestore}
+                  >
+                    <svg
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      viewBox="0 0 24 24"
+                      className="h-3 w-3"
+                    >
+                      <polyline points="1 4 1 10 7 10" />
+                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                    </svg>
+                    Restore
+                  </button>
+                ) : onKill ? (
+                  <button
+                    type="button"
+                    className="session-detail-action-btn session-detail-action-btn--danger session-detail-action-btn--ghost"
+                    onClick={onKill}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    Kill
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <div className="session-detail-identity__pills">
             {branch ? (
@@ -221,12 +255,16 @@ function SessionTopStrip({
                   href={buildGitHubBranchUrl(pr)}
                   target="_blank"
                   rel="noopener noreferrer"
+                  title={branch}
                   className="session-detail-link-pill session-detail-link-pill--branch session-detail-link-pill--branch-link hover:no-underline"
                 >
                   {branch}
                 </a>
               ) : (
-                <span className="session-detail-link-pill session-detail-link-pill--branch">
+                <span
+                  title={branch}
+                  className="session-detail-link-pill session-detail-link-pill--branch"
+                >
                   {branch}
                 </span>
               )
@@ -255,40 +293,7 @@ function SessionTopStrip({
           <div className="session-detail-identity__actions session-detail-identity__actions--custom">
             {rightSlot}
           </div>
-        ) : (
-          <div className="session-detail-identity__actions">
-            {onRestore ? (
-              <button
-                type="button"
-                className="done-restore-btn"
-                onClick={onRestore}
-              >
-                <svg
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                  className="h-3 w-3"
-                >
-                  <polyline points="1 4 1 10 7 10" />
-                  <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                </svg>
-                Restore
-              </button>
-            ) : onKill ? (
-              <button
-                type="button"
-                className="session-detail-action-btn session-detail-action-btn--danger"
-                onClick={onKill}
-              >
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                </svg>
-                Kill
-              </button>
-            ) : null}
-          </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -857,16 +862,8 @@ function SessionDetailPRCard({ pr, sessionId, metadata }: { pr: DashboardPR; ses
 
   return (
     <div className={cn("session-detail-pr-card", allGreen && "session-detail-pr-card--green")}>
-      {/* Row 1: Title + diff stats */}
+      {/* Row 1: Diff stats */}
       <div className="session-detail-pr-card__row">
-        <a
-          href={pr.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="session-detail-pr-card__title-link"
-        >
-          PR #{pr.number}: {pr.title}
-        </a>
         <span className="session-detail-pr-card__diff-stats">
           <span className="session-detail-diff--add">+{pr.additions}</span>{" "}
           <span className="session-detail-diff--del">-{pr.deletions}</span>
