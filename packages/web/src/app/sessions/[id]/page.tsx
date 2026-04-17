@@ -334,8 +334,11 @@ export default function SessionPage() {
     if (!mux?.sessions) return;
     pendingMuxSessionsRef.current = mux.sessions;
 
-    const next = applyMuxSessionPatches(sidebarSessions, mux.sessions);
-    if (next !== sidebarSessions) {
+    // Read current sessions via the module-level cache so this effect reacts to
+    // new mux data only — keeping `sidebarSessions` out of the dep array avoids
+    // re-running on every state change that the effect itself produces.
+    const next = applyMuxSessionPatches(cachedSidebarSessions, mux.sessions);
+    if (next !== cachedSidebarSessions) {
       cachedSidebarSessions = next;
       setSidebarSessions(next);
     }
@@ -357,7 +360,7 @@ export default function SessionPage() {
         return;
       }
     }
-  }, [fetchSidebarSessions, mux?.sessions, sidebarSessions]);
+  }, [fetchSidebarSessions, mux?.sessions]);
 
   useEffect(() => {
     if (!sessionIsOrchestrator) {
