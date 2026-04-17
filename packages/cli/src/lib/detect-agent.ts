@@ -83,7 +83,16 @@ export async function detectAgentRuntime(preDetected?: DetectedAgent[]): Promise
     });
     console.log();
 
-    const answer = await rl.question(`  Choose default agent [1-${available.length}]: `);
+    let answer: string;
+    try {
+      answer = await rl.question(`  Choose default agent [1-${available.length}]: `);
+    } catch (error) {
+      if (isPromptCancellation(error)) {
+        process.stdout.write("\n");
+        process.exit(0);
+      }
+      throw error;
+    }
 
     const idx = parseInt(answer.trim(), 10) - 1;
     if (idx >= 0 && idx < available.length) {
@@ -95,4 +104,13 @@ export async function detectAgentRuntime(preDetected?: DetectedAgent[]): Promise
   } finally {
     rl.close();
   }
+}
+
+function isPromptCancellation(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message === "readline was closed" ||
+    error.message === "The operation was aborted" ||
+    ("code" in error && (error as Error & { code?: string }).code === "ABORT_ERR")
+  );
 }
