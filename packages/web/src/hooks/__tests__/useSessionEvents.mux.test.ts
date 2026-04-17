@@ -24,8 +24,8 @@ describe("useSessionEvents - mux", () => {
   it("triggers refresh when mux patch contains unknown id", async () => {
     const initialSessions = [s1];
     const muxSessions = [
-      { id: "s1", status: "working", activity: "active", attentionLevel: "none", lastActivityAt: now },
-      { id: "s2", status: "working", activity: "active", attentionLevel: "none", lastActivityAt: now },
+      { id: "s1", status: "working", activity: "active", attentionLevel: "working" as const, lastActivityAt: now },
+      { id: "s2", status: "working", activity: "active", attentionLevel: "working" as const, lastActivityAt: now },
     ];
     renderHook(() =>
       useSessionEvents({

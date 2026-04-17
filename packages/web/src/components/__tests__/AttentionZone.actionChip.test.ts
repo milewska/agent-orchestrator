@@ -146,6 +146,29 @@ describe("getActionChipLabel", () => {
       expect(getActionChipLabel(session)).toBe("crashed");
     });
 
+    it("activity: exited wins over status: changes_requested", () => {
+      // A crashed agent whose PR also has changes_requested must still read
+      // as "crashed" — labeling this "changes" hides the crash and steers the
+      // operator toward PR review instead of restart. Mirrors the precedence
+      // in getDetailedAttentionLevel (lib/types.ts): activity=exited classifies
+      // as respond BEFORE status=changes_requested classifies as review.
+      const session = makeSession({
+        status: "changes_requested",
+        activity: "exited",
+        pr: null,
+      });
+      expect(getActionChipLabel(session)).toBe("crashed");
+    });
+
+    it("activity: waiting_input wins over status: ci_failed", () => {
+      const session = makeSession({
+        status: "ci_failed",
+        activity: "waiting_input",
+        pr: null,
+      });
+      expect(getActionChipLabel(session)).toBe("waiting");
+    });
+
     it("PR ci_failing wins over PR changes_requested", () => {
       // CI failure is a harder blocker than review feedback.
       const pr = makePR({

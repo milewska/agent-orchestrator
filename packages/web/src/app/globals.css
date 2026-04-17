@@ -1458,7 +1458,12 @@ html.light .xterm .xterm-viewport:hover::-webkit-scrollbar-thumb:active {
   background: var(--color-status-respond);
 }
 .kanban-column__dot[data-level="action"] {
-  background: var(--color-status-respond);
+  /* Yellow-severity to match DynamicFavicon.computeHealthFromLevels: the
+     collapsed bucket includes routine review work (ci_failed,
+     changes_requested) that used to be orange. Painting it at
+     --color-status-respond (red) would disagree with the favicon and make
+     every typical review PR scream critical. */
+  background: var(--color-accent-orange);
 }
 .kanban-column__dot[data-level="merge"] {
   background: var(--color-status-ready);

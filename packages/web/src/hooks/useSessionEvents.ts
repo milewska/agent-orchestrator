@@ -97,7 +97,7 @@ function createMembershipKey(
 export interface UseSessionEventsOptions {
   initialSessions: DashboardSession[];
   project?: string;
-  muxSessions?: Array<{ id: string; status: string; activity: string | null; attentionLevel: string; lastActivityAt: string }>;
+  muxSessions?: Array<{ id: string; status: string; activity: string | null; attentionLevel: AttentionLevel; lastActivityAt: string }>;
   initialAttentionLevels?: SSEAttentionMap;
   disabled?: boolean;
   /**
