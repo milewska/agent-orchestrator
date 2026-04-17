@@ -13,11 +13,11 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm:dev:next\" \"npm:dev:terminal\" \"npm:dev:direct-terminal\"",
-    "dev:next": "AO_NEXT_DIST_DIR=.next-dev next dev -p ${PORT:-3000}",
+    "dev:next": "AO_NEXT_DIST_DIR=.next-dev next dev -H ${HOST:-127.0.0.1} -p ${PORT:-3000}",
     "dev:terminal": "tsx watch server/terminal-websocket.ts",
     "dev:direct-terminal": "tsx watch server/direct-terminal-ws.ts",
     "build": "next build && tsc -p tsconfig.server.json",
-    "start": "next start",
+    "start": "next start -H ${HOST:-127.0.0.1}",
     "start:all": "node dist-server/start-all.js",
     "dev:optimized": "next build && tsc -p tsconfig.server.json && node dist-server/start-all.js",
     "typecheck": "tsc --noEmit",

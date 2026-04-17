@@ -1,7 +1,37 @@
 import { type NextRequest, NextResponse } from "next/server";
 
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function isAllowedOrigin(request: NextRequest): boolean {
+  // Same-origin guard: reject cross-site mutating requests.
+  // Next.js exposes the resolved host via request.nextUrl.host.
+  const origin = request.headers.get("origin");
+  const referer = request.headers.get("referer");
+  const expectedHost = request.nextUrl.host;
+
+  // Allow requests with no origin/referer only if they come from a matching host header
+  // (curl, CLI clients). Browsers always send origin on cross-site fetches.
+  if (!origin && !referer) {
+    const hostHeader = request.headers.get("host");
+    return hostHeader === expectedHost;
+  }
+  try {
+    const candidate = origin ?? referer!;
+    const url = new URL(candidate);
+    return url.host === expectedHost;
+  } catch {
+    return false;
+  }
+}
+
 export function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
+
+  if (pathname.startsWith("/api/") && MUTATING_METHODS.has(request.method)) {
+    if (!isAllowedOrigin(request)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
   // Legacy: /?project=all → /
   // Legacy: /?project=<id> → /projects/<id>
@@ -41,5 +71,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/sessions/:path*"],
+  matcher: ["/", "/sessions/:path*", "/api/:path*"],
 };

@@ -109,7 +109,7 @@ function metadataToSession(sessionId: string, project: PortfolioProject, metadat
 
   return {
     id: sessionId,
-    projectId: project.configProjectKey,
+    projectId: project.id,
     status: (metadata.status as Session["status"]) || "spawning",
     activity: null, // Not available without agent plugin
     branch: metadata.branch || null,

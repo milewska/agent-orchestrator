@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { NextResponse } from "next/server";
 import {
   configToYaml,
+  detectScmPlatform,
   generateConfigFromUrl,
   isPortfolioEnabled,
   parseRepoUrl,
@@ -12,8 +13,10 @@ import {
 } from "@aoagents/ao-core";
 import { CloneProjectSchema } from "@/lib/api-schemas";
 import { extractFlatLocalConfig } from "@/lib/local-project-config";
-import { assertPathWithinHome } from "@/lib/path-security";
+import { assertPathWithinHome, isWithinDirectory } from "@/lib/path-security";
 import { registerAndResolveProject } from "@/lib/project-registration";
+
+const SAFE_REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 const execFileAsync = promisify(execFile);
 
@@ -52,8 +55,26 @@ export async function POST(request: Request) {
     }
 
     const repo = parseRepoUrl(parsed.data.url);
+    if (detectScmPlatform(repo.host) === "unknown") {
+      return NextResponse.json(
+        { error: `Unsupported host: ${repo.host}. Only github/gitlab/bitbucket are allowed.` },
+        { status: 400 },
+      );
+    }
+    if (!SAFE_REPO_NAME.test(repo.repo)) {
+      return NextResponse.json(
+        { error: "Invalid repository name" },
+        { status: 400 },
+      );
+    }
     const cloneRoot = await assertPathWithinHome(parsed.data.location);
     const targetDir = resolve(cloneRoot, repo.repo);
+    if (!isWithinDirectory(cloneRoot, targetDir)) {
+      return NextResponse.json(
+        { error: "Resolved target directory escapes clone root" },
+        { status: 400 },
+      );
+    }
     const projectKey = sanitizeProjectId(repo.repo);
 
     await ensureDirectory(cloneRoot);
@@ -103,8 +124,9 @@ export async function POST(request: Request) {
       },
     });
   } catch (err) {
+    console.error("[api/projects/clone] failed:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Failed to clone repository" },
+      { error: "Failed to clone repository" },
       { status: 500 },
     );
   }
