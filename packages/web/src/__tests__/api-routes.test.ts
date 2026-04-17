@@ -946,6 +946,69 @@ describe("API Routes", () => {
       expect(event.sessions[0]).toHaveProperty("id");
       expect(event.sessions[0]).toHaveProperty("attentionLevel");
     });
+
+    it("guards controller.enqueue after stream is cancelled", async () => {
+      // No unhandled errors should escape once the reader cancels — the
+      // route must set its internal `closed` flag and short-circuit all
+      // later enqueue paths (heartbeat, poll, observer-triggered snapshot).
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown) => unhandled.push(reason);
+      process.on("unhandledRejection", onUnhandled);
+
+      try {
+        const req = makeRequest("/api/events", { method: "GET" });
+        const res = await eventsGET(req);
+        const reader = res.body!.getReader();
+        // Consume the initial snapshot, then cancel mid-flight.
+        await reader.read();
+        await reader.cancel();
+
+        // Give any queued microtasks / pending setInterval ticks a chance
+        // to run. Without the `closed` flag and interval cleanup this is
+        // where the old code threw "Controller is already closed".
+        await new Promise((r) => setTimeout(r, 50));
+      } finally {
+        process.off("unhandledRejection", onUnhandled);
+      }
+
+      expect(unhandled).toEqual([]);
+    });
+
+    it("clears heartbeat and update intervals on cancel", async () => {
+      // Track all setInterval ids created during GET so we can verify they
+      // are cleared when the stream is cancelled.
+      const liveIntervals = new Set<ReturnType<typeof setInterval>>();
+      const origSet = globalThis.setInterval;
+      const origClear = globalThis.clearInterval;
+      globalThis.setInterval = ((handler: () => void, ms?: number) => {
+        const id = origSet(handler, ms);
+        liveIntervals.add(id);
+        return id;
+      }) as typeof setInterval;
+      globalThis.clearInterval = ((id: ReturnType<typeof setInterval> | undefined) => {
+        if (id !== undefined) liveIntervals.delete(id);
+        return origClear(id);
+      }) as typeof clearInterval;
+
+      try {
+        const req = makeRequest("/api/events", { method: "GET" });
+        const res = await eventsGET(req);
+        const reader = res.body!.getReader();
+        await reader.read();
+
+        // Both heartbeat + updates should be registered by now.
+        expect(liveIntervals.size).toBeGreaterThanOrEqual(2);
+
+        await reader.cancel();
+        // Allow the async cancel() callback to run.
+        await new Promise((r) => setTimeout(r, 20));
+
+        expect(liveIntervals.size).toBe(0);
+      } finally {
+        globalThis.setInterval = origSet;
+        globalThis.clearInterval = origClear;
+      }
+    });
   });
 
   describe("GET /api/observability", () => {
