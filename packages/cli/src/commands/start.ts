@@ -1463,12 +1463,14 @@ export function registerStart(program: Command): void {
           } else {
             // ── No arg or project ID: load config or auto-create ──
             let loadedConfig: OrchestratorConfig | null = null;
+            let freshlyAutoCreated = false;
             try {
               loadedConfig = loadConfig();
             } catch (err) {
               if (err instanceof ConfigNotFoundError) {
                 // First run — auto-create config
                 loadedConfig = await autoCreateConfig(cwd());
+                freshlyAutoCreated = true;
               } else {
                 throw err;
               }
@@ -1477,9 +1479,16 @@ export function registerStart(program: Command): void {
             // ── Migration: detect old single-file format and offer upgrade ──
             // Old format: single file with `projects:` wrapper at the project root.
             // New format: global config + flat per-project local configs.
-            // Only prompt when the global config doesn't exist yet (first migration).
+            // Only prompt when the global config doesn't exist yet (first migration)
+            // AND the config wasn't just created by autoCreateConfig (which writes the
+            // same wrapped shape that isOldConfigFormat matches, causing a spurious prompt).
             const loadedPath = loadedConfig.configPath;
-            if (isPortfolioEnabled() && loadedPath && !existsSync(getGlobalConfigPath())) {
+            if (
+              isPortfolioEnabled() &&
+              loadedPath &&
+              !freshlyAutoCreated &&
+              !existsSync(getGlobalConfigPath())
+            ) {
               try {
                 const rawContent = readFileSync(loadedPath, "utf-8");
                 const rawParsed = yamlParse(rawContent);
