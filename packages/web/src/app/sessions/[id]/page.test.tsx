@@ -9,7 +9,9 @@ const notFoundError = new Error("NEXT_NOT_FOUND");
 const notFoundSpy = vi.fn(() => {
   throw notFoundError;
 });
-const mockMuxState: { current?: { sessions: SessionPatch[] } } = {};
+const mockMuxState: {
+  current?: { sessions: SessionPatch[]; status?: "connecting" | "connected" | "reconnecting" | "disconnected" };
+} = {};
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ id: "worker-1" }),
@@ -446,6 +448,7 @@ describe("SessionPage project polling", () => {
     let resolveSidebarSessions: ((value: Response) => void) | null = null;
 
     mockMuxState.current = {
+      status: "connected",
       sessions: [
         {
           id: "worker-1",

@@ -150,6 +150,26 @@ function ProjectSidebarInner({
           </button>
         </div>
 
+        {/* Stale-data banner: keep cached sessions visible on fetch failure but
+            surface the error so users know the list may be out of date. */}
+        {error && sessions && sessions.length > 0 ? (
+          <div
+            role="status"
+            className="mx-3 mb-2 flex items-center justify-between gap-2 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-bg-primary)] px-2 py-1.5 text-[11px] text-[var(--color-text-tertiary)]"
+          >
+            <span>Failed to refresh · showing cached sessions</span>
+            {onRetry ? (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="font-medium text-[var(--color-link)] hover:underline"
+              >
+                Retry
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
         {/* Project tree */}
         <div className="project-sidebar__tree flex-1 overflow-y-auto overflow-x-hidden">
           {projects.map((project) => {

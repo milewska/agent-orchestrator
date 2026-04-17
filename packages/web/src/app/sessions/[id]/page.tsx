@@ -178,6 +178,7 @@ export default function SessionPage() {
   const prefixByProjectRef = useRef<Map<string, string>>(new Map());
   const hasLoadedSessionRef = useRef(false);
   const pendingMuxSessionsRef = useRef<SessionPatch[] | null>(null);
+  const sidebarFetchIdRef = useRef(0);
 
   // Keep prefixByProjectRef in sync so fetchProjectSessions (stable [] dep) reads latest map
   useEffect(() => {
@@ -309,12 +310,16 @@ export default function SessionPage() {
   }, []);
 
   const fetchSidebarSessions = useCallback(async () => {
+    // Track a per-invocation token so out-of-order responses from concurrent
+    // callers (5s poll, mux refetch, retry button) don't overwrite newer data.
+    const fetchId = ++sidebarFetchIdRef.current;
     try {
       const res = await fetch("/api/sessions");
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
       const body = (await res.json()) as { sessions?: DashboardSession[] } | null;
+      if (fetchId !== sidebarFetchIdRef.current) return;
       const restSessions = body?.sessions ?? [];
       const nextSessions =
         applyMuxSessionPatches(restSessions, pendingMuxSessionsRef.current ?? []) ?? restSessions;
@@ -325,6 +330,7 @@ export default function SessionPage() {
       ));
     } catch (err) {
       console.error("Failed to fetch sidebar sessions:", err);
+      if (fetchId !== sidebarFetchIdRef.current) return;
       setSidebarError(true);
       setSidebarSessions((current) => (current === null ? [] : current));
     }
@@ -332,6 +338,15 @@ export default function SessionPage() {
 
   useEffect(() => {
     if (!mux?.sessions) return;
+
+    // Only overlay mux snapshots onto REST refreshes while the WebSocket is
+    // live. After a disconnect `mux.sessions` retains the last snapshot, which
+    // would silently overwrite fresher REST data via `pendingMuxSessionsRef`.
+    if (mux.status !== "connected") {
+      pendingMuxSessionsRef.current = null;
+      return;
+    }
+
     pendingMuxSessionsRef.current = mux.sessions;
 
     // Read current sessions via the module-level cache so this effect reacts to
@@ -360,7 +375,7 @@ export default function SessionPage() {
         return;
       }
     }
-  }, [fetchSidebarSessions, mux?.sessions]);
+  }, [fetchSidebarSessions, mux?.sessions, mux?.status]);
 
   useEffect(() => {
     if (!sessionIsOrchestrator) {
