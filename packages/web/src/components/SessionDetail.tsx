@@ -113,16 +113,24 @@ function buildGitHubBranchUrl(pr: DashboardPR): string {
   return `https://github.com/${pr.owner}/${pr.repo}/tree/${pr.branch}`;
 }
 
-function activityStateClass(activityLabel: string): string {
+type ActivityVariant = "active" | "ready" | "idle" | "waiting" | "error" | "neutral";
+
+function activityVariant(activityLabel: string): ActivityVariant {
   const normalized = activityLabel.toLowerCase();
-  if (normalized === "active") return "session-detail-status-pill--active";
-  if (normalized === "ready") return "session-detail-status-pill--ready";
-  if (normalized === "idle") return "session-detail-status-pill--idle";
-  if (normalized === "waiting for input") return "session-detail-status-pill--waiting";
-  if (normalized === "blocked" || normalized === "exited") {
-    return "session-detail-status-pill--error";
-  }
-  return "session-detail-status-pill--neutral";
+  if (normalized === "active") return "active";
+  if (normalized === "ready") return "ready";
+  if (normalized === "idle") return "idle";
+  if (normalized === "waiting for input") return "waiting";
+  if (normalized === "blocked" || normalized === "exited") return "error";
+  return "neutral";
+}
+
+function activityStateClass(activityLabel: string): string {
+  return `session-detail-status-pill--${activityVariant(activityLabel)}`;
+}
+
+function identityCardStateClass(activityLabel: string): string {
+  return `session-detail-identity-card--${activityVariant(activityLabel)}`;
 }
 
 function SessionTopStrip({
@@ -178,16 +186,22 @@ function SessionTopStrip({
         ) : null}
       </div>
 
-      {/* Identity strip */}
-      <div className="session-detail-identity">
+      {/* Identity card */}
+      <div
+        className={cn(
+          "session-detail-identity-card",
+          identityCardStateClass(activityLabel),
+        )}
+      >
         <div className="session-detail-identity__info">
-          <h1 className="session-detail-identity__title">
-            {headline}
-          </h1>
-          <div className="session-detail-identity__pills">
+          <div className="session-detail-identity__primary">
+            <h1 className="session-detail-identity__title">
+              {headline}
+            </h1>
             <div
               className={cn(
                 "session-detail-status-pill",
+                "session-detail-identity__status",
                 activityStateClass(activityLabel),
               )}
             >
@@ -199,6 +213,8 @@ function SessionTopStrip({
                 {activityLabel}
               </span>
             </div>
+          </div>
+          <div className="session-detail-identity__pills">
             {branch ? (
               pr ? (
                 <a
