@@ -245,9 +245,12 @@ function deriveDisplayName(input: {
 
   const truncate = (text: string): string => {
     const collapsed = text.replace(/\s+/g, " ").trim();
-    if (collapsed.length <= DISPLAY_NAME_MAX_LENGTH) return collapsed;
+    // Split on code points so emoji / astral characters aren't cleaved into
+    // lone UTF-16 surrogates at the truncation boundary.
+    const codePoints = Array.from(collapsed);
+    if (codePoints.length <= DISPLAY_NAME_MAX_LENGTH) return collapsed;
     // Leave room for the ellipsis character.
-    return `${collapsed.slice(0, DISPLAY_NAME_MAX_LENGTH - 1).trimEnd()}…`;
+    return `${codePoints.slice(0, DISPLAY_NAME_MAX_LENGTH - 1).join("").trimEnd()}…`;
   };
 
   if (input.issueTitle && input.issueTitle.trim()) {
@@ -2430,6 +2433,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         runtimeHandle: raw["runtimeHandle"],
         opencodeSessionId: raw["opencodeSessionId"],
         pinnedSummary: raw["pinnedSummary"],
+        displayName: raw["displayName"],
       });
     }
 

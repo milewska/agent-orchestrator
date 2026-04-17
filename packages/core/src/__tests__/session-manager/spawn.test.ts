@@ -1133,6 +1133,25 @@ describe("spawn", () => {
       expect(meta!["displayName"].endsWith("…")).toBe(true);
     });
 
+    it("truncates on code-point boundaries without splitting surrogate pairs", async () => {
+      // Place a 4-byte emoji (2 UTF-16 code units) right where a naive
+      // `slice(0, 79)` would split it, producing a lone surrogate.
+      const prompt = "a".repeat(78) + "😀" + "b".repeat(20);
+      const sm = createSessionManager({ config, registry: mockRegistry });
+      await sm.spawn({ projectId: "my-app", prompt });
+
+      const meta = readMetadataRaw(sessionsDir, "app-1");
+      const displayName = meta?.["displayName"];
+      expect(displayName).toBeDefined();
+      expect(displayName!.endsWith("…")).toBe(true);
+      // No lone surrogates — every code unit belongs to a valid code point.
+      for (const ch of displayName!) {
+        expect(ch.codePointAt(0)).toBeGreaterThan(0);
+      }
+      // Round-trip through UTF-8 should be lossless (no U+FFFD replacement).
+      expect(Buffer.from(displayName!, "utf8").toString("utf8")).toBe(displayName);
+    });
+
     it("does not write displayName when there is no issue or prompt", async () => {
       const sm = createSessionManager({ config, registry: mockRegistry });
       await sm.spawn({ projectId: "my-app" });

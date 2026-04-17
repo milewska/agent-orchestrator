@@ -201,7 +201,7 @@ function ProjectSidebarInner({
                       visibleSessions.map((session) => {
                         const level = getAttentionLevel(session);
                         const isSessionActive = activeSessionId === session.id;
-                        const title = session.branch ?? getSessionTitle(session);
+                        const title = getSessionTitle(session);
                         return (
                           <button
                             key={session.id}
