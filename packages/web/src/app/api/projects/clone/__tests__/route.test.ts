@@ -28,10 +28,10 @@ vi.mock("node:path", async (importOriginal) => {
   return { ...actual };
 });
 
-vi.mock("@aoagents/ao-core", () => ({ configToYaml: vi.fn(() => "yaml"), generateConfigFromUrl: vi.fn(() => ({ projects: { "my-repo": {} } })), parseRepoUrl: vi.fn(() => ({ owner: "acme", repo: "my-repo", cloneUrl: "https://github.com/acme/my-repo.git" })), sanitizeProjectId: vi.fn((n: string) => n.toLowerCase()), isPortfolioEnabled: () => mockIsPortfolioEnabled() }));
+vi.mock("@aoagents/ao-core", () => ({ configToYaml: vi.fn(() => "yaml"), generateConfigFromUrl: vi.fn(() => ({ projects: { "my-repo": {} } })), parseRepoUrl: vi.fn(() => ({ owner: "acme", repo: "my-repo", host: "github.com", cloneUrl: "https://github.com/acme/my-repo.git" })), detectScmPlatform: vi.fn(() => "github"), sanitizeProjectId: vi.fn((n: string) => n.toLowerCase()), isPortfolioEnabled: () => mockIsPortfolioEnabled() }));
 vi.mock("@/lib/api-schemas", async () => { const { z } = await import("zod"); return { CloneProjectSchema: z.object({ url: z.string().url("A valid Git URL is required"), location: z.string().min(1, "Location is required") }) }; });
 vi.mock("@/lib/local-project-config", () => ({ extractFlatLocalConfig: vi.fn(() => ({})) }));
-vi.mock("@/lib/path-security", () => ({ assertPathWithinHome: vi.fn(async (p: string) => p) }));
+vi.mock("@/lib/path-security", () => ({ assertPathWithinHome: vi.fn(async (p: string) => p), isWithinDirectory: vi.fn(() => true) }));
 vi.mock("@/lib/project-registration", () => ({ registerAndResolveProject: vi.fn(() => ({ id: "my-repo", name: "my-repo" })) }));
 
 import { POST } from "../route";
@@ -72,7 +72,7 @@ describe("POST /api/projects/clone", () => {
     const res = await POST(new Request("http://localhost/api/projects/clone", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "https://github.com/acme/my-repo", location: "/tmp/projects" }) }));
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toContain("clone failed");
+    expect(data.error).toContain("Failed to clone repository");
   });
 
   it("returns 500 on path security failure", async () => {
@@ -87,7 +87,7 @@ describe("POST /api/projects/clone", () => {
     const res = await POST(new Request("http://localhost/api/projects/clone", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "https://github.com/acme/my-repo", location: "/tmp/projects" }) }));
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toContain("not a directory");
+    expect(data.error).toContain("Failed to clone repository");
   });
 
   it("returns 500 when target directory already exists", async () => {
@@ -95,7 +95,7 @@ describe("POST /api/projects/clone", () => {
     const res = await POST(new Request("http://localhost/api/projects/clone", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "https://github.com/acme/my-repo", location: "/tmp/projects" }) }));
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toContain("already exists");
+    expect(data.error).toContain("Failed to clone repository");
   });
 
   it("re-throws non-ENOENT stat errors", async () => {
@@ -103,7 +103,7 @@ describe("POST /api/projects/clone", () => {
     const res = await POST(new Request("http://localhost/api/projects/clone", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "https://github.com/acme/my-repo", location: "/tmp/projects" }) }));
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toContain("permission denied");
+    expect(data.error).toContain("Failed to clone repository");
   });
 
   it("generates config when no config file found", async () => {

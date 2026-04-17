@@ -33,7 +33,12 @@ import { homedir } from "node:os";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { z } from "zod";
 import { atomicWriteFileSync } from "./atomic-write.js";
+import { withFileLockSync } from "./file-lock.js";
 import { generateProjectHash } from "./paths.js";
+
+function globalConfigLockPath(configPath: string): string {
+  return `${configPath}.lock`;
+}
 
 // =============================================================================
 // CONSTANTS
@@ -318,6 +323,7 @@ export function syncProjectShadow(
   globalConfigPath?: string,
 ): void {
   const configPath = globalConfigPath ?? getGlobalConfigPath();
+  withFileLockSync(globalConfigLockPath(configPath), () => {
   const globalConfig = loadGlobalConfig(configPath) ?? makeEmptyGlobalConfig();
 
   const existing = globalConfig.projects[projectId] as
@@ -351,6 +357,7 @@ export function syncProjectShadow(
   };
 
   saveGlobalConfig(globalConfig, configPath);
+  });
 }
 
 // =============================================================================
@@ -374,6 +381,7 @@ export function registerProjectInGlobalConfig(
   globalConfigPath?: string,
 ): void {
   const configPath = globalConfigPath ?? getGlobalConfigPath();
+  withFileLockSync(globalConfigLockPath(configPath), () => {
   const globalConfig = loadGlobalConfig(configPath) ?? makeEmptyGlobalConfig();
 
   const existing = globalConfig.projects[projectId] as
@@ -403,6 +411,7 @@ export function registerProjectInGlobalConfig(
   };
 
   saveGlobalConfig(globalConfig, configPath);
+  });
 
   if (localConfig) {
     syncProjectShadow(projectId, localConfig, configPath);
@@ -447,7 +456,15 @@ export function buildEffectiveProjectConfig(
     entry.storageKey = storageKey;
     try {
       const configPath = globalConfigPath ?? getGlobalConfigPath();
-      saveGlobalConfig(globalConfig, configPath);
+      withFileLockSync(globalConfigLockPath(configPath), () => {
+        // Re-load under the lock so we don't clobber a concurrent write.
+        const fresh = loadGlobalConfig(configPath) ?? globalConfig;
+        const freshEntry = fresh.projects[projectId];
+        if (freshEntry && !freshEntry.storageKey) {
+          freshEntry.storageKey = storageKey;
+          saveGlobalConfig(fresh, configPath);
+        }
+      });
     } catch {
       // Non-fatal: storageKey will be retried on next load
     }
