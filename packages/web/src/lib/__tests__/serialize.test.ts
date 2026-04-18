@@ -3,17 +3,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import type {
-  Session,
-  PRInfo,
-  SCM,
-  Agent,
-  Tracker,
-  ProjectConfig,
-  OrchestratorConfig,
-  PluginRegistry,
+import {
+  createInitialCanonicalLifecycle,
+  type Session,
+  type PRInfo,
+  type SCM,
+  type Agent,
+  type Tracker,
+  type ProjectConfig,
+  type OrchestratorConfig,
+  type PluginRegistry,
 } from "@aoagents/ao-core";
-import { createInitialCanonicalLifecycle } from "@aoagents/ao-core";
 import {
   sessionToDashboard,
   resolveProject,

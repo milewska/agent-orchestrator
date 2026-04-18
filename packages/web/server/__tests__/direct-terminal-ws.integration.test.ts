@@ -175,10 +175,11 @@ describe("WebSocket upgrade routing", () => {
 describe("mux terminal open", () => {
   it("sends 'opened' response for a valid tmux session", async () => {
     const ws = await connectMux();
+    const opened = waitForMessage(ws, (m) => m.ch === "terminal" && m.type === "opened");
 
     ws.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "open" }));
 
-    const msg = await waitForMessage(ws, (m) => m.ch === "terminal" && m.type === "opened");
+    const msg = await opened;
     expect(msg.id).toBe(TEST_SESSION);
 
     ws.close();
@@ -220,10 +221,14 @@ describe("mux terminal open", () => {
   it("resolves hash-prefixed tmux session by suffix", async () => {
     const hashOnlyId = `ao-test-hash-${process.pid}`;
     const ws = await connectMux();
+    const response = waitForMessage(
+      ws,
+      (m) => m.ch === "terminal" && (m.type === "opened" || m.type === "error"),
+    );
 
     ws.send(JSON.stringify({ ch: "terminal", id: hashOnlyId, type: "open" }));
 
-    const msg = await waitForMessage(ws, (m) => m.ch === "terminal" && (m.type === "opened" || m.type === "error"));
+    const msg = await response;
     expect(msg.type).toBe("opened");
 
     ws.close();
@@ -237,9 +242,10 @@ describe("mux terminal open", () => {
 describe("mux terminal I/O", () => {
   it("receives terminal data after open", async () => {
     const ws = await connectMux();
+    const opened = waitForMessage(ws, (m) => m.ch === "terminal" && m.type === "opened");
 
     ws.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "open" }));
-    await waitForMessage(ws, (m) => m.ch === "terminal" && m.type === "opened");
+    await opened;
 
     // tmux sends terminal init sequences on attach — wait for any data
     const dataMsg = await waitForMessage(ws, (m) => m.ch === "terminal" && m.type === "data", 5000);
@@ -251,9 +257,10 @@ describe("mux terminal I/O", () => {
 
   it("can send input and receive echo", async () => {
     const ws = await connectMux();
+    const opened = waitForMessage(ws, (m) => m.ch === "terminal" && m.type === "opened");
 
     ws.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "open" }));
-    await waitForMessage(ws, (m) => m.ch === "terminal" && m.type === "opened");
+    await opened;
     // Drain initial output
     await new Promise((r) => setTimeout(r, 300));
 
@@ -284,9 +291,10 @@ describe("mux terminal I/O", () => {
 
   it("handles resize without error", async () => {
     const ws = await connectMux();
+    const opened = waitForMessage(ws, (m) => m.ch === "terminal" && m.type === "opened");
 
     ws.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "open" }));
-    await waitForMessage(ws, (m) => m.ch === "terminal" && m.type === "opened");
+    await opened;
 
     ws.send(JSON.stringify({ ch: "terminal", id: TEST_SESSION, type: "resize", cols: 120, rows: 40 }));
 

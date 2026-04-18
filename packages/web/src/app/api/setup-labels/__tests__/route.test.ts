@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type * as NodeUtil from "node:util";
 
 const { mockGetServices, mockExecFileAsync } = vi.hoisted(() => ({
   mockGetServices: vi.fn(),
@@ -10,7 +11,7 @@ vi.mock("@/lib/services", () => ({
 }));
 
 vi.mock("node:util", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:util")>();
+  const actual = (await importOriginal()) as typeof NodeUtil;
   return {
     ...actual,
     promisify: () => mockExecFileAsync,

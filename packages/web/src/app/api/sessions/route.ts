@@ -12,8 +12,6 @@ import { getCorrelationId, jsonWithCorrelation, recordApiObservation } from "@/l
 import { filterProjectSessions } from "@/lib/project-utils";
 import { settlesWithin } from "@/lib/async-utils";
 import { resolveGlobalPause } from "@/lib/global-pause";
-import { getAttentionLevel, getTriageRank, type PortfolioActionItem, type DashboardSession } from "@/lib/types";
-
 const METADATA_ENRICH_TIMEOUT_MS = 3_000;
 const PR_ENRICH_TIMEOUT_MS = 4_000;
 const PER_PR_ENRICH_TIMEOUT_MS = 1_500;

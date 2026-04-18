@@ -820,7 +820,9 @@ describe("start command — browser open waits for port", () => {
         .mocked(console.error)
         .mock.calls.map((c) => c.join(" "))
         .join("\n");
-      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${errors}`);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${errors}`, {
+        cause: error,
+      });
     }
 
     // waitForPortAndOpen should have been called with orchestrator URL and AbortSignal
@@ -1543,7 +1545,9 @@ describe("start command — stale dashboard cleanup", () => {
         .mocked(console.error)
         .mock.calls.map((c) => c.join(" "))
         .join("\n");
-      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${errors}`);
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${errors}`, {
+        cause: error,
+      });
     }
 
     expect(findFreePortSpy).not.toHaveBeenCalled();
