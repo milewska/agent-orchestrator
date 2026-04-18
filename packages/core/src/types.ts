@@ -1197,7 +1197,12 @@ export interface OrchestratorConfig {
   /** Power management settings (idle sleep prevention, etc.). Populated with defaults post-validation. */
   power?: PowerConfig;
 
-  /** Lifecycle-level orchestration settings. Populated with defaults post-validation. */
+  /**
+   * Lifecycle-level orchestration settings. Populated with defaults by Zod
+   * when loaded from YAML, but typed as optional so hand-constructed test
+   * configs remain valid. Consumers should destructure with defaults rather
+   * than dereferencing directly. Mirrors the `power?` pattern above.
+   */
   lifecycle?: LifecycleConfig;
 
   /** Default plugin selections */

@@ -1565,9 +1565,13 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
   async function maybeAutoCleanupOnMerge(session: Session): Promise<void> {
     if (session.status !== SESSION_STATUS.MERGED) return;
 
-    const lifecycleConfig = config.lifecycle;
-    if (lifecycleConfig && lifecycleConfig.autoCleanupOnMerge === false) return;
-    const graceMs = lifecycleConfig?.mergeCleanupIdleGraceMs ?? 300_000;
+    // config.lifecycle is typed optional to support hand-constructed
+    // configs in tests. When loaded from YAML via Zod, the schema's
+    // .default({}) always populates it. The destructure below handles
+    // both paths uniformly.
+    const { autoCleanupOnMerge = true, mergeCleanupIdleGraceMs: graceMs = 300_000 } =
+      config.lifecycle ?? {};
+    if (!autoCleanupOnMerge) return;
 
     // Check for idleness: if the agent is still working, defer cleanup.
     const nowIso = new Date().toISOString();
