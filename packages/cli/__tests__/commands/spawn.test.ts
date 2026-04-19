@@ -956,6 +956,10 @@ describe("batch-spawn command", () => {
     );
     expect(mockSessionManager.list).toHaveBeenCalledWith("agent-orchestrator");
     expect(mockSessionManager.list).toHaveBeenCalledWith("x402-identity");
+    // Exactly one list() per project group — locks the grouping contract so a
+    // regression that lists every project for every issue is caught.
+    expect(mockSessionManager.list).toHaveBeenCalledTimes(2);
+    expect(mockSessionManager.spawn).toHaveBeenCalledTimes(2);
   });
 
   it("skips a prefixed issue that already has an active session in the target project", async () => {

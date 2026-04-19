@@ -13,6 +13,8 @@ export interface SpawnTarget {
  * with `<rest>` as the issue id. Otherwise the reference is treated as a plain
  * issue id and the fallback project is used.
  *
+ * - Matching is case-sensitive — yaml keys and `sessionPrefix` values are
+ *   compared literally.
  * - Exact project-id match wins over `sessionPrefix` match (yaml keys are
  *   unique; `sessionPrefix` values are not guaranteed to be).
  * - Returns `null` when no prefix routing matches and no fallback is provided.
@@ -29,7 +31,9 @@ export function resolveSpawnTarget(
     const prefix = issueRef.slice(0, slashIdx);
     const rest = issueRef.slice(slashIdx + 1);
 
-    if (projects[prefix]) {
+    // hasOwn guards against prototype keys (`__proto__`, `constructor`, …)
+    // incorrectly matching via inheritance from Object.prototype.
+    if (Object.prototype.hasOwnProperty.call(projects, prefix)) {
       return { projectId: prefix, issueId: rest };
     }
     for (const [pid, project] of Object.entries(projects)) {

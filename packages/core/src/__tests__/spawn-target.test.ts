@@ -56,6 +56,25 @@ describe("resolveSpawnTarget", () => {
     expect(target).toEqual({ projectId: "x402-identity", issueId: "INT-100" });
   });
 
+  it("does not match inherited prototype keys", () => {
+    // Regular plain objects inherit `__proto__`, `constructor`, `toString`, etc.
+    // from Object.prototype — a truthy `projects[prefix]` check without hasOwn
+    // would mis-route these.
+    const projects = makeProjects();
+    expect(resolveSpawnTarget(projects, "__proto__/42", "agent-orchestrator")).toEqual({
+      projectId: "agent-orchestrator",
+      issueId: "__proto__/42",
+    });
+    expect(resolveSpawnTarget(projects, "constructor/42", "agent-orchestrator")).toEqual({
+      projectId: "agent-orchestrator",
+      issueId: "constructor/42",
+    });
+    expect(resolveSpawnTarget(projects, "toString/42", "agent-orchestrator")).toEqual({
+      projectId: "agent-orchestrator",
+      issueId: "toString/42",
+    });
+  });
+
   it("ignores leading-slash and trailing-slash inputs", () => {
     expect(resolveSpawnTarget(makeProjects(), "/42", "agent-orchestrator")).toEqual({
       projectId: "agent-orchestrator",
