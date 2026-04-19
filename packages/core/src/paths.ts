@@ -128,6 +128,22 @@ export function getArchiveDir(configPath: string, projectPath: string): string {
 }
 
 /**
+ * Get the code review store directory for a project.
+ * Format: ~/.agent-orchestrator/{hash}-{projectId}/reviews
+ */
+export function getReviewsDir(configPath: string, projectPath: string): string {
+  return join(getProjectBaseDir(configPath, projectPath), "reviews");
+}
+
+/**
+ * Get the reviewer workspaces directory for a project.
+ * Format: ~/.agent-orchestrator/{hash}-{projectId}/review-workspaces
+ */
+export function getReviewWorkspacesDir(configPath: string, projectPath: string): string {
+  return join(getProjectBaseDir(configPath, projectPath), "review-workspaces");
+}
+
+/**
  * Get the .origin file path for a project.
  * This file stores the config path for collision detection.
  */

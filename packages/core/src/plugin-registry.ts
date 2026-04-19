@@ -65,6 +65,8 @@ const BUILTIN_PLUGINS: Array<{ slot: PluginSlot; name: string; pkg: string }> = 
   // Terminals
   { slot: "terminal", name: "iterm2", pkg: "@aoagents/ao-plugin-terminal-iterm2" },
   { slot: "terminal", name: "web", pkg: "@aoagents/ao-plugin-terminal-web" },
+  // Code reviewers
+  { slot: "code-review", name: "codex", pkg: "@aoagents/ao-plugin-code-review-codex" },
 ];
 
 function matchesNotifierPlugin(
@@ -238,7 +240,11 @@ function updateConfigWithManifestName(
   if (location.kind === "project") {
     const { projectId, configType } = location;
     const project = config.projects[projectId];
-    if (project?.[configType]) {
+    if (configType === "codeReview") {
+      if (project?.codeReview) {
+        project.codeReview.plugin = manifest.name;
+      }
+    } else if (project?.[configType]) {
       project[configType]!.plugin = manifest.name;
     }
   } else if (location.kind === "notifier") {

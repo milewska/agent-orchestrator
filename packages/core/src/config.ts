@@ -125,6 +125,39 @@ const NotifierConfigSchema = z
   .passthrough()
   .superRefine((value, ctx) => validatePluginConfigFields(value, ctx, "Notifier"));
 
+const CodeReviewConfigSchema = z
+  .object({
+    plugin: z.string().optional(),
+    package: z.string().optional(),
+    path: z.string().optional(),
+    mode: z.enum(["enabled", "disabled", "manual-only"]).default("enabled"),
+    prompt: z.string().optional(),
+    autoSendNewFindingsToAgent: z.boolean().default(true),
+    routing: z
+      .object({
+        publishToScm: z.boolean().default(false),
+      })
+      .default({}),
+    limits: z
+      .object({
+        maxReviewRounds: z.number().int().positive().default(3),
+        maxBudgetPerRun: z.number().positive().optional(),
+        confidenceThreshold: z.number().min(0).max(1).default(0),
+        stallWindow: z.number().int().positive().default(3),
+      })
+      .default({}),
+    severityThreshold: z.enum(["error", "warning", "info"]).default("info"),
+    trigger: z
+      .object({
+        onPullRequestOpen: z.boolean().default(true),
+        onPullRequestUpdate: z.boolean().default(true),
+        manual: z.boolean().default(true),
+      })
+      .default({}),
+  })
+  .passthrough()
+  .superRefine((value, ctx) => validatePluginConfigFields(value, ctx, "CodeReview"));
+
 const AgentPermissionSchema = z
   .enum(["permissionless", "default", "auto-edit", "suggest", "skip"])
   .default("permissionless")
@@ -177,6 +210,7 @@ const ProjectConfigSchema = z.object({
   workspace: z.string().optional(),
   tracker: TrackerConfigSchema.optional(),
   scm: SCMConfigSchema.optional(),
+  codeReview: CodeReviewConfigSchema.optional(),
   symlinks: z.array(z.string()).optional(),
   postCreate: z.array(z.string()).optional(),
   agentConfig: AgentSpecificConfigSchema.default({}),
@@ -393,6 +427,16 @@ export function collectExternalPluginConfigs(config: OrchestratorConfig): Extern
         `projects.${projectId}.scm`,
         { kind: "project", projectId, configType: "scm" },
         "scm",
+      );
+      if (entry) entries.push(entry);
+    }
+
+    if (project.codeReview) {
+      const entry = processExternalPluginConfig(
+        project.codeReview,
+        `projects.${projectId}.codeReview`,
+        { kind: "project", projectId, configType: "codeReview" },
+        "code-review",
       );
       if (entry) entries.push(entry);
     }
