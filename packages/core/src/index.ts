@@ -217,6 +217,17 @@ export type {
   PersistedFeedbackReport,
 } from "./feedback-tools.js";
 
+// Review store — flat-file storage for CodeReview runs + findings + threads
+export { createReviewStore, allocateReviewerSessionId } from "./review-store.js";
+export type { ReviewStore, CreateRunInput } from "./review-store.js";
+export {
+  computeFindingFingerprint,
+  slidingWindowUnion,
+  detectStalled,
+  carryForwardTriage,
+} from "./code-review-fingerprint.js";
+export type { CarryForwardResult } from "./code-review-fingerprint.js";
+
 // Path utilities — hash-based directory structure
 export {
   generateConfigHash,
@@ -229,6 +240,8 @@ export {
   getFeedbackReportsDir,
   getObservabilityBaseDir,
   getArchiveDir,
+  getReviewsDir,
+  getReviewWorkspacesDir,
   getOriginFilePath,
   generateSessionName,
   generateTmuxName,
