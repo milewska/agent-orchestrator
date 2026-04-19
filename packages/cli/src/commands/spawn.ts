@@ -191,7 +191,10 @@ export function registerSpawn(program: Command): void {
   program
     .command("spawn")
     .description("Spawn a single agent session")
-    .argument("[first]", "Issue identifier (project is auto-detected)")
+    .argument(
+      "[first]",
+      "Issue identifier. Accepts bare ids (42, INT-100) or prefixed forms (x402-identity/42, xid/42) to target a specific project by id or sessionPrefix.",
+    )
     .argument("[second]", "" /* hidden second arg to catch old two-arg usage */)
     .option("--open", "Open session in terminal tab")
     .option("--agent <name>", "Override the agent plugin (e.g. codex, claude-code)")
@@ -278,7 +281,10 @@ export function registerBatchSpawn(program: Command): void {
   program
     .command("batch-spawn")
     .description("Spawn sessions for multiple issues with duplicate detection")
-    .argument("<issues...>", "Issue identifiers (project is auto-detected)")
+    .argument(
+      "<issues...>",
+      "Issue identifiers. Accepts bare ids or prefixed forms (x402-identity/42, xid/42); mixed projects are grouped automatically.",
+    )
     .option("--open", "Open sessions in terminal tabs")
     .action(async (issues: string[], opts: { open?: boolean }) => {
       const config = loadConfig();

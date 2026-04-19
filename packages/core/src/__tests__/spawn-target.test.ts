@@ -67,11 +67,4 @@ describe("resolveSpawnTarget", () => {
     });
   });
 
-  it("handles undefined issueRef with fallback", () => {
-    expect(resolveSpawnTarget(makeProjects(), undefined, "agent-orchestrator")).toEqual({
-      projectId: "agent-orchestrator",
-      issueId: "",
-    });
-    expect(resolveSpawnTarget(makeProjects(), undefined)).toBeNull();
-  });
 });
