@@ -526,7 +526,7 @@ describe("session ls", () => {
     };
 
     mockSessionManager.list.mockResolvedValue([
-      makeLifecycleSession("app-1", (lc) => {
+      makeLifecycleSession("app-1", () => {
         // alive — should remain visible
       }),
       makeLifecycleSession("app-2", (lc) => {
