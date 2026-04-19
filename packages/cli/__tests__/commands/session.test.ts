@@ -21,6 +21,7 @@ import {
   createActivitySignal,
   getSessionsDir,
   getProjectBaseDir,
+  sessionFromMetadata,
 } from "@aoagents/ao-core";
 
 const {
@@ -114,28 +115,25 @@ function parseMetadata(content: string): Record<string, string> {
   return meta;
 }
 
-/** Build Session objects from metadata files in sessionsDir. */
+/**
+ * Build Session objects from metadata files in sessionsDir.
+ *
+ * Routes through the real `sessionFromMetadata()` so lifecycle reconstruction
+ * (parseCanonicalLifecycle → synthesize*State → deriveLegacyStatus) runs
+ * exactly as it does in production `sm.list()`. Tests that assert filter
+ * behavior against on-disk metadata therefore exercise the full path, not a
+ * shortcut that bypasses lifecycle synthesis.
+ */
 function buildSessionsFromDir(dir: string, projectId: string): Session[] {
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir).filter((f) => !f.startsWith(".") && f !== "archive");
   return files.map((name) => {
     const content = readFileSync(join(dir, name), "utf-8");
     const meta = parseMetadata(content);
-    return {
-      id: name,
+    return sessionFromMetadata(name, meta, {
       projectId,
-      status: (meta["status"] as Session["status"]) || "spawning",
-      activity: null,
-      branch: meta["branch"] || null,
-      issueId: meta["issue"] || null,
-      pr: null,
-      workspacePath: meta["worktree"] || null,
       runtimeHandle: { id: name, runtimeName: "tmux", data: {} },
-      agentInfo: null,
-      createdAt: new Date(),
-      lastActivityAt: new Date(),
-      metadata: meta,
-    } satisfies Session;
+    });
   });
 }
 
@@ -359,7 +357,9 @@ describe("session ls", () => {
           projectName: "My App",
           role: "worker",
           branch: "live-branch",
-          status: "working",
+          // "working" on disk + a pr= URL reconstructs to pr_open via the
+          // canonical lifecycle, which is what production sm.list() returns.
+          status: "pr_open",
           issueId: "INT-100",
           pr: "https://github.com/org/repo/pull/42",
           workspacePath: "/tmp/wt",
@@ -489,6 +489,26 @@ describe("session ls", () => {
     const parsed = JSON.parse(String(consoleSpy.mock.calls[0][0]));
     expect(parsed.data).toHaveLength(2);
     expect(parsed.meta.hiddenTerminatedCount).toBe(0);
+  });
+
+  it("hides legacy on-disk metadata with status=merged even when pr= URL is absent", async () => {
+    // Regression test for the reviewer's smoke-test case on PR #1340: a metadata
+    // file with `status=merged` but no `pr=` was still showing as active because
+    // lifecycle reconstruction (synthesizePRState) collapsed pr.state to "none"
+    // when the URL was missing, which made isTerminalSession() return false.
+    writeFileSync(join(sessionsDir, "app-1"), "branch=feat/a\nstatus=working\n");
+    writeFileSync(join(sessionsDir, "app-2"), "branch=feat/b\nstatus=merged\n"); // no pr=
+    writeFileSync(join(sessionsDir, "app-3"), "branch=feat/c\nstatus=done\n");
+
+    mockTmux.mockResolvedValue(null);
+    mockGit.mockResolvedValue(null);
+
+    await program.parseAsync(["node", "test", "session", "ls", "--json"]);
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    const parsed = JSON.parse(String(consoleSpy.mock.calls[0][0]));
+    expect(parsed.data.map((e: { id: string }) => e.id)).toEqual(["app-1"]);
+    expect(parsed.meta.hiddenTerminatedCount).toBe(2);
   });
 
   it("filters lifecycle-driven terminal sessions (runtime exited, pr merged, session terminated)", async () => {

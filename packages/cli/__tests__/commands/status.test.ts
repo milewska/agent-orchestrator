@@ -16,6 +16,7 @@ import {
   type ActivityState,
   createInitialCanonicalLifecycle,
   createActivitySignal,
+  sessionFromMetadata,
 } from "@aoagents/ao-core";
 
 const {
@@ -159,7 +160,13 @@ function parseMetadata(content: string): Record<string, string> {
   return meta;
 }
 
-/** Build Session objects from metadata files in sessionsDir. */
+/**
+ * Build Session objects from metadata files in sessionsDir.
+ *
+ * Routes through the real `sessionFromMetadata()` so lifecycle reconstruction
+ * runs exactly as in production `sm.list()`. Tests that assert filter behavior
+ * against on-disk metadata therefore exercise the full path.
+ */
 function buildSessionsFromDir(
   dir: string,
   projectId: string,
@@ -170,21 +177,11 @@ function buildSessionsFromDir(
   return files.map((name) => {
     const content = readFileSync(join(dir, name), "utf-8");
     const meta = parseMetadata(content);
-    return {
-      id: name,
+    return sessionFromMetadata(name, meta, {
       projectId,
-      status: (meta["status"] as Session["status"]) || "spawning",
-      activity: activityOverride !== undefined ? activityOverride : null,
-      branch: meta["branch"] || null,
-      issueId: meta["issue"] || null,
-      pr: null,
-      workspacePath: meta["worktree"] || null,
       runtimeHandle: { id: name, runtimeName: "tmux", data: {} },
-      agentInfo: null,
-      createdAt: new Date(),
-      lastActivityAt: new Date(),
-      metadata: meta,
-    } satisfies Session;
+      activity: activityOverride !== undefined ? activityOverride : null,
+    });
   });
 }
 
@@ -1245,6 +1242,24 @@ describe("status command", () => {
     const parsed = JSON.parse(jsonCalls);
     expect(parsed.data).toHaveLength(2);
     expect(parsed.meta.hiddenTerminatedCount).toBe(0);
+  });
+
+  it("hides legacy on-disk metadata with status=merged even when pr= URL is absent", async () => {
+    // Regression test for the reviewer's smoke-test case on PR #1340: a legacy
+    // metadata file with `status=merged` but no `pr=` URL must still be treated
+    // as terminal. Routes through the real sessionFromMetadata → lifecycle path.
+    writeFileSync(join(sessionsDir, "app-1"), "branch=feat/a\nstatus=working\n");
+    writeFileSync(join(sessionsDir, "app-2"), "branch=feat/b\nstatus=merged\n"); // no pr=
+
+    mockTmux.mockResolvedValue(null);
+    mockGit.mockResolvedValue(null);
+
+    await program.parseAsync(["node", "test", "status", "--json"]);
+
+    const jsonCalls = consoleSpy.mock.calls.map((c) => c[0]).join("");
+    const parsed = JSON.parse(jsonCalls);
+    expect(parsed.data.map((e: { name: string }) => e.name)).toEqual(["app-1"]);
+    expect(parsed.meta.hiddenTerminatedCount).toBe(1);
   });
 
   it("filters lifecycle-driven terminal sessions (runtime exited, pr merged, session terminated)", async () => {
