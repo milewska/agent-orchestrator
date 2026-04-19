@@ -49,6 +49,25 @@ function autoDetectProject(config: OrchestratorConfig): string {
   );
 }
 
+/**
+ * If the issue identifier is prefixed with a configured project id
+ * (e.g. `x402-identity/1`), route the spawn to that project and strip
+ * the prefix from the issue id.
+ *
+ * This keeps cross-project spawns working when `ao start` is running
+ * for a different project than the one the issue belongs to.
+ */
+function resolveIssuePrefix(
+  config: OrchestratorConfig,
+  issueId: string,
+): { projectId: string; issueId: string } | null {
+  const slashIdx = issueId.indexOf("/");
+  if (slashIdx <= 0 || slashIdx === issueId.length - 1) return null;
+  const prefix = issueId.slice(0, slashIdx);
+  if (!config.projects[prefix]) return null;
+  return { projectId: prefix, issueId: issueId.slice(slashIdx + 1) };
+}
+
 interface SpawnClaimOptions {
   claimPr?: string;
   assignOnGithub?: boolean;
@@ -227,12 +246,18 @@ export function registerSpawn(program: Command): void {
         let issueId: string | undefined;
 
         if (first) {
-          issueId = first;
-          try {
-            projectId = autoDetectProject(config);
-          } catch (err) {
-            console.error(chalk.red(err instanceof Error ? err.message : String(err)));
-            process.exit(1);
+          const prefixed = resolveIssuePrefix(config, first);
+          if (prefixed) {
+            projectId = prefixed.projectId;
+            issueId = prefixed.issueId;
+          } else {
+            issueId = first;
+            try {
+              projectId = autoDetectProject(config);
+            } catch (err) {
+              console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+              process.exit(1);
+            }
           }
         } else {
           // No args: auto-detect project, no issue
@@ -276,9 +301,35 @@ export function registerBatchSpawn(program: Command): void {
     .action(async (issues: string[], opts: { open?: boolean }) => {
       const config = loadConfig();
       let projectId: string;
+      const resolvedIssues: string[] = [];
+
+      // If any issues are prefixed with a known project id (e.g. "x402-identity/1"),
+      // route the batch to that project. All prefixed issues must target the same project.
+      const prefixedProjects = new Set<string>();
+      for (const issue of issues) {
+        const prefixed = resolveIssuePrefix(config, issue);
+        if (prefixed) {
+          prefixedProjects.add(prefixed.projectId);
+          resolvedIssues.push(prefixed.issueId);
+        } else {
+          resolvedIssues.push(issue);
+        }
+      }
+
+      if (prefixedProjects.size > 1) {
+        console.error(
+          chalk.red(
+            `Cross-project batch spawn is not supported. Mixed prefixes: ${[...prefixedProjects].join(", ")}`,
+          ),
+        );
+        process.exit(1);
+      }
 
       try {
-        projectId = autoDetectProject(config);
+        projectId =
+          prefixedProjects.size === 1
+            ? [...prefixedProjects][0]
+            : autoDetectProject(config);
       } catch (err) {
         console.error(chalk.red(err instanceof Error ? err.message : String(err)));
         process.exit(1);
@@ -324,16 +375,18 @@ export function registerBatchSpawn(program: Command): void {
           .map((s) => [s.issueId!.toLowerCase(), s.id]),
       );
 
-      for (const issue of issues) {
+      for (let i = 0; i < issues.length; i++) {
+        const issue = issues[i];
+        const resolvedIssue = resolvedIssues[i];
         // Duplicate detection — check both existing sessions and same-run duplicates
-        if (spawnedIssues.has(issue.toLowerCase())) {
+        if (spawnedIssues.has(resolvedIssue.toLowerCase())) {
           console.log(chalk.yellow(`  Skip ${issue} — duplicate in this batch`));
           skipped.push({ issue, existing: "(this batch)" });
           continue;
         }
 
         // Check existing sessions (pre-loaded before loop)
-        const existingSessionId = existingIssueMap.get(issue.toLowerCase());
+        const existingSessionId = existingIssueMap.get(resolvedIssue.toLowerCase());
         if (existingSessionId) {
           console.log(chalk.yellow(`  Skip ${issue} — already has session ${existingSessionId}`));
           skipped.push({ issue, existing: existingSessionId });
@@ -341,9 +394,9 @@ export function registerBatchSpawn(program: Command): void {
         }
 
         try {
-          const session = await sm.spawn({ projectId, issueId: issue });
+          const session = await sm.spawn({ projectId, issueId: resolvedIssue });
           created.push({ session: session.id, issue });
-          spawnedIssues.add(issue.toLowerCase());
+          spawnedIssues.add(resolvedIssue.toLowerCase());
           console.log(chalk.green(`  Created ${session.id} for ${issue}`));
 
           if (opts.open) {

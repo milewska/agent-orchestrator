@@ -243,6 +243,88 @@ describe("spawn command", () => {
     });
   });
 
+  it("routes a <projectId>/<issue> identifier to the prefixed project", async () => {
+    // Multi-project config where AO is running for the default project
+    // but the issue belongs to a different project.
+    (mockConfigRef.current as Record<string, unknown>).projects = {
+      "agent-orchestrator": {
+        name: "Agent Orchestrator",
+        repo: "org/agent-orchestrator",
+        path: join(tmpDir, "agent-orchestrator"),
+        defaultBranch: "main",
+        sessionPrefix: "ao",
+      },
+      "x402-identity": {
+        name: "x402 Identity",
+        repo: "harsh-batheja/x402-identity",
+        path: join(tmpDir, "x402-identity"),
+        defaultBranch: "main",
+        sessionPrefix: "xid",
+      },
+    };
+    mkdirSync(join(tmpDir, "agent-orchestrator"), { recursive: true });
+    mkdirSync(join(tmpDir, "x402-identity"), { recursive: true });
+
+    // The cwd shouldn't change the result — prefix takes priority.
+    cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(join(tmpDir, "agent-orchestrator"));
+    mockGetRunning.mockResolvedValue({
+      pid: 1234,
+      port: 3000,
+      startedAt: "",
+      projects: ["agent-orchestrator"],
+    });
+
+    const fakeSession: Session = {
+      id: "xid-1",
+      projectId: "x402-identity",
+      status: "spawning",
+      activity: null,
+      branch: "feat/issue-1",
+      issueId: "1",
+      pr: null,
+      workspacePath: "/tmp/wt",
+      runtimeHandle: { id: "hash-xid-1", runtimeName: "tmux", data: {} },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    };
+    mockSessionManager.spawn.mockResolvedValue(fakeSession);
+
+    await program.parseAsync(["node", "test", "spawn", "x402-identity/1"]);
+
+    expect(mockSessionManager.spawn).toHaveBeenCalledWith({
+      projectId: "x402-identity",
+      issueId: "1",
+    });
+  });
+
+  it("leaves the issueId untouched when the prefix is not a configured project", async () => {
+    const fakeSession: Session = {
+      id: "app-1",
+      projectId: "my-app",
+      status: "spawning",
+      activity: null,
+      branch: "feat/some-org-42",
+      issueId: "some-org/42",
+      pr: null,
+      workspacePath: "/tmp/wt",
+      runtimeHandle: { id: "hash-app-1", runtimeName: "tmux", data: {} },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    };
+    mockSessionManager.spawn.mockResolvedValue(fakeSession);
+
+    await program.parseAsync(["node", "test", "spawn", "some-org/42"]);
+
+    expect(mockSessionManager.spawn).toHaveBeenCalledWith({
+      projectId: "my-app",
+      issueId: "some-org/42",
+    });
+  });
+
   it("spawns without issueId when none provided", async () => {
     const fakeSession: Session = {
       id: "app-1",
