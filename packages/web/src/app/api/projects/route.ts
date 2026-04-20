@@ -2,7 +2,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { NextResponse, type NextRequest } from "next/server";
 import {
-  loadGlobalConfig,
   registerProjectInGlobalConfig,
   StorageKeyCollisionError,
 } from "@aoagents/ao-core";
@@ -74,7 +73,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, projectId }, { status: 201 });
   } catch (err) {
     if (err instanceof StorageKeyCollisionError) {
-      const globalConfig = loadGlobalConfig();
       return NextResponse.json(
         {
           error: err.message,

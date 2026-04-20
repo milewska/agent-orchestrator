@@ -11,8 +11,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { readFileSync, existsSync } from "node:fs";
-import { realpathSync } from "node:fs";
+import { readFileSync, existsSync, realpathSync } from "node:fs";
 import { resolve, join, dirname, basename } from "node:path";
 import { homedir } from "node:os";
 import { parse as parseYaml } from "yaml";

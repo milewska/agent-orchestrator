@@ -116,7 +116,9 @@ function metadataToRecord(metadata: SessionMetadata): Record<string, string> {
 /** Convert raw metadata to a Session object (lightweight, no plugin init) */
 function metadataToSession(sessionId: string, project: PortfolioProject, metadata: SessionMetadata): Session {
   // Use the most recent timestamp available as lastActivityAt
-  const timestamps = [metadata.createdAt, metadata.restoredAt].filter(Boolean);
+  const timestamps = [metadata.createdAt, metadata.restoredAt].filter(
+    (timestamp): timestamp is string => typeof timestamp === "string" && timestamp.length > 0,
+  );
   const lastActivity = timestamps.length > 0
     ? new Date(Math.max(...timestamps.map((timestamp) => new Date(timestamp).getTime())))
     : new Date();

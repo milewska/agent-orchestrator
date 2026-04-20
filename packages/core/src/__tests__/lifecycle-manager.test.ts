@@ -11,7 +11,7 @@ import { readObservabilitySummary } from "../observability.js";
 import type {
   OrchestratorConfig,
   PluginRegistry,
-  SessionManager,
+  OpenCodeSessionManager,
   Agent,
   ActivityState,
   SessionStatus,
@@ -32,7 +32,7 @@ import {
 let env: TestEnvironment;
 let plugins: MockPlugins;
 let mockRegistry: PluginRegistry;
-let mockSessionManager: SessionManager;
+let mockSessionManager: OpenCodeSessionManager;
 let config: OrchestratorConfig;
 
 beforeEach(() => {

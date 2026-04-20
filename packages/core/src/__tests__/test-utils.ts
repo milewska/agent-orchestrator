@@ -9,7 +9,7 @@ import { createActivitySignal } from "../activity-signal.js";
 import type {
   OrchestratorConfig,
   PluginRegistry,
-  SessionManager,
+  OpenCodeSessionManager,
   Session,
   Runtime,
   RuntimeHandle,
@@ -423,7 +423,7 @@ export function teardownTestContext(ctx: TestContext): void {
 // Session manager mock
 // ---------------------------------------------------------------------------
 
-export function createMockSessionManager(): SessionManager {
+export function createMockSessionManager(): OpenCodeSessionManager {
   return {
     spawn: vi.fn().mockResolvedValue(makeSession()),
     spawnOrchestrator: vi.fn().mockResolvedValue(makeSession({ id: "app-orchestrator", metadata: { role: "orchestrator" } })),
@@ -431,6 +431,7 @@ export function createMockSessionManager(): SessionManager {
     list: vi.fn().mockResolvedValue([]),
     listCached: vi.fn().mockResolvedValue([]),
     invalidateCache: vi.fn(),
+    remap: vi.fn().mockResolvedValue("app-1"),
     get: vi.fn().mockResolvedValue(null),
     kill: vi.fn().mockResolvedValue({ cleaned: true, alreadyTerminated: false }),
     cleanup: vi.fn().mockResolvedValue({ killed: [], skipped: [], errors: [] }),
@@ -443,5 +444,5 @@ export function createMockSessionManager(): SessionManager {
       githubAssigned: true,
       takenOverFrom: [],
     }),
-  } as SessionManager;
+  } as OpenCodeSessionManager;
 }

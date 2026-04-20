@@ -18,7 +18,7 @@ import {
   CI_STATUS,
   TERMINAL_STATUSES,
   type LifecycleManager,
-  type SessionManager,
+  type OpenCodeSessionManager,
   type SessionId,
   type SessionStatus,
   type EventType,
@@ -296,7 +296,7 @@ function buildTransitionObservabilityData(
 export interface LifecycleManagerDeps {
   config: OrchestratorConfig;
   registry: PluginRegistry;
-  sessionManager: SessionManager;
+  sessionManager: OpenCodeSessionManager;
   /** When set, only poll sessions belonging to this project. */
   projectId?: string;
 }

@@ -964,7 +964,9 @@ describe("start command — orchestrator session strategy display", () => {
   });
 
   it("restores the latest restorable orchestrator when tmux is gone", async () => {
-    mockConfigRef.current = makeConfig({ "my-app": makeProject() });
+    mockConfigRef.current = makeConfig({
+      "my-app": makeProject({ orchestratorSessionStrategy: "reuse" }),
+    });
 
     const now = new Date();
     mockSessionManager.list.mockResolvedValue([
