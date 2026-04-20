@@ -122,6 +122,20 @@ describe("open command", () => {
     expect(output).not.toContain("backend-1");
   });
 
+  it("matches hashed tmux worker session names", async () => {
+    mockTmux.mockImplementation(async (...args: string[]) => {
+      if (args[0] === "list-sessions") return "1686e4aaaeaa-app-1\nbackend-1";
+      return null;
+    });
+
+    await program.parseAsync(["node", "test", "open", "my-app"]);
+
+    const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(output).toContain("Opening 1 session");
+    expect(output).toContain("1686e4aaaeaa-app-1");
+    expect(output).not.toContain("backend-1");
+  });
+
   it("opens a single session by name", async () => {
     mockTmux.mockImplementation(async (...args: string[]) => {
       if (args[0] === "list-sessions") return "app-1\napp-2";

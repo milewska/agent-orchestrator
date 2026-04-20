@@ -25,7 +25,7 @@ interface BrowseEntry {
 interface CollisionState {
   error: string;
   existingProjectId: string;
-  suggestion: "open-existing";
+  suggestion: "confirm-reuse";
 }
 
 interface AddProjectModalProps {
@@ -47,6 +47,8 @@ export function AddProjectModal({ open, onClose }: AddProjectModalProps) {
   const [browseEntries, setBrowseEntries] = useState<BrowseEntry[]>([]);
   const [browseLoading, setBrowseLoading] = useState(false);
   const [browseError, setBrowseError] = useState<string | null>(null);
+  const [projectIdInput, setProjectIdInput] = useState("");
+  const [projectNameInput, setProjectNameInput] = useState("");
 
   const browse = async (
     path: string,
@@ -120,18 +122,47 @@ export function AddProjectModal({ open, onClose }: AddProjectModalProps) {
     setBrowseHistoryIndex(0);
     setBrowsePath(initialPath);
     setSelectedBrowsePath(initialPath);
+    setProjectIdInput("");
+    setProjectNameInput("");
     modalRef.current?.focus();
     void browse(initialPath, { mode: "replace", selectedPath: initialPath });
   }, [open]);
 
   const directoryEntries = useMemo(() => browseEntries.filter((entry) => entry.isDirectory), [browseEntries]);
+  const selectedEntry = useMemo(
+    () => directoryEntries.find((entry) => joinBrowsePath(browsePath, entry.name) === selectedBrowsePath) ?? null,
+    [browsePath, directoryEntries, selectedBrowsePath],
+  );
   const parentPath = getParentBrowsePath(browsePath);
   const canGoBack = browseHistoryIndex > 0;
   const canGoForward = browseHistoryIndex < browseHistory.length - 1;
-  const canSubmit = selectedBrowsePath.trim() !== "" && selectedBrowsePath !== "~" && !browseError;
+  const projectIdValue =
+    projectIdInput.trim() ||
+    (selectedBrowsePath.trim() && selectedBrowsePath !== "~" ? deriveProjectIdFromPath(selectedBrowsePath) : "");
+  const projectNameValue =
+    projectNameInput.trim() ||
+    (selectedBrowsePath.trim() && selectedBrowsePath !== "~" ? deriveProjectNameFromPath(selectedBrowsePath) : "");
+  const canSubmit =
+    selectedBrowsePath.trim() !== "" &&
+    selectedBrowsePath !== "~" &&
+    !browseError &&
+    Boolean(selectedEntry?.isGitRepo) &&
+    projectIdValue.length > 0 &&
+    projectNameValue.length > 0;
   const selectedIndex = directoryEntries.findIndex(
     (entry) => joinBrowsePath(browsePath, entry.name) === selectedBrowsePath,
   );
+
+  useEffect(() => {
+    if (!selectedBrowsePath || selectedBrowsePath === "~") {
+      setProjectIdInput("");
+      setProjectNameInput("");
+      return;
+    }
+
+    setProjectIdInput(deriveProjectIdFromPath(selectedBrowsePath));
+    setProjectNameInput(deriveProjectNameFromPath(selectedBrowsePath));
+  }, [selectedBrowsePath]);
 
   useEffect(() => {
     if (!open) return;
@@ -172,22 +203,22 @@ export function AddProjectModal({ open, onClose }: AddProjectModalProps) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [browsePath, canSubmit, directoryEntries, onClose, open, selectedBrowsePath, selectedIndex]);
 
-  const submit = async () => {
+  const submit = async (allowStorageKeyReuse = false) => {
     setInlineError(null);
     setNetworkError(null);
     setCollision(null);
     setSubmitting(true);
     const resolvedPath = selectedBrowsePath.trim();
-    const projectId = deriveProjectIdFromPath(resolvedPath);
-    const name = deriveProjectNameFromPath(resolvedPath);
+    const projectId = projectIdValue;
+    const name = projectNameValue;
     try {
       const response = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, name, path: resolvedPath }),
+        body: JSON.stringify({ projectId, name, path: resolvedPath, allowStorageKeyReuse }),
       });
       const body = (await response.json().catch(() => null)) as
-        | { error?: string; projectId?: string; existingProjectId?: string; suggestion?: "open-existing" }
+        | { error?: string; projectId?: string; existingProjectId?: string; suggestion?: "confirm-reuse" }
         | null;
       if (response.status === 409 && body?.existingProjectId && body?.suggestion) {
         setCollision({
@@ -229,11 +260,16 @@ export function AddProjectModal({ open, onClose }: AddProjectModalProps) {
       <p className="add-project-modal__notice-copy">Existing project: <code>{collision.existingProjectId}</code></p>
       <div className="add-project-modal__notice-actions">
         <button type="button" onClick={() => { onClose(); router.push(`/projects/${encodeURIComponent(collision.existingProjectId)}`); }} className="add-project-modal__ghostbtn">Open existing</button>
-        <span className="add-project-modal__notice-hint">Recommended: open existing</span>
+        <button type="button" onClick={() => void submit(true)} className="add-project-modal__ghostbtn">Reuse shared storage</button>
+        <span className="add-project-modal__notice-hint">Open the existing project or confirm shared storage reuse.</span>
       </div>
     </div>
   ) : inlineError ? (
     <div role="alert" className="add-project-modal__notice add-project-modal__notice--error">{inlineError}</div>
+  ) : selectedEntry && !selectedEntry.isGitRepo ? (
+    <div role="alert" className="add-project-modal__notice add-project-modal__notice--error">
+      Selected folder is not a git repository.
+    </div>
   ) : networkError ? (
     <div className="add-project-modal__notice add-project-modal__notice--error">{networkError}</div>
   ) : null;
@@ -299,6 +335,24 @@ export function AddProjectModal({ open, onClose }: AddProjectModalProps) {
         <div className="add-project-modal__pathbar add-project-modal__pathbar--selection">
           <span className="add-project-modal__selection-label">Selected</span>
           <span className="add-project-modal__selection-path">{selectedBrowsePath || "No directory selected"}</span>
+        </div>
+        <div className="add-project-modal__pathbar add-project-modal__pathbar--selection">
+          <label className="add-project-modal__selection-label" htmlFor="project-id-input">Project ID</label>
+          <input
+            id="project-id-input"
+            value={projectIdInput}
+            onChange={(event) => setProjectIdInput(event.target.value)}
+            className="add-project-modal__selection-path"
+          />
+        </div>
+        <div className="add-project-modal__pathbar add-project-modal__pathbar--selection">
+          <label className="add-project-modal__selection-label" htmlFor="project-name-input">Project name</label>
+          <input
+            id="project-name-input"
+            value={projectNameInput}
+            onChange={(event) => setProjectNameInput(event.target.value)}
+            className="add-project-modal__selection-path"
+          />
         </div>
         {selectedNotice}
 

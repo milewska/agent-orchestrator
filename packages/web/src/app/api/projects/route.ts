@@ -1,7 +1,11 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { existsSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { NextResponse, type NextRequest } from "next/server";
 import {
+  getGlobalConfigPath,
+  loadConfig,
+  migrateToGlobalConfig,
   registerProjectInGlobalConfig,
   StorageKeyCollisionError,
 } from "@aoagents/ao-core";
@@ -23,6 +27,10 @@ function expandHomePath(input: string): string {
   return input;
 }
 
+function isGitRepository(projectPath: string): boolean {
+  return existsSync(join(projectPath, ".git"));
+}
+
 function revalidatePortfolioPaths(projectId: string): void {
   for (const route of ["/", "/orchestrators", "/prs", `/projects/${projectId}`]) {
     try {
@@ -30,6 +38,25 @@ function revalidatePortfolioPaths(projectId: string): void {
     } catch {
       // Route tests do not run inside a full Next.js revalidation context.
     }
+  }
+}
+
+function seedGlobalRegistryFromCurrentConfig(): void {
+  const globalConfigPath = getGlobalConfigPath();
+  if (existsSync(globalConfigPath)) {
+    return;
+  }
+
+  try {
+    const config = loadConfig();
+    if (resolve(config.configPath) === resolve(globalConfigPath)) {
+      return;
+    }
+
+    migrateToGlobalConfig(config.configPath, globalConfigPath);
+  } catch {
+    // If there is no current config, or it is already flat/non-migratable,
+    // continue and let the new project create the canonical registry directly.
   }
 }
 
@@ -54,19 +81,29 @@ export async function POST(request: NextRequest) {
   const projectId = sanitizeString(body["projectId"]);
   const name = sanitizeString(body["name"]) ?? projectId;
   const rawPath = sanitizeString(body["path"]);
+  const allowStorageKeyReuse = body["allowStorageKeyReuse"] === true;
   if (!projectId) {
     return NextResponse.json({ error: "Project ID is required." }, { status: 400 });
   }
   if (!rawPath) {
     return NextResponse.json({ error: "Repository path is required." }, { status: 400 });
   }
+  const resolvedPath = resolve(expandHomePath(rawPath));
+  if (!isGitRepository(resolvedPath)) {
+    return NextResponse.json(
+      { error: "Repository path must point to a git repository." },
+      { status: 400 },
+    );
+  }
 
   try {
+    seedGlobalRegistryFromCurrentConfig();
     registerProjectInGlobalConfig(
       projectId,
       name ?? projectId,
-      expandHomePath(rawPath),
+      resolvedPath,
       undefined,
+      allowStorageKeyReuse ? { allowStorageKeyReuse: true } : undefined,
     );
     invalidatePortfolioServicesCache();
     revalidatePortfolioPaths(projectId);
@@ -77,7 +114,7 @@ export async function POST(request: NextRequest) {
         {
           error: err.message,
           existingProjectId: err.existingProjectId,
-          suggestion: "open-existing",
+          suggestion: "confirm-reuse",
         },
         { status: 409 },
       );

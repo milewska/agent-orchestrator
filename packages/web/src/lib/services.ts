@@ -15,6 +15,7 @@ import "server-only";
 import {
   getGlobalConfigPath,
   loadConfig,
+  ConfigNotFoundError,
   createPluginRegistry,
   createSessionManager,
   createLifecycleManager,
@@ -98,7 +99,7 @@ export function invalidatePortfolioServicesCache(): void {
 }
 
 async function initServices(): Promise<Services> {
-  const config = loadConfig(getGlobalConfigPath());
+  const config = loadDashboardConfig();
   const registry = createPluginRegistry();
 
   // Register plugins explicitly (webpack can't handle dynamic import() in core)
@@ -120,6 +121,28 @@ async function initServices(): Promise<Services> {
   lifecycleManager.start(30_000);
 
   return { config, registry, sessionManager, lifecycleManager };
+}
+
+function loadDashboardConfig(): LoadedConfig {
+  const globalConfigPath = getGlobalConfigPath();
+
+  try {
+    return loadConfig(globalConfigPath);
+  } catch (error) {
+    // The dashboard prefers the global portfolio config, but users may still
+    // launch it from a single repo that only has a local agent-orchestrator.yaml.
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return loadConfig();
+    }
+    if (error instanceof ConfigNotFoundError) {
+      return loadConfig();
+    }
+    throw error;
+  }
 }
 
 // ---------------------------------------------------------------------------

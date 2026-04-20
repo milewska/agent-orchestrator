@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { rmSync } from "node:fs";
 import path from "node:path";
 import { NextResponse, type NextRequest } from "next/server";
 import {
@@ -10,6 +10,7 @@ import {
   loadLocalProjectConfigDetailed,
   repairWrappedLocalProjectConfig,
   unregisterProject,
+  writeLocalProjectConfig,
   type LocalProjectConfig,
 } from "@aoagents/ao-core";
 import { revalidatePath } from "next/cache";
@@ -23,43 +24,6 @@ function sanitizeString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function stringifyYamlValue(value: unknown, indent = 0): string {
-  const pad = " ".repeat(indent);
-  if (value === null) return "null";
-  if (typeof value === "string") {
-    return JSON.stringify(value);
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    if (value.length === 0) return "[]";
-    return value
-      .map((item) => `${pad}- ${stringifyYamlValue(item, indent + 2).replace(/^\s+/, "")}`)
-      .join("\n");
-  }
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>).filter(([, entry]) => entry !== undefined);
-    if (entries.length === 0) return "{}";
-    return entries
-      .map(([key, entry]) => {
-        if (entry && typeof entry === "object" && !Array.isArray(entry)) {
-          return `${pad}${key}:\n${stringifyYamlValue(entry, indent + 2)}`;
-        }
-        if (Array.isArray(entry) && entry.length > 0) {
-          return `${pad}${key}:\n${stringifyYamlValue(entry, indent + 2)}`;
-        }
-        return `${pad}${key}: ${stringifyYamlValue(entry, indent + 2)}`;
-      })
-      .join("\n");
-  }
-  return '""';
-}
-
-function stringifyLocalProjectConfig(config: LocalProjectConfig): string {
-  return `${stringifyYamlValue(config)}\n`;
 }
 
 function revalidateProjectPaths(projectId: string): void {
@@ -203,26 +167,50 @@ export async function PATCH(
     const currentConfig: LocalProjectConfig = localConfigResult.kind === "loaded" ? { ...localConfigResult.config } : {};
     const nextConfig: LocalProjectConfig = {
       ...currentConfig,
-      agent: sanitizeString(body["agent"]),
-      runtime: sanitizeString(body["runtime"]),
-      tracker:
+    };
+    const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
+
+    if (hasOwn("agent")) {
+      nextConfig.agent = sanitizeString(body["agent"]);
+    }
+    if (hasOwn("runtime")) {
+      nextConfig.runtime = sanitizeString(body["runtime"]);
+    }
+    if (hasOwn("tracker")) {
+      const nextTracker =
         body["tracker"] && typeof body["tracker"] === "object"
-          ? (body["tracker"] as LocalProjectConfig["tracker"])
-          : undefined,
-      scm:
+          ? ({
+              ...((currentConfig.tracker as Record<string, unknown> | undefined) ?? {}),
+              ...(body["tracker"] as Record<string, unknown>),
+            } as LocalProjectConfig["tracker"])
+          : undefined;
+      nextConfig.tracker =
+        nextTracker;
+    }
+    if (hasOwn("scm")) {
+      const nextScm =
         body["scm"] && typeof body["scm"] === "object"
-          ? (body["scm"] as LocalProjectConfig["scm"])
-          : undefined,
-      reactions:
+          ? ({
+              ...((currentConfig.scm as Record<string, unknown> | undefined) ?? {}),
+              ...(body["scm"] as Record<string, unknown>),
+            } as LocalProjectConfig["scm"])
+          : undefined;
+      nextConfig.scm =
+        nextScm;
+    }
+    if (hasOwn("reactions")) {
+      nextConfig.reactions =
         body["reactions"] && typeof body["reactions"] === "object"
           ? (body["reactions"] as LocalProjectConfig["reactions"])
-          : undefined,
-    };
+          : undefined;
+    }
 
     const validated = LocalProjectConfigSchema.parse(nextConfig);
-    const configPath = path.join(projectPath, "agent-orchestrator.yaml");
-    mkdirSync(path.dirname(configPath), { recursive: true });
-    writeFileSync(configPath, stringifyLocalProjectConfig(validated));
+    const localConfigPath =
+      "path" in localConfigResult && typeof localConfigResult.path === "string"
+        ? localConfigResult.path
+        : path.join(projectPath, "agent-orchestrator.yaml");
+    writeLocalProjectConfig(projectPath, validated, localConfigPath);
     invalidatePortfolioServicesCache();
     revalidateProjectPaths(id);
 

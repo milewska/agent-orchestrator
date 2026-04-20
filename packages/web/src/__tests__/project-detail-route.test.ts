@@ -74,9 +74,67 @@ describe("/api/projects/[id]", () => {
 
     expect(response.status).toBe(200);
     const localYaml = readFileSync(path.join(repoDir, "agent-orchestrator.yaml"), "utf-8");
-    expect(localYaml).toContain('agent: "codex"');
-    expect(localYaml).toContain('runtime: "tmux"');
+    expect(localYaml).toContain("agent: codex");
+    expect(localYaml).toContain("runtime: tmux");
     expect(invalidatePortfolioServicesCache).toHaveBeenCalledTimes(1);
+  });
+
+  it("PATCH preserves untouched nested tracker and scm config", async () => {
+    const repoDir = path.join(tempRoot, "demo-nested");
+    mkdirSync(repoDir, { recursive: true });
+    writeFileSync(
+      path.join(repoDir, "agent-orchestrator.yaml"),
+      [
+        "tracker:",
+        '  plugin: "linear"',
+        '  team: "growth"',
+        "scm:",
+        '  plugin: "github"',
+        "  webhook:",
+        "    enabled: true",
+        '    path: "/hooks/github"',
+        "",
+      ].join("\n"),
+    );
+    registerProjectInGlobalConfig("demo", "Demo", repoDir);
+
+    const { PATCH } = await import("@/app/api/projects/[id]/route");
+    const response = await PATCH(makeRequest("PATCH", { agent: "codex" }), {
+      params: Promise.resolve({ id: "demo" }),
+    });
+
+    expect(response.status).toBe(200);
+    const localYaml = readFileSync(path.join(repoDir, "agent-orchestrator.yaml"), "utf-8");
+    expect(localYaml).toContain("plugin: linear");
+    expect(localYaml).toContain("team: growth");
+    expect(localYaml).toContain("plugin: github");
+    expect(localYaml).toContain("path: /hooks/github");
+    expect(localYaml).toContain("agent: codex");
+  });
+
+  it("PATCH updates an existing .yml config in place", async () => {
+    const repoDir = path.join(tempRoot, "demo-yml");
+    mkdirSync(repoDir, { recursive: true });
+    writeFileSync(
+      path.join(repoDir, "agent-orchestrator.yml"),
+      [
+        'agent: "claude-code"',
+        'runtime: "tmux"',
+        "",
+      ].join("\n"),
+    );
+    registerProjectInGlobalConfig("demo", "Demo", repoDir);
+
+    const { PATCH } = await import("@/app/api/projects/[id]/route");
+    const response = await PATCH(makeRequest("PATCH", { runtime: "docker" }), {
+      params: Promise.resolve({ id: "demo" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(readFileSync(path.join(repoDir, "agent-orchestrator.yml"), "utf-8")).toContain(
+      "runtime: docker",
+    );
+    expect(existsSync(path.join(repoDir, "agent-orchestrator.yaml"))).toBe(false);
   });
 
   it("PATCH rejects identity field updates with 400", async () => {
@@ -219,5 +277,36 @@ describe("/api/projects/[id]", () => {
       projectId: "broken",
     });
     expect(readFileSync(path.join(repoDir, "agent-orchestrator.yaml"), "utf-8")).toContain("agent: codex");
+  });
+
+  it("POST repairs wrapped local .yml configs in place", async () => {
+    const repoDir = path.join(tempRoot, "broken-yml");
+    mkdirSync(repoDir, { recursive: true });
+    writeFileSync(
+      path.join(repoDir, "agent-orchestrator.yml"),
+      [
+        "projects:",
+        "  broken:",
+        `    path: ${repoDir}`,
+        "    agent: codex",
+        "    runtime: tmux",
+        "",
+      ].join("\n"),
+    );
+    registerProjectInGlobalConfig("broken", "Broken", repoDir);
+
+    const { POST } = await import("@/app/api/projects/[id]/route");
+    const response = await POST(makeRequest("POST"), {
+      params: Promise.resolve({ id: "broken" }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      repaired: true,
+      projectId: "broken",
+    });
+    expect(readFileSync(path.join(repoDir, "agent-orchestrator.yml"), "utf-8")).toContain("agent: codex");
+    expect(existsSync(path.join(repoDir, "agent-orchestrator.yaml"))).toBe(false);
   });
 });

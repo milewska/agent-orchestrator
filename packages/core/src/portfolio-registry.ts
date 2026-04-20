@@ -20,6 +20,7 @@ import {
   generateSessionPrefix,
 } from "./paths.js";
 import {
+  getGlobalConfigPath,
   loadGlobalConfig,
   loadLocalProjectConfig,
   registerProjectInGlobalConfig,
@@ -229,7 +230,7 @@ function applyPreferences(
 
 function projectFromGlobalConfig(): PortfolioProject[] {
   try {
-    const config = loadConfig();
+    const config = loadConfig(getGlobalConfigPath());
     const allEntries = [
       ...Object.entries(config.projects).map(([id, project]) => ({
         id,

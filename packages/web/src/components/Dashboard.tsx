@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMediaQuery, MOBILE_BREAKPOINT } from "@/hooks/useMediaQuery";
 import {
@@ -479,7 +480,7 @@ function DashboardInner({
             <div className="dashboard-app-header__spacer" />
             <div className="dashboard-app-header__actions">
               {!allProjectsView && orchestratorHref ? (
-                <a
+                <Link
                   href={orchestratorHref}
                   className="dashboard-app-btn dashboard-app-btn--amber"
                   aria-label="Orchestrator"
@@ -500,7 +501,7 @@ function DashboardInner({
                     <circle cx="18" cy="17" r="2" />
                   </svg>
                   Orchestrator
-                </a>
+                </Link>
               ) : canSpawnProjectOrchestrator && activeProject ? (
                 <button
                   type="button"
@@ -737,12 +738,12 @@ function ProjectOverviewGrid({
                     )}
                   </div>
                 </div>
-                <a
+                <Link
                   href={projectHref}
                   className="border border-[var(--color-border-default)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:no-underline"
                 >
                   Open project
-                </a>
+                </Link>
               </div>
 
               <div className="mb-4 flex flex-wrap gap-2">
@@ -769,20 +770,20 @@ function ProjectOverviewGrid({
                       : "No running orchestrator"}
                   </div>
                   {isDegraded ? (
-                    <a
+                    <Link
                       href={projectHref}
                       className="border border-[var(--color-border-default)] px-3 py-1.5 text-[11px] font-semibold text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:no-underline"
                     >
                       Repair project
-                    </a>
+                    </Link>
                   ) : orchestrator ? (
-                    <a
+                    <Link
                       href={projectSessionPath(orchestrator.projectId, orchestrator.id)}
                       className="orchestrator-btn flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold hover:no-underline"
                     >
                       <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-accent)] opacity-80" />
                       orchestrator
-                    </a>
+                    </Link>
                   ) : (
                     <button
                       type="button"

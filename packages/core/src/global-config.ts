@@ -104,6 +104,9 @@ const GLOBAL_PROJECT_ENTRY_FIELDS = new Set([
   "sessionPrefix",
 ]);
 
+const LOCAL_CONFIG_FILENAMES = ["agent-orchestrator.yaml", "agent-orchestrator.yml"] as const;
+const LOCAL_IDENTITY_FIELDS = new Set(["repo", "defaultBranch", "originUrl", "projectId", "path", "storageKey"]);
+
 export const GlobalProjectEntrySchema = z.object({
   projectId: z.string().optional(),
   path: z.string(),
@@ -234,6 +237,7 @@ export interface LocalProjectConfigLoadResult {
   kind: "loaded" | "missing" | "old-format" | "malformed" | "invalid";
   config?: LocalProjectConfig;
   error?: string;
+  path?: string;
 }
 
 interface RawGlobalConfigProjectSanitization {
@@ -310,10 +314,7 @@ export function loadLocalProjectConfig(projectPath: string): LocalProjectConfig 
 }
 
 export function loadLocalProjectConfigDetailed(projectPath: string): LocalProjectConfigLoadResult {
-  const candidates = [
-    join(projectPath, "agent-orchestrator.yaml"),
-    join(projectPath, "agent-orchestrator.yml"),
-  ];
+  const candidates = LOCAL_CONFIG_FILENAMES.map((filename) => join(projectPath, filename));
 
   for (const path of candidates) {
     if (!existsSync(path)) continue;
@@ -325,6 +326,7 @@ export function loadLocalProjectConfigDetailed(projectPath: string): LocalProjec
     } catch (error) {
       return {
         kind: "malformed",
+        path,
         error: `Failed to parse local config at ${path}: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
@@ -332,6 +334,7 @@ export function loadLocalProjectConfigDetailed(projectPath: string): LocalProjec
     if (!parsed || typeof parsed !== "object") {
       return {
         kind: "invalid",
+        path,
         error: `Local config at ${path} must parse to an object`,
       };
     }
@@ -340,6 +343,7 @@ export function loadLocalProjectConfigDetailed(projectPath: string): LocalProjec
     if ("projects" in (parsed as Record<string, unknown>)) {
       return {
         kind: "old-format",
+        path,
         error: `Local config at ${path} still uses a wrapped projects: format`,
       };
     }
@@ -347,11 +351,13 @@ export function loadLocalProjectConfigDetailed(projectPath: string): LocalProjec
     try {
       return {
         kind: "loaded",
+        path,
         config: LocalProjectConfigSchema.parse(parsed),
       };
     } catch (error) {
       return {
         kind: "invalid",
+        path,
         error: `Local config at ${path} failed validation: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
@@ -360,11 +366,42 @@ export function loadLocalProjectConfigDetailed(projectPath: string): LocalProjec
   return { kind: "missing" };
 }
 
-export function repairWrappedLocalProjectConfig(projectId: string, projectPath: string): void {
-  const configPath = join(projectPath, "agent-orchestrator.yaml");
-  if (!existsSync(configPath)) {
-    throw new Error(`No local config found at ${configPath}`);
+function stripLocalIdentityFields(config: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...config };
+  for (const key of LOCAL_IDENTITY_FIELDS) {
+    Reflect.deleteProperty(next, key);
   }
+  return next;
+}
+
+export function getLocalProjectConfigPath(projectPath: string): string {
+  for (const filename of LOCAL_CONFIG_FILENAMES) {
+    const candidate = join(projectPath, filename);
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return join(projectPath, LOCAL_CONFIG_FILENAMES[0]);
+}
+
+export function writeLocalProjectConfig(
+  projectPath: string,
+  config: LocalProjectConfig,
+  configPath = getLocalProjectConfigPath(projectPath),
+): string {
+  mkdirSync(dirname(configPath), { recursive: true });
+  const validated = LocalProjectConfigSchema.parse(
+    stripLocalIdentityFields(config as Record<string, unknown>),
+  );
+  atomicWriteFileSync(configPath, stringifyYaml(validated, { indent: 2 }));
+  return configPath;
+}
+
+export function repairWrappedLocalProjectConfig(projectId: string, projectPath: string): void {
+  const localConfigResult = loadLocalProjectConfigDetailed(projectPath);
+  if (localConfigResult.kind !== "old-format" || !localConfigResult.path) {
+    throw new Error(`No wrapped local config found for project "${projectId}" at ${projectPath}`);
+  }
+  const configPath = localConfigResult.path;
 
   const raw = readFileSync(configPath, "utf-8");
   const parsed = parseYaml(raw) as Record<string, unknown>;
@@ -400,8 +437,7 @@ export function repairWrappedLocalProjectConfig(projectId: string, projectPath: 
   void _registeredAt;
   void _displayName;
 
-  const validated = LocalProjectConfigSchema.parse(behaviorFields);
-  atomicWriteFileSync(configPath, stringifyYaml(validated, { indent: 2 }));
+  writeLocalProjectConfig(projectPath, behaviorFields, configPath);
 }
 
 interface StorageIdentity {
@@ -888,8 +924,10 @@ export function resolveProjectIdentity(
 
   if (localConfigResult.kind === "loaded" && localConfigResult.config) {
     return {
+      ...applyBehaviorDefaults(
+        stripLocalIdentityFields(localConfigResult.config as Record<string, unknown>),
+      ),
       ...identityFields,
-      ...applyBehaviorDefaults(localConfigResult.config as Record<string, unknown>),
     };
   }
 
@@ -897,8 +935,8 @@ export function resolveProjectIdentity(
     localConfigResult.kind !== "missing" ? localConfigResult.error ?? "Failed to load local config" : undefined;
 
   return {
-    ...identityFields,
     ...(resolveError ? {} : applyBehaviorDefaults({})),
+    ...identityFields,
     ...(resolveError ? { resolveError } : {}),
   };
 }

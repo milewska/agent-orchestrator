@@ -39,10 +39,10 @@ function ProjectSettingsFormInner({ projectId, initialValues }: ProjectSettingsF
 
   const behaviorPayload = useMemo(
     () => ({
-      agent: agent.trim() || undefined,
-      runtime: runtime.trim() || undefined,
-      tracker: trackerPlugin.trim() ? { plugin: trackerPlugin.trim() } : undefined,
-      scm: scmPlugin.trim() ? { plugin: scmPlugin.trim() } : undefined,
+      agent: agent.trim() || null,
+      runtime: runtime.trim() || null,
+      tracker: trackerPlugin.trim() ? { plugin: trackerPlugin.trim() } : null,
+      scm: scmPlugin.trim() ? { plugin: scmPlugin.trim() } : null,
       reactions,
     }),
     [agent, runtime, trackerPlugin, scmPlugin, reactions],
@@ -71,7 +71,7 @@ function ProjectSettingsFormInner({ projectId, initialValues }: ProjectSettingsF
           runtime: behaviorPayload.runtime,
           tracker: behaviorPayload.tracker,
           scm: behaviorPayload.scm,
-          reactions: parsedReactions,
+          reactions: parsedReactions ?? null,
         }),
       });
 

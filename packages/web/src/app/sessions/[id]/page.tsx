@@ -164,6 +164,12 @@ export default function SessionPage() {
   const pathname = usePathname();
   const router = useRouter();
   const id = params.id as string;
+  const expectedProjectId =
+    typeof params.projectId === "string"
+      ? params.projectId
+      : Array.isArray(params.projectId)
+        ? params.projectId[0]
+        : null;
   const mux = useMuxOptional();
 
   // Read optimistic session data written by sidebar navigation (instant render, no white screen)
@@ -257,10 +263,21 @@ export default function SessionPage() {
 
   useEffect(() => {
     if (!session) return;
-    if (!pathname?.startsWith("/sessions/")) return;
     if (!projects.some((project) => project.id === session.projectId)) return;
-    router.replace(projectSessionPath(session.projectId, session.id));
-  }, [pathname, projects, router, session]);
+
+    if (pathname?.startsWith("/sessions/")) {
+      router.replace(projectSessionPath(session.projectId, session.id));
+      return;
+    }
+
+    if (
+      pathname?.startsWith("/projects/") &&
+      expectedProjectId &&
+      session.projectId !== expectedProjectId
+    ) {
+      router.replace(projectSessionPath(session.projectId, session.id));
+    }
+  }, [expectedProjectId, pathname, projects, router, session]);
 
   useEffect(() => {
     sessionIsOrchestratorRef.current = sessionIsOrchestrator;

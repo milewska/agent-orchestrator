@@ -252,6 +252,7 @@ export {
   loadLocalProjectConfig,
   LocalProjectConfigSchema,
   loadLocalProjectConfigDetailed,
+  getLocalProjectConfigPath,
   repairWrappedLocalProjectConfig,
   registerProjectInGlobalConfig,
   relinkProjectInGlobalConfig,
@@ -260,6 +261,7 @@ export {
   resolveProjectIdentity,
   isOldConfigFormat,
   migrateToGlobalConfig,
+  writeLocalProjectConfig,
 } from "./global-config.js";
 export type {
   GlobalConfig,

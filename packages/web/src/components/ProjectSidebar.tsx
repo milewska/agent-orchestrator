@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
@@ -469,7 +470,7 @@ function ProjectSidebarInner({
 
                   {/* Dashboard button */}
                   {!isDegraded ? (
-                    <a
+                    <Link
                       href={projectHref}
                       onClick={(e) => { e.stopPropagation(); onMobileClose?.(); }}
                       className="project-sidebar__proj-action"
@@ -479,12 +480,12 @@ function ProjectSidebarInner({
                       <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                         <path d="M3 13h8V3H3zm10 8h8V11h-8zM3 21h8v-6H3zm10-10h8V3h-8z" />
                       </svg>
-                    </a>
+                    </Link>
                   ) : null}
 
                   {/* Orchestrator button */}
                   {!isDegraded && orchestratorSession && (
-                    <a
+                    <Link
                       href={projectSessionPath(project.id, orchestratorSession.id)}
                       onClick={(e) => { e.stopPropagation(); onMobileClose?.(); }}
                       className="project-sidebar__proj-action"
@@ -496,7 +497,7 @@ function ProjectSidebarInner({
                         <path d="M12 7v4M12 11H6M12 11h6M6 11v3M12 11v3M18 11v3" />
                         <circle cx="6" cy="17" r="2" /><circle cx="12" cy="17" r="2" /><circle cx="18" cy="17" r="2" />
                       </svg>
-                    </a>
+                    </Link>
                   )}
 
                   <div

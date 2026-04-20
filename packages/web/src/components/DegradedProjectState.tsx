@@ -15,7 +15,8 @@ export function DegradedProjectState({
   projectPath,
   heading = "This project's config failed to load",
 }: DegradedProjectStateProps) {
-  const yamlPath = `${projectPath}/agent-orchestrator.yaml`;
+  const matchedConfigPath = resolveError.match(/Local config at (.+?) (?:still uses|failed validation|must parse to an object|:)/)?.[1];
+  const yamlPath = matchedConfigPath ?? `${projectPath}/agent-orchestrator.yaml or .yml`;
   const canAutoRepair = resolveError.includes("wrapped projects: format");
 
   return (

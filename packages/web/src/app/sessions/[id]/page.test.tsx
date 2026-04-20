@@ -11,12 +11,13 @@ const notFoundSpy = vi.fn(() => {
 });
 const replaceSpy = vi.fn();
 let mockPathname = "/projects/my-app/sessions/worker-1";
+let mockParams: Record<string, string> = { id: "worker-1" };
 const mockMuxState: {
   current?: { sessions: SessionPatch[]; status?: "connecting" | "connected" | "reconnecting" | "disconnected" };
 } = {};
 
 vi.mock("next/navigation", () => ({
-  useParams: () => ({ id: "worker-1" }),
+  useParams: () => mockParams,
   usePathname: () => mockPathname,
   useRouter: () => ({ replace: replaceSpy }),
   notFound: notFoundSpy,
@@ -87,6 +88,7 @@ describe("SessionPage project polling", () => {
     sessionDetailSpy.mockClear();
     replaceSpy.mockClear();
     mockPathname = "/projects/my-app/sessions/worker-1";
+    mockParams = { id: "worker-1", projectId: "my-app" };
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     mockMuxState.current = undefined;
@@ -651,6 +653,7 @@ describe("SessionPage project polling", () => {
 
   it("redirects the legacy session URL for degraded projects too", async () => {
     mockPathname = "/sessions/worker-1";
+    mockParams = { id: "worker-1" };
     const workerSession = makeWorkerSession();
     workerSession.projectId = "broken-app";
 
@@ -698,5 +701,60 @@ describe("SessionPage project polling", () => {
     await flushAsyncWork();
 
     expect(replaceSpy).toHaveBeenCalledWith("/projects/broken-app/sessions/worker-1");
+  });
+
+  it("redirects project-scoped routes to the owning project when the URL project id is wrong", async () => {
+    mockPathname = "/projects/my-app/sessions/worker-1";
+    mockParams = { id: "worker-1", projectId: "my-app" };
+    const workerSession = makeWorkerSession();
+    workerSession.projectId = "other-app";
+
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/projects") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            projects: [
+              { id: "my-app", name: "My App", sessionPrefix: "my-app" },
+              { id: "other-app", name: "Other App", sessionPrefix: "other-app" },
+            ],
+          }),
+        } as Response;
+      }
+
+      if (url === "/api/sessions/worker-1") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => workerSession,
+        } as Response;
+      }
+
+      if (url === "/api/sessions") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ sessions: [workerSession] }),
+        } as Response;
+      }
+
+      if (url === "/api/sessions?project=other-app&orchestratorOnly=true") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ orchestratorId: null, orchestrators: [] }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    const { default: SessionPage } = await import("./page");
+    render(<SessionPage />);
+    await flushAsyncWork();
+
+    expect(replaceSpy).toHaveBeenCalledWith("/projects/other-app/sessions/worker-1");
   });
 });

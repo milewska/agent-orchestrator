@@ -339,6 +339,31 @@ describe("global-config storage identity", () => {
     });
   });
 
+  it("repairs wrapped local .yml configs without creating a .yaml sibling", () => {
+    const repoPath = createRepo("wrapped-local-yml", "https://github.com/OpenAI/demo.git");
+    const configPathYml = join(repoPath, "agent-orchestrator.yml");
+    writeFileSync(
+      configPathYml,
+      [
+        "projects:",
+        "  wrapped-local-yml:",
+        `    path: ${repoPath}`,
+        "    agent: codex",
+        "    runtime: tmux",
+        "",
+      ].join("\n"),
+    );
+
+    repairWrappedLocalProjectConfig("wrapped-local-yml", repoPath);
+
+    const repaired = parseYaml(readFileSync(configPathYml, "utf-8"));
+    expect(repaired).toEqual({
+      agent: "codex",
+      runtime: "tmux",
+    });
+    expect(existsSync(join(repoPath, "agent-orchestrator.yaml"))).toBe(false);
+  });
+
   it("registers a project successfully even when the existing config needs shadow-field cleanup", () => {
     const legacyRepoPath = createRepo("legacy", "https://github.com/OpenAI/legacy.git");
     const freshRepoPath = createRepo("fresh", "https://github.com/OpenAI/fresh.git");
@@ -399,6 +424,35 @@ describe("global-config storage identity", () => {
 
     expect(resolved?.storageKey).toBe(expectedStorageKey);
     expect(loadGlobalConfig(configPath)?.projects["local"]?.repo).toBeUndefined();
+  });
+
+  it("keeps registry-owned identity fields authoritative over local config overrides", () => {
+    const repoPath = createRepo("identity-authority", "https://github.com/OpenAI/identity-authority.git");
+    registerProjectInGlobalConfig("identity-authority", "Identity Authority", repoPath, undefined, configPath);
+    writeFileSync(
+      join(repoPath, "agent-orchestrator.yaml"),
+      [
+        "repo: evil/override",
+        "defaultBranch: develop",
+        "agent: codex",
+        "runtime: tmux",
+        "workspace: worktree",
+        "",
+      ].join("\n"),
+    );
+
+    const resolved = resolveProjectIdentity(
+      "identity-authority",
+      loadGlobalConfig(configPath)!,
+      configPath,
+    );
+
+    expect(resolved).toMatchObject({
+      repo: "OpenAI/identity-authority",
+      defaultBranch: "main",
+      agent: "codex",
+      runtime: "tmux",
+    });
   });
 
   it("migrates central old-format configs into local behavior files for every project", () => {
