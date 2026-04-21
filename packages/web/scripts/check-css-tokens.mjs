@@ -165,7 +165,10 @@ function findDuplicateValues(defs) {
   for (const [key, names] of byScopeValue) {
     const unique = [...new Set(names)];
     if (unique.length > 1) {
-      const [scope, value] = key.split("::");
+      // Use indexOf-based split so values containing "::" don't get truncated.
+      const sepIdx = key.indexOf("::");
+      const scope = key.slice(0, sepIdx);
+      const value = key.slice(sepIdx + 2);
       duplicates.push({ scope, value, tokens: unique.sort() });
     }
   }
@@ -177,8 +180,8 @@ function main() {
   const defs = parseTokenDefinitions(cssText);
   const tokenNames = [...defs.keys()].sort();
 
+  // walkFiles(SOURCE_DIR) already includes globals.css; don't scan it twice.
   const searchFiles = walkFiles(SOURCE_DIR);
-  searchFiles.push(CSS_FILE);
   try {
     if (statSync(DESIGN_DOC).isFile()) searchFiles.push(DESIGN_DOC);
   } catch {
