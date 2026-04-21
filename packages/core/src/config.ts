@@ -550,6 +550,15 @@ function validateProjectUniqueness(config: OrchestratorConfig): void {
   }
 }
 
+/**
+ * Sentinel string for the default `bugbot-comments` reaction message.
+ * The lifecycle dispatcher replaces this exact value with a formatted listing
+ * of the actual automated comments + correct-API guidance (see #895). If a
+ * project customizes the message in their YAML, the dispatcher leaves it alone.
+ */
+export const DEFAULT_BUGBOT_COMMENTS_MESSAGE =
+  "Automated review comments found on your PR. Fix the issues flagged by the bot.";
+
 /** Apply default reactions */
 function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
   const defaults: Record<string, (typeof config.reactions)[string]> = {
@@ -578,11 +587,11 @@ function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
     "bugbot-comments": {
       auto: true,
       action: "send-to-agent",
-      // Fallback text only: the lifecycle dispatcher replaces this with a
-      // detailed listing of the actual comments + correct-API guidance before
-      // sending to the agent (see formatAutomatedCommentsMessage, #895). This
-      // message is used for non-`send-to-agent` actions (e.g. human notify).
-      message: "Automated review comments found on your PR. Fix the issues flagged by the bot.",
+      // When this exact sentinel is present, the lifecycle dispatcher replaces
+      // it with a detailed listing of the actual comments + correct-API guidance
+      // (see formatAutomatedCommentsMessage, #895). If a project customizes
+      // this message in their YAML, the dispatcher respects it verbatim.
+      message: DEFAULT_BUGBOT_COMMENTS_MESSAGE,
       escalateAfter: "30m",
     },
     "merge-conflicts": {
