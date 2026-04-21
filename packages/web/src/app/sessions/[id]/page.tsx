@@ -23,22 +23,13 @@ function truncate(s: string, max: number): string {
 /** Build a descriptive tab title from session data. */
 function buildSessionTitle(
   session: DashboardSession,
-  prefixByProject: Map<string, string>,
+  _prefixByProject: Map<string, string>,
   activityOverride?: ActivityState | null,
 ): string {
   const id = session.id;
   const activity = activityOverride !== undefined ? activityOverride : session.activity;
   const emoji = activity ? (activityIcon[activity] ?? "") : "";
-  const allPrefixes = [...prefixByProject.values()];
-  const isOrchestrator = isOrchestratorSession(session, prefixByProject.get(session.projectId), allPrefixes);
-
-  let detail: string;
-
-  if (isOrchestrator) {
-    detail = "Orchestrator Terminal";
-  } else {
-    detail = truncate(getSessionTitle(session), 40);
-  }
+  const detail = truncate(getSessionTitle(session), 40);
 
   return emoji ? `${emoji} ${id} | ${detail}` : `${id} | ${detail}`;
 }

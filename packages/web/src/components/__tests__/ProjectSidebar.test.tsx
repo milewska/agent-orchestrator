@@ -231,8 +231,9 @@ describe("ProjectSidebar", () => {
           makeSession({
             id: "worker-1",
             projectId: "project-1",
-            summary: "Review API changes",
-            branch: null,
+            displayName: "Review API changes",
+            userPrompt: "raw prompt that should not win",
+            branch: "session/worker-1",
             status: "needs_input",
             activity: "waiting_input",
           }),
@@ -327,6 +328,31 @@ describe("ProjectSidebar", () => {
 
     expect(container.querySelector(".project-sidebar--collapsed")).not.toBeNull();
     expect(screen.queryByText("Projects")).not.toBeInTheDocument();
+  });
+
+  it("uses the shared session title pipeline in collapsed session tooltips", () => {
+    render(
+      <ProjectSidebar
+        projects={projects}
+        sessions={[
+          makeSession({
+            id: "worker-1",
+            projectId: "project-1",
+            branch: "session/worker-1",
+            displayName: "Audit flaky CI retries",
+            userPrompt: "Raw prompt that should not show in tooltip",
+          }),
+        ]}
+        activeProjectId="project-1"
+        activeSessionId={undefined}
+        collapsed
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Audit flaky CI retries" })).toHaveAttribute(
+      "title",
+      "Audit flaky CI retries",
+    );
   });
 
   it("shows loading skeletons instead of the empty state while sessions are loading", () => {

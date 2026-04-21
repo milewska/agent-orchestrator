@@ -25,6 +25,7 @@ import { ConnectionBar } from "./ConnectionBar";
 import { CopyDebugBundleButton } from "./CopyDebugBundleButton";
 import { SidebarContext } from "./workspace/SidebarContext";
 import { projectDashboardPath, projectSessionPath } from "@/lib/routes";
+import { getSessionTitle } from "@/lib/format";
 
 interface DashboardProps {
   initialSessions: DashboardSession[];
@@ -81,11 +82,7 @@ function DoneCard({
   session: DashboardSession;
   onRestore: (id: string) => void;
 }) {
-  const title =
-    (!session.summaryIsFallback && session.summary) ||
-    session.issueTitle ||
-    session.summary ||
-    session.id;
+  const title = getSessionTitle(session);
   const isMerged = session.pr?.state === "merged" || session.status === "merged";
   const isTerminated = session.status === "killed" || session.status === "terminated";
   const canRestore = !NON_RESTORABLE_STATUSES.has(session.status);

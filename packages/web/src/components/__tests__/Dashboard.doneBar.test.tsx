@@ -33,12 +33,15 @@ const DONE_SESSION = {
   issueUrl: null,
   issueLabel: null,
   issueTitle: null,
+  userPrompt: null,
+  displayName: null,
   summary: "Finished task",
   summaryIsFallback: false,
   createdAt: new Date().toISOString(),
   lastActivityAt: new Date().toISOString(),
   pr: null,
   metadata: {},
+  agentReportAudit: [],
 };
 
 describe("Dashboard done bar", () => {
@@ -65,5 +68,27 @@ describe("Dashboard done bar", () => {
     const toggle = screen.getByText("Done / Terminated").closest("button")!;
     fireEvent.click(toggle);
     expect(screen.queryByRole("button", { name: /restore/i })).toBeNull();
+  });
+
+  it("uses the shared session title pipeline for done cards", () => {
+    render(
+      <Dashboard
+        initialSessions={[
+          {
+            ...DONE_SESSION,
+            id: "done-display-name",
+            branch: "session/done-display-name",
+            displayName: "Stabilize prompt-only restore flow",
+            userPrompt: "raw prompt that should not be shown",
+            summary: "fallback summary",
+            summaryIsFallback: true,
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Done / Terminated").closest("button")!);
+
+    expect(screen.getByText("Stabilize prompt-only restore flow")).toBeInTheDocument();
   });
 });

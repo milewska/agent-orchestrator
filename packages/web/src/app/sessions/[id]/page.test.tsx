@@ -44,6 +44,9 @@ function makeWorkerSession(): DashboardSession {
     issueId: "https://linear.app/test/issue/INT-100",
     issueUrl: "https://linear.app/test/issue/INT-100",
     issueLabel: "INT-100",
+    issueTitle: null,
+    userPrompt: null,
+    displayName: null,
     summary: "Test worker session",
     summaryIsFallback: false,
     createdAt: new Date().toISOString(),
@@ -293,6 +296,64 @@ describe("SessionPage project polling", () => {
 
     expect(notFoundSpy).toHaveBeenCalled();
     expect(screen.queryByTestId("session-detail")).not.toBeInTheDocument();
+  });
+
+  it("uses the shared session title pipeline for orchestrator document titles", async () => {
+    const orchestratorSession = {
+      ...makeWorkerSession(),
+      id: "my-app-orchestrator",
+      metadata: { role: "orchestrator" },
+      branch: "orchestrator/my-app-orchestrator",
+      displayName: "Coordinate review queue",
+      userPrompt: "raw orchestrator prompt",
+    };
+
+    global.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/projects") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            projects: [{ id: "my-app", name: "My App", sessionPrefix: "my-app" }],
+          }),
+        } as Response;
+      }
+
+      if (url === "/api/sessions/worker-1") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => orchestratorSession,
+        } as Response;
+      }
+
+      if (url === "/api/sessions?fresh=true") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ sessions: [orchestratorSession] }),
+        } as Response;
+      }
+
+      if (url === "/api/sessions?project=my-app&fresh=true") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ sessions: [orchestratorSession], orchestratorId: orchestratorSession.id }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch;
+
+    const { default: SessionPage } = await import("./page");
+
+    render(<SessionPage />);
+    await flushAsyncWork();
+
+    expect(document.title).toContain("Coordinate review queue");
+    expect(document.title).not.toContain("Orchestrator Terminal");
   });
 
   it("throws non-404 session fetch failures to the route error boundary", async () => {

@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
 import type { ProjectInfo } from "@/lib/project-name";
 import { getAttentionLevel, type DashboardSession, type AttentionLevel } from "@/lib/types";
 import { isOrchestratorSession } from "@aoagents/ao-core/types";
-import { getSessionTitle, humanizeBranch } from "@/lib/format";
+import { getSessionTitle } from "@/lib/format";
 import { usePopoverClamp } from "@/hooks/usePopoverClamp";
 import { projectDashboardPath, projectSessionPath } from "@/lib/routes";
 import { ThemeToggle } from "./ThemeToggle";
@@ -303,9 +303,8 @@ function ProjectSidebarInner({
               </a>
               {visibleSessions.slice(0, 5).map((session) => {
                 const level = getAttentionLevel(session);
-                const rawTitle = session.branch ?? getSessionTitle(session);
-                const displayTitle = session.branch ? humanizeBranch(session.branch) || rawTitle : rawTitle;
-                const abbr = displayTitle.replace(/\s+/g, "").slice(0, 3).toUpperCase();
+                const title = getSessionTitle(session);
+                const abbr = title.replace(/\s+/g, "").slice(0, 3).toUpperCase();
                 const isActive = activeSessionId === session.id;
                 const sessionHref = projectSessionPath(project.id, session.id);
                 return (
@@ -322,8 +321,8 @@ function ProjectSidebarInner({
                       isActive && "project-sidebar__collapsed-session-btn--active",
                     )}
                     data-level={level}
-                    title={rawTitle}
-                    aria-label={rawTitle}
+                    title={title}
+                    aria-label={title}
                   >
                     <span className="project-sidebar__session-abbr-first">{abbr[0]}</span>
                     <span className="project-sidebar__session-abbr-rest">{abbr.slice(1)}</span>
@@ -578,7 +577,7 @@ function ProjectSidebarInner({
                       visibleSessions.map((session) => {
                         const level = getAttentionLevel(session);
                         const isSessionActive = activeSessionId === session.id;
-                        const title = session.branch ?? getSessionTitle(session);
+                        const title = getSessionTitle(session);
                         const sessionHref = projectSessionPath(project.id, session.id);
                         return (
                           <a
