@@ -57,7 +57,13 @@ vi.mock("node:child_process", () => {
   };
 });
 
-import { create, manifest, default as defaultExport, detect } from "./index.js";
+import {
+  create,
+  manifest,
+  default as defaultExport,
+  detect,
+  _resetSessionMatchCache,
+} from "./index.js";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -139,6 +145,7 @@ function mockTmuxWithProcess(processName: string, found = true) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  _resetSessionMatchCache();
   mockReadLastActivityEntry.mockResolvedValue(null);
   mockRecordTerminalActivity.mockResolvedValue(undefined);
   mockSetupPathWrapperWorkspace.mockResolvedValue(undefined);
@@ -164,9 +171,11 @@ describe("manifest & exports", () => {
     expect(agent.processName).toBe("kimi");
   });
 
-  it("uses post-launch prompt delivery", () => {
+  it("uses inline prompt delivery (kimi's -p does not exit after prompt)", () => {
     const agent = create();
-    expect(agent.promptDelivery).toBe("post-launch");
+    // Either "inline" or undefined is acceptable — both mean the prompt goes
+    // into the launch command rather than being sent post-launch.
+    expect(agent.promptDelivery === undefined || agent.promptDelivery === "inline").toBe(true);
   });
 
   it("default export is a valid PluginModule", () => {
@@ -211,22 +220,34 @@ describe("getLaunchCommand", () => {
     expect(cmd).toContain("--agent-file '/tmp/sp.md'");
   });
 
-  it("does NOT include the user prompt in the launch command (post-launch delivery)", () => {
+  it("passes --prompt inline (kimi's -p is a prompt string, not a mode switch)", () => {
     const cmd = agent.getLaunchCommand(makeLaunchConfig({ prompt: "do the thing" }));
-    expect(cmd).not.toContain("do the thing");
-    expect(cmd).not.toContain("-p");
-    expect(cmd).not.toContain("--prompt");
+    expect(cmd).toContain("--prompt 'do the thing'");
   });
 
-  it("combines model + yolo + agent-file", () => {
+  it("shell-escapes prompts with special characters", () => {
+    const cmd = agent.getLaunchCommand(makeLaunchConfig({ prompt: "it's complicated" }));
+    expect(cmd).toContain("--prompt 'it'\\''s complicated'");
+  });
+
+  it("passes --agent when config.subagent is set", () => {
+    const cmd = agent.getLaunchCommand(makeLaunchConfig({ subagent: "okabe" }));
+    expect(cmd).toContain("--agent 'okabe'");
+  });
+
+  it("combines model + yolo + agent + agent-file + prompt", () => {
     const cmd = agent.getLaunchCommand(
       makeLaunchConfig({
         permissions: "permissionless",
         model: "kimi-k2",
+        subagent: "default",
         systemPromptFile: "/tmp/sp.md",
+        prompt: "Go",
       }),
     );
-    expect(cmd).toBe("kimi --yolo --model 'kimi-k2' --agent-file '/tmp/sp.md'");
+    expect(cmd).toBe(
+      "kimi --yolo --model 'kimi-k2' --agent 'default' --agent-file '/tmp/sp.md' --prompt 'Go'",
+    );
   });
 });
 
@@ -288,8 +309,14 @@ describe("detectActivity", () => {
     expect(agent.detectActivity("Continue? [y/n]")).toBe("waiting_input");
   });
 
-  it("waiting_input for 'approve?' prompts", () => {
-    expect(agent.detectActivity("Run rm -rf build/ - approve?")).toBe("waiting_input");
+  it("waiting_input for a bare 'approve?' prompt line (not mid-sentence)", () => {
+    expect(agent.detectActivity("Run rm -rf build/\napprove?")).toBe("waiting_input");
+  });
+
+  it("does NOT match 'approve' in agent narration (false-positive guard)", () => {
+    // Anchored regex must skip mid-sentence mentions of "approve".
+    const narration = "I approve of this approach and will proceed.\nReading src/index.ts";
+    expect(agent.detectActivity(narration)).toBe("active");
   });
 
   it("waiting_input for 'Do you want to proceed?' prompts", () => {
@@ -302,8 +329,14 @@ describe("detectActivity", () => {
     expect(agent.detectActivity("error: failed to parse response\n")).toBe("blocked");
   });
 
-  it("blocked on failed to authenticate", () => {
+  it("blocked on line-anchored 'failed to authenticate'", () => {
     expect(agent.detectActivity("failed to authenticate with Kimi API\n")).toBe("blocked");
+  });
+
+  it("does NOT match 'failed to connect' mid-sentence (false-positive guard)", () => {
+    const narration =
+      "Earlier I failed to connect on the first try, but the retry worked.\nGenerating code...";
+    expect(agent.detectActivity(narration)).toBe("active");
   });
 
   it("active for ongoing work output", () => {
@@ -421,18 +454,13 @@ describe("getActivityState", () => {
     const { readdir, readFile, stat } = await import("node:fs/promises");
 
     vi.mocked(readdir).mockResolvedValueOnce(["sess-abc"] as never);
-    // state.json → match on cwd
     vi.mocked(readFile).mockResolvedValueOnce(
       JSON.stringify({ cwd: "/workspace/test", session_id: "sess-abc", model: "kimi-k2" }),
     );
-    // stat for state.json matching the session directory
     const now = new Date();
-    vi.mocked(stat).mockResolvedValueOnce({
-      mtimeMs: now.getTime(),
-      mtime: now,
-    } as unknown as Awaited<ReturnType<typeof stat>>);
-    // Later stat calls for context.jsonl / wire.jsonl / state.json (mtime lookup)
-    vi.mocked(stat).mockResolvedValueOnce({
+    // stat #1: state.json mtime for scan ranking. stat #2: mtime lookup inside
+    // the matched session dir (context.jsonl / wire.jsonl / state.json).
+    vi.mocked(stat).mockResolvedValue({
       mtimeMs: now.getTime(),
       mtime: now,
     } as unknown as Awaited<ReturnType<typeof stat>>);
@@ -441,6 +469,75 @@ describe("getActivityState", () => {
       makeSession({ runtimeHandle: makeTmuxHandle() }),
     );
     expect(result?.state).toBe("active");
+  });
+
+  it("4b. returns ready from native signal when mtime falls in the ready window", async () => {
+    mockTmuxWithProcess("kimi");
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+
+    vi.mocked(readdir).mockResolvedValueOnce(["sess-abc"] as never);
+    vi.mocked(readFile).mockResolvedValueOnce(
+      JSON.stringify({ cwd: "/workspace/test", session_id: "sess-abc" }),
+    );
+    // 2 minutes old → beyond 30s active window but inside 5min ready threshold
+    const readyAge = new Date(Date.now() - 2 * 60 * 1000);
+    vi.mocked(stat).mockResolvedValue({
+      mtimeMs: readyAge.getTime(),
+      mtime: readyAge,
+    } as unknown as Awaited<ReturnType<typeof stat>>);
+
+    const result = await agent.getActivityState(
+      makeSession({ runtimeHandle: makeTmuxHandle() }),
+    );
+    expect(result?.state).toBe("ready");
+  });
+
+  it("4c. returns idle from native signal when mtime is older than readyThreshold", async () => {
+    mockTmuxWithProcess("kimi");
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+
+    vi.mocked(readdir).mockResolvedValueOnce(["sess-abc"] as never);
+    vi.mocked(readFile).mockResolvedValueOnce(
+      JSON.stringify({ cwd: "/workspace/test", session_id: "sess-abc" }),
+    );
+    // 10 minutes old → past the 5min ready threshold
+    const idleAge = new Date(Date.now() - 10 * 60 * 1000);
+    vi.mocked(stat).mockResolvedValue({
+      mtimeMs: idleAge.getTime(),
+      mtime: idleAge,
+    } as unknown as Awaited<ReturnType<typeof stat>>);
+
+    const result = await agent.getActivityState(
+      makeSession({ runtimeHandle: makeTmuxHandle() }),
+    );
+    expect(result?.state).toBe("idle");
+  });
+
+  it("cascade: JSONL waiting_input wins over native signal even when ~/.kimi/ matches", async () => {
+    mockTmuxWithProcess("kimi");
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+
+    // Native signal would return "active" — but the JSONL has waiting_input,
+    // which must short-circuit before the native check runs.
+    vi.mocked(readdir).mockResolvedValue(["sess-abc"] as never);
+    vi.mocked(readFile).mockResolvedValue(
+      JSON.stringify({ cwd: "/workspace/test", session_id: "sess-abc" }),
+    );
+    const now = new Date();
+    vi.mocked(stat).mockResolvedValue({
+      mtimeMs: now.getTime(),
+      mtime: now,
+    } as unknown as Awaited<ReturnType<typeof stat>>);
+
+    mockReadLastActivityEntry.mockResolvedValueOnce({
+      entry: { ts: now.toISOString(), state: "waiting_input", source: "terminal" },
+      modifiedAt: now,
+    });
+
+    const result = await agent.getActivityState(
+      makeSession({ runtimeHandle: makeTmuxHandle() }),
+    );
+    expect(result?.state).toBe("waiting_input");
   });
 
   it("5. returns active from JSONL entry fallback when native signal is unavailable (fresh entry)", async () => {
@@ -537,10 +634,9 @@ describe("getSessionInfo", () => {
     expect(await agent.getSessionInfo(makeSession())).toBeNull();
   });
 
-  it("extracts summary, session id, and model from state.json", async () => {
+  it("extracts summary, session id, and model from state.json (single read)", async () => {
     const { readdir, readFile, stat } = await import("node:fs/promises");
     vi.mocked(readdir).mockResolvedValueOnce(["sess-abc"] as never);
-    // findKimiSessionDir reads state.json + stats it
     vi.mocked(readFile).mockResolvedValueOnce(
       JSON.stringify({
         cwd: "/workspace/test",
@@ -554,15 +650,6 @@ describe("getSessionInfo", () => {
       mtimeMs: now.getTime(),
       mtime: now,
     } as unknown as Awaited<ReturnType<typeof stat>>);
-    // readKimiSessionState re-reads state.json
-    vi.mocked(readFile).mockResolvedValueOnce(
-      JSON.stringify({
-        cwd: "/workspace/test",
-        session_id: "sess-abc",
-        model: "kimi-k2",
-        title: "Fix auth bug",
-      }),
-    );
 
     const info = await agent.getSessionInfo(makeSession());
     expect(info).not.toBeNull();
@@ -570,6 +657,68 @@ describe("getSessionInfo", () => {
     expect(info!.agentSessionId).toBe("sess-abc");
     expect(info!.summaryIsFallback).toBe(true);
     expect(info!.cost).toBeUndefined();
+    // state.json should be read exactly once (scan + parse combined)
+    expect(vi.mocked(readFile).mock.calls.filter(([p]) => String(p).endsWith("state.json"))).toHaveLength(1);
+  });
+
+  it("falls back to `Kimi session (<model>)` when state.json has no title", async () => {
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+    vi.mocked(readdir).mockResolvedValueOnce(["sess-abc"] as never);
+    vi.mocked(readFile).mockResolvedValueOnce(
+      JSON.stringify({ cwd: "/workspace/test", session_id: "sess-abc", model: "kimi-k2" }),
+    );
+    const now = new Date();
+    vi.mocked(stat).mockResolvedValueOnce({
+      mtimeMs: now.getTime(),
+      mtime: now,
+    } as unknown as Awaited<ReturnType<typeof stat>>);
+
+    const info = await agent.getSessionInfo(makeSession());
+    expect(info!.summary).toBe("Kimi session (kimi-k2)");
+  });
+
+  it("returns null when state.json is malformed JSON", async () => {
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+    vi.mocked(readdir).mockResolvedValueOnce(["sess-broken"] as never);
+    vi.mocked(readFile).mockResolvedValueOnce("{not-json,");
+    const now = new Date();
+    vi.mocked(stat).mockResolvedValueOnce({
+      mtimeMs: now.getTime(),
+      mtime: now,
+    } as unknown as Awaited<ReturnType<typeof stat>>);
+
+    expect(await agent.getSessionInfo(makeSession())).toBeNull();
+  });
+
+  it("skips state.json entries with non-matching cwd", async () => {
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+    vi.mocked(readdir).mockResolvedValueOnce(["other"] as never);
+    vi.mocked(readFile).mockResolvedValueOnce(
+      JSON.stringify({ cwd: "/somewhere/else", session_id: "other" }),
+    );
+    const now = new Date();
+    vi.mocked(stat).mockResolvedValueOnce({
+      mtimeMs: now.getTime(),
+      mtime: now,
+    } as unknown as Awaited<ReturnType<typeof stat>>);
+
+    expect(await agent.getSessionInfo(makeSession())).toBeNull();
+  });
+
+  it("accepts `work_dir` as an alias for `cwd`", async () => {
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+    vi.mocked(readdir).mockResolvedValueOnce(["sess-xyz"] as never);
+    vi.mocked(readFile).mockResolvedValueOnce(
+      JSON.stringify({ work_dir: "/workspace/test", session_id: "sess-xyz", title: "hello" }),
+    );
+    const now = new Date();
+    vi.mocked(stat).mockResolvedValueOnce({
+      mtimeMs: now.getTime(),
+      mtime: now,
+    } as unknown as Awaited<ReturnType<typeof stat>>);
+
+    const info = await agent.getSessionInfo(makeSession());
+    expect(info?.agentSessionId).toBe("sess-xyz");
   });
 });
 
@@ -605,9 +754,6 @@ describe("getRestoreCommand", () => {
       mtimeMs: now.getTime(),
       mtime: now,
     } as unknown as Awaited<ReturnType<typeof stat>>);
-    vi.mocked(readFile).mockResolvedValueOnce(
-      JSON.stringify({ cwd: "/workspace/test", session_id: "sess-abc", model: "kimi-k2" }),
-    );
 
     const result = await agent.getRestoreCommand!(makeSession(), makeProject());
     expect(result).toContain("kimi --resume 'sess-abc'");
@@ -617,16 +763,12 @@ describe("getRestoreCommand", () => {
   it("falls back to --continue when session dir exists but state.json has no id", async () => {
     const { readdir, readFile, stat } = await import("node:fs/promises");
     vi.mocked(readdir).mockResolvedValueOnce(["sess-anon"] as never);
-    vi.mocked(readFile).mockResolvedValueOnce(
-      JSON.stringify({ cwd: "/workspace/test" }),
-    );
+    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ cwd: "/workspace/test" }));
     const now = new Date();
     vi.mocked(stat).mockResolvedValueOnce({
       mtimeMs: now.getTime(),
       mtime: now,
     } as unknown as Awaited<ReturnType<typeof stat>>);
-    // Second readFile for readKimiSessionState returns no id/model
-    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify({ cwd: "/workspace/test" }));
 
     const result = await agent.getRestoreCommand!(
       makeSession(),
@@ -634,6 +776,40 @@ describe("getRestoreCommand", () => {
     );
     expect(result).toContain("kimi --continue");
     expect(result).toContain("--yolo");
+  });
+
+  it("returns null when state.json is malformed", async () => {
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+    vi.mocked(readdir).mockResolvedValueOnce(["sess-broken"] as never);
+    vi.mocked(readFile).mockResolvedValueOnce("not json at all");
+    const now = new Date();
+    vi.mocked(stat).mockResolvedValueOnce({
+      mtimeMs: now.getTime(),
+      mtime: now,
+    } as unknown as Awaited<ReturnType<typeof stat>>);
+
+    const result = await agent.getRestoreCommand!(makeSession(), makeProject());
+    expect(result).toBeNull();
+  });
+
+  it("prefers project.agentConfig.model over the model recorded in state.json", async () => {
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+    vi.mocked(readdir).mockResolvedValueOnce(["sess-abc"] as never);
+    vi.mocked(readFile).mockResolvedValueOnce(
+      JSON.stringify({ cwd: "/workspace/test", session_id: "sess-abc", model: "kimi-k1" }),
+    );
+    const now = new Date();
+    vi.mocked(stat).mockResolvedValueOnce({
+      mtimeMs: now.getTime(),
+      mtime: now,
+    } as unknown as Awaited<ReturnType<typeof stat>>);
+
+    const result = await agent.getRestoreCommand!(
+      makeSession(),
+      makeProject({ agentConfig: { model: "kimi-k2" } }),
+    );
+    expect(result).toContain("--model 'kimi-k2'");
+    expect(result).not.toContain("kimi-k1");
   });
 });
 

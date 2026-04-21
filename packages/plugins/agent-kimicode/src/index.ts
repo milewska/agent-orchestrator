@@ -40,63 +40,20 @@ function kimiShareDir(): string {
   return join(homedir(), ".kimi");
 }
 
-/**
- * Find the Kimi session directory whose `state.json` references this workspace.
- * Scans immediate subdirectories of ~/.kimi/ looking for a `state.json` with a
- * matching `cwd`/`work_dir`/`workdir` field. Returns the most recently modified
- * match, or null when nothing matches.
- */
-async function findKimiSessionDir(workspacePath: string): Promise<string | null> {
-  const root = kimiShareDir();
-  let entries: string[];
-  try {
-    entries = await readdir(root);
-  } catch {
-    return null;
-  }
-
-  let best: { path: string; mtime: number } | null = null;
-
-  for (const entry of entries) {
-    const dir = join(root, entry);
-    const stateFile = join(dir, "state.json");
-    try {
-      const raw = await readFile(stateFile, "utf-8");
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) continue;
-      const state = parsed as Record<string, unknown>;
-      const cwd =
-        typeof state["cwd"] === "string"
-          ? state["cwd"]
-          : typeof state["work_dir"] === "string"
-            ? state["work_dir"]
-            : typeof state["workdir"] === "string"
-              ? state["workdir"]
-              : null;
-      if (cwd !== workspacePath) continue;
-
-      const s = await stat(stateFile);
-      if (!best || s.mtimeMs > best.mtime) {
-        best = { path: dir, mtime: s.mtimeMs };
-      }
-    } catch {
-      // Missing/unreadable/non-JSON state.json — skip this entry.
-    }
-  }
-
-  return best?.path ?? null;
-}
-
 interface KimiSessionState {
   sessionId: string | null;
   model: string | null;
   title: string | null;
 }
 
-/** Parse the subset of fields we care about from a Kimi `state.json`. */
-async function readKimiSessionState(sessionDir: string): Promise<KimiSessionState | null> {
+interface KimiSessionMatch {
+  dir: string;
+  state: KimiSessionState;
+}
+
+/** Pick out the subset of state.json fields we consume. */
+function parseKimiSessionState(raw: string): KimiSessionState | null {
   try {
-    const raw = await readFile(join(sessionDir, "state.json"), "utf-8");
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
     const state = parsed as Record<string, unknown>;
@@ -113,6 +70,84 @@ async function readKimiSessionState(sessionDir: string): Promise<KimiSessionStat
   } catch {
     return null;
   }
+}
+
+/** Extract cwd/work_dir/workdir from an already-parsed state.json object. */
+function extractStateCwd(raw: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+    const state = parsed as Record<string, unknown>;
+    if (typeof state["cwd"] === "string") return state["cwd"];
+    if (typeof state["work_dir"] === "string") return state["work_dir"];
+    if (typeof state["workdir"] === "string") return state["workdir"];
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** TTL for session match cache (ms) — avoids redundant ~/.kimi/ scans when
+ *  getActivityState / getSessionInfo / getRestoreCommand all fire in one
+ *  refresh cycle. Mirrors agent-codex's SESSION_FILE_CACHE_TTL_MS. */
+const SESSION_MATCH_CACHE_TTL_MS = 30_000;
+
+/** Per-workspace cache of the resolved session directory + parsed state. */
+const sessionMatchCache = new Map<string, { match: KimiSessionMatch | null; expiry: number }>();
+
+/**
+ * Find the Kimi session directory whose `state.json` references this workspace.
+ * Scans immediate subdirectories of ~/.kimi/ looking for a `state.json` whose
+ * `cwd` / `work_dir` / `workdir` matches. Returns the most recently modified
+ * match (directory + parsed state), or null when nothing matches.
+ */
+async function findKimiSessionMatchUncached(
+  workspacePath: string,
+): Promise<KimiSessionMatch | null> {
+  const root = kimiShareDir();
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return null;
+  }
+
+  let best: { dir: string; raw: string; mtime: number } | null = null;
+
+  for (const entry of entries) {
+    const dir = join(root, entry);
+    const stateFile = join(dir, "state.json");
+    try {
+      const raw = await readFile(stateFile, "utf-8");
+      if (extractStateCwd(raw) !== workspacePath) continue;
+
+      const s = await stat(stateFile);
+      if (!best || s.mtimeMs > best.mtime) {
+        best = { dir, raw, mtime: s.mtimeMs };
+      }
+    } catch {
+      // Missing/unreadable/non-JSON state.json — skip this entry.
+    }
+  }
+
+  if (!best) return null;
+  const state = parseKimiSessionState(best.raw);
+  if (!state) return null;
+  return { dir: best.dir, state };
+}
+
+/** Cached wrapper around findKimiSessionMatchUncached. */
+async function findKimiSessionMatch(workspacePath: string): Promise<KimiSessionMatch | null> {
+  const cached = sessionMatchCache.get(workspacePath);
+  if (cached && Date.now() < cached.expiry) {
+    return cached.match;
+  }
+  const match = await findKimiSessionMatchUncached(workspacePath);
+  sessionMatchCache.set(workspacePath, {
+    match,
+    expiry: Date.now() + SESSION_MATCH_CACHE_TTL_MS,
+  });
+  return match;
 }
 
 /** Get the mtime of the freshest signal inside a Kimi session directory. */
@@ -161,10 +196,6 @@ function createKimicodeAgent(): Agent {
   return {
     name: "kimicode",
     processName: "kimi",
-    // `kimi -p <prompt>` implicitly enables `--print`/--yolo and exits after the
-    // turn, which is incompatible with an interactive supervised session.
-    // Deliver the initial prompt post-launch via runtime.sendMessage() instead.
-    promptDelivery: "post-launch",
 
     getLaunchCommand(config: AgentLaunchConfig): string {
       const parts: string[] = ["kimi"];
@@ -175,15 +206,27 @@ function createKimicodeAgent(): Agent {
         parts.push("--model", shellEscape(config.model));
       }
 
+      // Route AO-level subagent selection to kimi's `--agent NAME`
+      // (built-in agents: default, okabe, or custom via --agent-file).
+      if (config.subagent) {
+        parts.push("--agent", shellEscape(config.subagent));
+      }
+
       // Kimi does not have a documented system-prompt flag for ad-hoc injection;
-      // agent-file is the closest, but requires a dedicated file on disk. Prefer
-      // passing systemPromptFile directly as --agent-file when the caller asked
-      // for a file-backed system prompt.
+      // --agent-file is the closest, but requires a dedicated file on disk.
+      // Prefer passing systemPromptFile directly when the caller asked for a
+      // file-backed system prompt.
       if (config.systemPromptFile) {
         parts.push("--agent-file", shellEscape(config.systemPromptFile));
       }
 
-      // NOTE: prompt is NOT included here — see promptDelivery comment above.
+      // kimi's `-p`/`--prompt` is just the prompt string (alias of `--command`).
+      // It does NOT switch to print/exit mode — that's the separate `--print`
+      // flag, which we never set. Inline delivery is reliable and avoids the
+      // post-launch sendMessage() delay.
+      if (config.prompt) {
+        parts.push("--prompt", shellEscape(config.prompt));
+      }
 
       return parts.join(" ");
     },
@@ -215,17 +258,19 @@ function createKimicodeAgent(): Agent {
 
       const tail = lines.slice(-6).join("\n");
 
-      // Approval / confirmation prompts.
+      // Approval / confirmation prompts. Anchored to avoid matching narration
+      // like "I approve of this approach" in the middle of agent output.
       if (/\(y\)es.*\(n\)o/i.test(tail)) return "waiting_input";
-      if (/\[y\/n\]/i.test(tail)) return "waiting_input";
-      if (/approve\??/i.test(tail)) return "waiting_input";
-      if (/approval required/i.test(tail)) return "waiting_input";
-      if (/do you want to (proceed|continue)\?/i.test(tail)) return "waiting_input";
-      if (/allow .+\?/i.test(tail)) return "waiting_input";
+      if (/\[y\/n\]\s*[?:]?\s*$/im.test(tail)) return "waiting_input";
+      if (/^\s*approve\??\s*$/im.test(tail)) return "waiting_input";
+      if (/\bapproval required\b/i.test(tail)) return "waiting_input";
+      if (/^\s*do you want to (proceed|continue)\?\s*$/im.test(tail)) return "waiting_input";
+      if (/^\s*allow .+\?\s*$/im.test(tail)) return "waiting_input";
 
-      // Hard errors surfaced to the terminal.
-      if (/^error:/im.test(tail)) return "blocked";
-      if (/failed to (connect|authenticate|load)/i.test(tail)) return "blocked";
+      // Hard errors surfaced to the terminal. Line-anchored to avoid matching
+      // narration like "I failed to connect earlier, so I tried X instead".
+      if (/^\s*error:/im.test(tail)) return "blocked";
+      if (/^\s*(?:error:\s*)?failed to (connect|authenticate|load)\b/im.test(tail)) return "blocked";
 
       return "active";
     },
@@ -255,9 +300,9 @@ function createKimicodeAgent(): Agent {
 
       // 3. Native signal — mtime of context.jsonl / wire.jsonl / state.json
       //    inside the matching ~/.kimi/<session>/ directory.
-      const sessionDir = await findKimiSessionDir(session.workspacePath);
-      if (sessionDir) {
-        const mtime = await getKimiSessionMtime(sessionDir);
+      const match = await findKimiSessionMatch(session.workspacePath);
+      if (match) {
+        const mtime = await getKimiSessionMtime(match.dir);
         if (mtime) {
           const ageMs = Math.max(0, Date.now() - mtime.getTime());
           if (ageMs <= activeWindowMs) return { state: "active", timestamp: mtime };
@@ -338,12 +383,10 @@ function createKimicodeAgent(): Agent {
     async getSessionInfo(session: Session): Promise<AgentSessionInfo | null> {
       if (!session.workspacePath) return null;
 
-      const sessionDir = await findKimiSessionDir(session.workspacePath);
-      if (!sessionDir) return null;
+      const match = await findKimiSessionMatch(session.workspacePath);
+      if (!match) return null;
 
-      const state = await readKimiSessionState(sessionDir);
-      if (!state) return null;
-
+      const { state } = match;
       const summary = state.title ?? (state.model ? `Kimi session (${state.model})` : null);
 
       return {
@@ -357,25 +400,27 @@ function createKimicodeAgent(): Agent {
     async getRestoreCommand(session: Session, project: ProjectConfig): Promise<string | null> {
       if (!session.workspacePath) return null;
 
-      const sessionDir = await findKimiSessionDir(session.workspacePath);
-      if (!sessionDir) return null;
+      const match = await findKimiSessionMatch(session.workspacePath);
+      if (!match) return null;
 
-      const state = await readKimiSessionState(sessionDir);
-      if (!state?.sessionId) {
-        // Fall back to `--continue` which resumes the latest session for the
+      const configuredModel =
+        typeof project.agentConfig?.model === "string" ? project.agentConfig.model : undefined;
+
+      if (!match.state.sessionId) {
+        // Fall back to `--continue` — resumes the latest session for the
         // current working directory. The runtime spawns kimi with cwd set to
         // the workspace, so this is safe.
         const parts: string[] = ["kimi", "--continue"];
         appendApprovalFlags(parts, project.agentConfig?.permissions);
-        if (project.agentConfig?.model) {
-          parts.push("--model", shellEscape(project.agentConfig.model as string));
+        if (configuredModel) {
+          parts.push("--model", shellEscape(configuredModel));
         }
         return parts.join(" ");
       }
 
-      const parts: string[] = ["kimi", "--resume", shellEscape(state.sessionId)];
+      const parts: string[] = ["kimi", "--resume", shellEscape(match.state.sessionId)];
       appendApprovalFlags(parts, project.agentConfig?.permissions);
-      const effectiveModel = (project.agentConfig?.model ?? state.model) as string | undefined;
+      const effectiveModel = configuredModel ?? match.state.model ?? undefined;
       if (effectiveModel) {
         parts.push("--model", shellEscape(effectiveModel));
       }
@@ -399,6 +444,11 @@ function createKimicodeAgent(): Agent {
 
 export function create(): Agent {
   return createKimicodeAgent();
+}
+
+/** @internal Clear the session match cache. Exported for testing only. */
+export function _resetSessionMatchCache(): void {
+  sessionMatchCache.clear();
 }
 
 export function detect(): boolean {
