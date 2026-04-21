@@ -49,7 +49,6 @@ function parseTokenDefinitions(cssText) {
   // Track which scope block we're in so duplicate-value detection can be
   // scoped (light vs dark) instead of bleeding across modes.
   const scopeStack = ["root"];
-  let depth = 0;
 
   // Strip comments to avoid false matches inside doc examples.
   const stripped = cssText.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -63,18 +62,14 @@ function parseTokenDefinitions(cssText) {
     // Detect block openers (e.g. ":root {", ".dark {", "@theme {", "@theme inline {")
     const openerMatch = trimmed.match(/^(@theme(?:\s+inline)?|:root|\.dark|@media[^{]*)\s*\{/);
     if (openerMatch) {
-      depth += 1;
       scopeStack.push(openerMatch[1].startsWith(".dark") ? "dark" : "root");
       continue;
     }
 
-    // Count braces to track nesting generically.
+    // Pop when a block closes so the scope stack tracks nesting.
     const opens = (trimmed.match(/\{/g) || []).length;
     const closes = (trimmed.match(/\}/g) || []).length;
-    if (opens !== closes) {
-      depth += opens - closes;
-      if (closes > opens && scopeStack.length > 1) scopeStack.pop();
-    }
+    if (closes > opens && scopeStack.length > 1) scopeStack.pop();
 
     const defMatch = trimmed.match(/^(--[a-zA-Z0-9-]+)\s*:\s*([^;]+);/);
     if (!defMatch) continue;
