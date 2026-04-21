@@ -14,7 +14,6 @@
  *   node scripts/check-css-tokens.mjs            # warn-only, always exits 0
  *   node scripts/check-css-tokens.mjs --strict   # exit 1 on dead/duplicate
  *   node scripts/check-css-tokens.mjs --all      # scan every --* token
- *   node scripts/check-css-tokens.mjs --json     # emit machine-readable JSON
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -37,7 +36,6 @@ const IGNORE_DIRS = new Set(["node_modules", ".next", "dist", "dist-server", "co
 const args = new Set(process.argv.slice(2));
 const STRICT = args.has("--strict");
 const ALL_TOKENS = args.has("--all");
-const JSON_OUT = args.has("--json");
 
 const TOKEN_PREFIX = ALL_TOKENS ? "--" : "--color-";
 
@@ -196,18 +194,7 @@ function main() {
   const dead = tokenNames.filter((name) => (refs.get(name) ?? 0) === 0);
   const duplicates = findDuplicateValues(defs);
 
-  if (JSON_OUT) {
-    const counts = Object.fromEntries(refs);
-    process.stdout.write(
-      JSON.stringify(
-        { total: tokenNames.length, dead, duplicates, referenceCounts: counts },
-        null,
-        2,
-      ) + "\n",
-    );
-  } else {
-    printHuman({ total: tokenNames.length, dead, duplicates, refs });
-  }
+  printHuman({ total: tokenNames.length, dead, duplicates, refs });
 
   const hasIssues = dead.length > 0 || duplicates.length > 0;
   if (STRICT && hasIssues) {
