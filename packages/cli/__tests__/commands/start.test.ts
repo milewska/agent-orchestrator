@@ -1455,10 +1455,8 @@ describe("stop command", () => {
     });
   }
 
-  it("stops the actual numbered orchestrator session and dashboard", async () => {
+  it("stops all project sessions and dashboard", async () => {
     mockConfigRef.current = makeConfig({ "my-app": makeProject() });
-    // Issue #1048: ao stop must look up the real numbered orchestrator id
-    // (e.g. app-orchestrator-3) via sm.list — never the phantom `${prefix}-orchestrator`.
     mockSessionManager.list.mockResolvedValue([
       {
         id: "app-orchestrator-3",
@@ -1469,13 +1467,25 @@ describe("stop command", () => {
         lastActivityAt: new Date(),
         runtimeHandle: { id: "tmux-3" },
       },
+      {
+        id: "app-1147",
+        projectId: "my-app",
+        status: "working",
+        activity: "active",
+        metadata: { role: "worker" },
+        lastActivityAt: new Date(),
+        runtimeHandle: { id: "tmux-4" },
+      },
     ]);
     mockSessionManager.kill.mockResolvedValue(undefined);
     mockDashboardOnPort(3000);
 
     await program.parseAsync(["node", "test", "stop"]);
 
-    expect(mockSessionManager.kill).toHaveBeenCalledWith("app-orchestrator-3", {
+    expect(mockSessionManager.kill).toHaveBeenNthCalledWith(1, "app-orchestrator-3", {
+      purgeOpenCode: false,
+    });
+    expect(mockSessionManager.kill).toHaveBeenNthCalledWith(2, "app-1147", {
       purgeOpenCode: false,
     });
     const output = vi
@@ -1484,9 +1494,10 @@ describe("stop command", () => {
       .join("\n");
     expect(output).toContain("Orchestrator stopped");
     expect(output).toContain("app-orchestrator-3");
+    expect(output).toContain("app-1147");
   });
 
-  it("kills the most-recently-active orchestrator when multiple exist", async () => {
+  it("kills every returned project session", async () => {
     mockConfigRef.current = makeConfig({ "my-app": makeProject() });
     const now = Date.now();
     mockSessionManager.list.mockResolvedValue([
@@ -1500,11 +1511,11 @@ describe("stop command", () => {
         runtimeHandle: { id: "tmux-1" },
       },
       {
-        id: "app-orchestrator-2",
+        id: "app-2",
         projectId: "my-app",
         status: "working",
         activity: "active",
-        metadata: { role: "orchestrator" },
+        metadata: { role: "worker" },
         lastActivityAt: new Date(now),
         runtimeHandle: { id: "tmux-2" },
       },
@@ -1513,7 +1524,11 @@ describe("stop command", () => {
 
     await program.parseAsync(["node", "test", "stop"]);
 
-    expect(mockSessionManager.kill).toHaveBeenCalledWith("app-orchestrator-2", {
+    expect(mockSessionManager.kill).toHaveBeenCalledTimes(2);
+    expect(mockSessionManager.kill).toHaveBeenNthCalledWith(1, "app-orchestrator-1", {
+      purgeOpenCode: false,
+    });
+    expect(mockSessionManager.kill).toHaveBeenNthCalledWith(2, "app-2", {
       purgeOpenCode: false,
     });
   });
@@ -1530,10 +1545,10 @@ describe("stop command", () => {
       .mocked(console.log)
       .mock.calls.map((c) => c.join(" "))
       .join("\n");
-    expect(output).toContain("No running orchestrator session found");
+    expect(output).toContain("No running project sessions found");
   });
 
-  it("passes purge flag when stopping orchestrator with --purge-session", async () => {
+  it("passes purge flag when stopping project sessions with --purge-session", async () => {
     mockConfigRef.current = makeConfig({ "my-app": makeProject() });
     mockSessionManager.list.mockResolvedValue([
       {
@@ -1545,13 +1560,25 @@ describe("stop command", () => {
         lastActivityAt: new Date(),
         runtimeHandle: { id: "tmux-1" },
       },
+      {
+        id: "app-1",
+        projectId: "my-app",
+        status: "working",
+        activity: "active",
+        metadata: { role: "worker" },
+        lastActivityAt: new Date(),
+        runtimeHandle: { id: "tmux-2" },
+      },
     ]);
     mockSessionManager.kill.mockResolvedValue(undefined);
     mockDashboardOnPort(3000);
 
     await program.parseAsync(["node", "test", "stop", "--purge-session"]);
 
-    expect(mockSessionManager.kill).toHaveBeenCalledWith("app-orchestrator-1", {
+    expect(mockSessionManager.kill).toHaveBeenNthCalledWith(1, "app-orchestrator-1", {
+      purgeOpenCode: true,
+    });
+    expect(mockSessionManager.kill).toHaveBeenNthCalledWith(2, "app-1", {
       purgeOpenCode: true,
     });
   });
