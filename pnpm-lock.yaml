@@ -643,6 +643,9 @@ importers:
       '@aoagents/ao-plugin-agent-cursor':
         specifier: workspace:*
         version: link:../plugins/agent-cursor
+      '@aoagents/ao-plugin-agent-kimicode':
+        specifier: workspace:*
+        version: link:../plugins/agent-kimicode
       '@aoagents/ao-plugin-agent-opencode':
         specifier: workspace:*
         version: link:../plugins/agent-opencode
