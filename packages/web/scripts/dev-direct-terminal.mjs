@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 const WATCH_ARGS = ["watch", "server/direct-terminal-ws.ts"];
 const FALLBACK_ARGS = ["server/direct-terminal-ws.ts"];
 
-let currentChild = null;
 let shuttingDown = false;
 
 function wireSignals(child) {
@@ -32,8 +31,6 @@ function runTsx(args, { allowFallback }) {
     stdio: ["inherit", "pipe", "pipe"],
     env: process.env,
   });
-  currentChild = child;
-
   let stderrBuffer = "";
 
   child.stdout.on("data", (chunk) => {
