@@ -10,6 +10,14 @@ body:
         Use this template for user-visible breakage, regressions, incorrect state, or workflow failures.
         Please keep the scope concrete and include evidence that the bug is real.
         If this is a usage question or a feature request, open a different issue instead of forcing it into the bug flow.
+        
+        Repo-wide constraints to keep in mind:
+        - should not make the orchestrator feel laggier
+        - should not increase polling or hot-path overhead unless explicitly intended
+        - should not make session state more misleading
+        - should not change CLI behavior unless explicitly approved
+
+        Maintainers may refine scope, outcome, and done criteria during triage.
   - type: checkboxes
     id: verification
     attributes:
@@ -82,46 +90,32 @@ body:
     id: in_scope
     attributes:
       label: In scope
-      description: What work is allowed in this issue?
+      description: What work is allowed in this issue? Maintainers may refine this during triage.
       placeholder: Keep this to the smallest acceptable fix.
-    validations:
-      required: true
   - type: textarea
     id: out_of_scope
     attributes:
       label: Out of scope
-      description: What should not change as part of this issue?
+      description: What should not change as part of this issue? Maintainers may refine this during triage.
       placeholder: No CLI behavior changes, no design refresh, no new persistence model, etc.
-    validations:
-      required: true
   - type: textarea
     id: expected_outcome
     attributes:
       label: Expected outcome
-      description: What should be true when this is done?
+      description: What should be true when this is done? Maintainers may refine this during triage.
       placeholder: Describe the observable result after the fix.
-    validations:
-      required: true
   - type: textarea
-    id: constraints
+    id: issue_specific_risks
     attributes:
-      label: Constraints and risks
-      description: What must be protected?
-      value: |
-        - should not make the orchestrator feel laggier
-        - should not increase polling or hot-path overhead unless explicitly intended
-        - should not make session state more misleading
-        - should not change CLI behavior unless explicitly approved
-    validations:
-      required: true
+      label: Issue-specific risks or constraints
+      description: Optional. Call out anything unusual that maintainers should protect for this specific bug.
+      placeholder: Affects only tmux-backed sessions, only reproduces in the dashboard, must not alter retry timing, etc.
   - type: textarea
     id: definition_of_done
     attributes:
       label: Definition of done
-      description: How do we know this is complete?
+      description: How do we know this is complete? Maintainers may refine this during triage.
       placeholder: Regression test added, manual repro no longer fails, logs/state are correct, docs updated if needed, etc.
-    validations:
-      required: true
   - type: dropdown
     id: owner_area
     attributes:

@@ -47,7 +47,7 @@ What did you test?
 Commands run:
 
 ## Linked Issue
-Closes #
+Closes #<!-- issue number, or remove this line if not applicable -->
 
 ## Notes For Reviewers
 Anything reviewers should pay special attention to?

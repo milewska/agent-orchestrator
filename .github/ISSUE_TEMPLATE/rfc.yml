@@ -9,6 +9,12 @@ body:
       value: |
         Use this template when the change affects product behavior, CLI behavior, public API shape, plugin contracts,
         lifecycle semantics, or contributor workflow. These should be agreed before implementation PRs are merged.
+        
+        Repo-wide constraints to keep in mind:
+        - should not make the orchestrator feel laggier unless that tradeoff is explicitly accepted
+        - should not increase polling or hot-path overhead without clear justification
+        - should not make session state or operator workflows more confusing
+        - should call out migration impact for CLI, plugin, or API changes
   - type: checkboxes
     id: verification
     attributes:
@@ -83,17 +89,11 @@ body:
     validations:
       required: true
   - type: textarea
-    id: constraints
+    id: issue_specific_risks
     attributes:
-      label: Constraints and risks
-      description: What must be protected?
-      value: |
-        - should not make the orchestrator feel laggier unless that tradeoff is explicitly accepted
-        - should not increase polling or hot-path overhead without clear justification
-        - should not make session state or operator workflows more confusing
-        - should call out migration impact for CLI, plugin, or API changes
-    validations:
-      required: true
+      label: Issue-specific risks or constraints
+      description: Optional. Call out anything unusual that this proposal must protect.
+      placeholder: Must preserve current CLI scripts, avoid new background polling, keep plugin contracts stable, etc.
   - type: textarea
     id: decision_criteria
     attributes:
@@ -115,3 +115,9 @@ body:
         - Docs / RFC
     validations:
       required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes for implementers
+      description: Optional extra guidance for humans or agents.
+      placeholder: Keep the implementation split from the decision work, phase this in, separate migration from behavior change, etc.

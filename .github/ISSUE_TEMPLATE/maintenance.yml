@@ -9,6 +9,12 @@ body:
       value: |
         Use this template for refactors, cleanup, CI improvements, or maintenance work.
         Explain why the change is worth the churn; "duplicate code exists" is not enough by itself.
+        
+        Repo-wide constraints to keep in mind:
+        - should be behavior-preserving unless explicitly approved otherwise
+        - should not make the orchestrator feel laggier
+        - should not increase polling or hot-path overhead unless explicitly intended
+        - should not widen public API surface without clear need
   - type: checkboxes
     id: verification
     attributes:
@@ -80,17 +86,11 @@ body:
     validations:
       required: true
   - type: textarea
-    id: constraints
+    id: issue_specific_risks
     attributes:
-      label: Constraints and risks
-      description: What must be protected?
-      value: |
-        - should be behavior-preserving unless explicitly approved otherwise
-        - should not make the orchestrator feel laggier
-        - should not increase polling or hot-path overhead unless explicitly intended
-        - should not widen public API surface without clear need
-    validations:
-      required: true
+      label: Issue-specific risks or constraints
+      description: Optional. Call out anything unusual that maintainers should protect for this specific maintenance task.
+      placeholder: Must stay behavior-preserving, should not touch plugin contracts, avoid widening API surface, etc.
   - type: textarea
     id: definition_of_done
     attributes:
