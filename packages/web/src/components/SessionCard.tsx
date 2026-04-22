@@ -137,11 +137,18 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
   // Only play the entrance animation on the very first mount of this session.
   // Subsequent remounts (e.g. attention-level column change) skip the animation
   // to prevent the card from blinking (opacity 0→1 flash every SSE cycle).
-  const [hasEntered] = useState(() => {
-    const seen = enteredSessionIds.has(session.id);
-    enteredSessionIds.add(session.id);
-    return seen;
-  });
+  const [hasEntered] = useState(() => enteredSessionIds.has(session.id));
+  useEffect(() => {
+    if (hasEntered) return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      enteredSessionIds.add(session.id);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [hasEntered, session.id]);
 
   const level = getAttentionLevel(session);
   const pr = session.pr;
