@@ -13,6 +13,7 @@ import {
   writeFileSync,
   utimesSync,
   symlinkSync,
+  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -199,7 +200,11 @@ beforeEach(() => {
   mockReadLastActivityEntry.mockResolvedValue(null);
   mockRecordTerminalActivity.mockResolvedValue(undefined);
   mockSetupPathWrapperWorkspace.mockResolvedValue(undefined);
-  fakeHome = mkdtempSync(join(tmpdir(), "kimicode-test-"));
+  // realpath so that on macOS we get /private/var/... instead of /var/...
+  // (/var is a symlink on macOS). Without this, the plugin hashes
+  // realpath(workspacePath) while the test wrote under the unresolved path,
+  // and the hashes diverge.
+  fakeHome = realpathSync(mkdtempSync(join(tmpdir(), "kimicode-test-")));
 });
 
 afterEach(() => {
@@ -394,6 +399,24 @@ describe("detectActivity", () => {
   it("active for ongoing work output", () => {
     expect(agent.detectActivity("Generating code...\nReading src/index.ts")).toBe("active");
   });
+
+  it("waiting_input wins when confirmation is shown above a re-rendered kimi> prompt (#6)", () => {
+    // Real kimi terminal output: a confirmation request appears, then the
+    // UI re-renders `kimi>` on the last line as part of the prompt chrome.
+    // Old ordering (idle-first) misclassified this as idle and left the
+    // session hanging. Actionable states MUST win.
+    const output = [
+      "Allow file write?",
+      "(Y)es/(N)o",
+      "kimi> ",
+    ].join("\n");
+    expect(agent.detectActivity(output)).toBe("waiting_input");
+  });
+
+  it("blocked wins over idle-prompt tail (#6)", () => {
+    const output = ["error: LLM quota exceeded", "kimi> "].join("\n");
+    expect(agent.detectActivity(output)).toBe("blocked");
+  });
 });
 
 // =============================================================================
@@ -536,8 +559,14 @@ describe("getActivityState", () => {
       wireAgeMs: 2 * 60 * 1000,
     });
 
+    // AO session predates the kimi session — the createdAt floor must not
+    // reject a legitimate mtime that's still within the ready window.
     const result = await agent.getActivityState(
-      makeSession({ runtimeHandle: makeTmuxHandle(), workspacePath: workspace }),
+      makeSession({
+        runtimeHandle: makeTmuxHandle(),
+        workspacePath: workspace,
+        createdAt: new Date(Date.now() - 10 * 60 * 1000),
+      }),
     );
     expect(result?.state).toBe("ready");
   });
@@ -550,7 +579,11 @@ describe("getActivityState", () => {
     });
 
     const result = await agent.getActivityState(
-      makeSession({ runtimeHandle: makeTmuxHandle(), workspacePath: workspace }),
+      makeSession({
+        runtimeHandle: makeTmuxHandle(),
+        workspacePath: workspace,
+        createdAt: new Date(Date.now() - 30 * 60 * 1000),
+      }),
     );
     expect(result?.state).toBe("idle");
   });
@@ -593,9 +626,85 @@ describe("getActivityState", () => {
     writeKimiSession(workspace, "sess-new"); // fresh
 
     const result = await agent.getActivityState(
-      makeSession({ runtimeHandle: makeTmuxHandle(), workspacePath: workspace }),
+      makeSession({
+        runtimeHandle: makeTmuxHandle(),
+        workspacePath: workspace,
+        createdAt: new Date(Date.now() - 30 * 60 * 1000),
+      }),
     );
     expect(result?.state).toBe("active");
+  });
+
+  it("ignores UUIDs older than session.createdAt (stray/crash leftovers)", async () => {
+    mockTmuxWithProcess("kimi");
+    // A UUID dir that belonged to a previous AO session. Must not attach
+    // to the current session — its summary/UUID would be wrong.
+    writeKimiSession(workspace, "old-leftover", {
+      contextAgeMs: 60 * 60 * 1000,
+      wireAgeMs: 60 * 60 * 1000,
+    });
+
+    const result = await agent.getActivityState(
+      makeSession({
+        runtimeHandle: makeTmuxHandle(),
+        workspacePath: workspace,
+        // AO session started just now, 60min AFTER the leftover session's
+        // last activity → leftover fails the createdAt - 60s floor.
+        createdAt: new Date(),
+      }),
+    );
+    // Falls through to the JSONL fallback (which is null in this test).
+    expect(result).toBeNull();
+  });
+
+  it("pinned session.metadata.kimiSessionId wins over recency", async () => {
+    mockTmuxWithProcess("kimi");
+    writeKimiSession(workspace, "sess-newer"); // newer, but not pinned
+    writeKimiSession(workspace, "pinned-uuid", {
+      contextAgeMs: 2 * 60 * 1000,
+      wireAgeMs: 2 * 60 * 1000,
+    });
+
+    const info = await agent.getSessionInfo(
+      makeSession({
+        workspacePath: workspace,
+        metadata: { kimiSessionId: "pinned-uuid" } as Session["metadata"],
+      }),
+    );
+    expect(info?.agentSessionId).toBe("pinned-uuid");
+  });
+
+  it("negative cache window is short (~2s) — picks up a session that appears mid-poll", async () => {
+    mockTmuxWithProcess("kimi");
+    const session = makeSession({
+      runtimeHandle: makeTmuxHandle(),
+      workspacePath: workspace,
+    });
+
+    // First call: no session dir exists yet → null, cached negatively.
+    const first = await agent.getActivityState(session);
+    expect(first).toBeNull();
+
+    // Session appears.
+    writeKimiSession(workspace, "sess-abc");
+
+    // Negative TTL is 2s; wait it out, then expect the match to surface.
+    await new Promise((r) => setTimeout(r, 2_100));
+    const second = await agent.getActivityState(session);
+    expect(second?.state).toBe("active");
+  }, 10_000);
+
+  it("pinned UUID that no longer exists returns null (no fallback to recency)", async () => {
+    mockTmuxWithProcess("kimi");
+    writeKimiSession(workspace, "some-other-uuid"); // exists but not pinned
+
+    const info = await agent.getSessionInfo(
+      makeSession({
+        workspacePath: workspace,
+        metadata: { kimiSessionId: "pinned-missing" } as Session["metadata"],
+      }),
+    );
+    expect(info).toBeNull();
   });
 
   it("5. returns active from JSONL entry fallback when native signal is unavailable (fresh entry)", async () => {
@@ -667,18 +776,19 @@ describe("getActivityState", () => {
     expect(result?.state).toBe("active");
   });
 
-  it("falls back to UUID dir mtime when live-signal files aren't written yet (race window)", async () => {
+  it("rejects session dirs that have no live-signal files (stray/incomplete)", async () => {
     mockTmuxWithProcess("kimi");
     const bucket = join(fakeHome, ".kimi", "sessions", workspaceHash(workspace));
-    // UUID dir exists but context.jsonl / wire.jsonl haven't been created yet.
-    // This is the brief window during session creation — we should still
-    // report a valid state using the dir mtime, not flicker to "no signal".
+    // UUID dir exists but context.jsonl / wire.jsonl haven't been created.
+    // Could be a crash leftover or a stray temp dir — must NOT be trusted
+    // (#3 from illegalcall's review). The JSONL activity fallback covers
+    // the startup race window instead.
     mkdirSync(join(bucket, "empty-session"), { recursive: true });
 
     const result = await agent.getActivityState(
       makeSession({ runtimeHandle: makeTmuxHandle(), workspacePath: workspace }),
     );
-    expect(result?.state).toBe("active");
+    expect(result).toBeNull();
   });
 });
 

@@ -80,18 +80,49 @@ async function resolveWorkspacePath(workspacePath: string): Promise<string> {
   }
 }
 
-/** TTL for session match cache (ms) — avoids redundant scans when
- *  getActivityState / getSessionInfo / getRestoreCommand all fire in one
- *  refresh cycle. Mirrors agent-codex's SESSION_FILE_CACHE_TTL_MS. */
+/** Positive-result TTL: a found session is unlikely to change identity within
+ *  a single refresh cycle. Mirrors agent-codex's SESSION_FILE_CACHE_TTL_MS. */
 const SESSION_MATCH_CACHE_TTL_MS = 30_000;
+/** Negative-result TTL: kept short so a session that appears mid-poll is picked
+ *  up on the next cycle instead of staying null for the full positive TTL. */
+const SESSION_MATCH_NEGATIVE_TTL_MS = 2_000;
+/** Soft cap on the cache map size — prunes expired entries when exceeded so
+ *  long-running daemons with many worktrees don't grow unbounded. */
+const SESSION_MATCH_CACHE_MAX_ENTRIES = 256;
 
 /** Per-workspace cache of the resolved session directory. */
 const sessionMatchCache = new Map<string, { match: KimiSessionMatch | null; expiry: number }>();
 
 /**
+ * Sandbox check — fail closed if a candidate path escapes ~/.kimi/sessions/.
+ * Bucket entries in a real kimi install are regular directories, but a
+ * symlink placed there (maliciously or accidentally) would let stat() /
+ * createReadStream() follow it to arbitrary filesystem locations, potentially
+ * hanging on FIFOs/sockets or leaking reads from unrelated files.
+ */
+async function isInsideKimiSessions(candidate: string): Promise<boolean> {
+  const sessionsRoot = join(kimiShareDir(), "sessions");
+  let rootReal: string;
+  let candReal: string;
+  try {
+    rootReal = await realpath(sessionsRoot);
+  } catch {
+    return false;
+  }
+  try {
+    candReal = await realpath(candidate);
+  } catch {
+    return false;
+  }
+  const rootWithSep = rootReal.endsWith("/") ? rootReal : rootReal + "/";
+  return candReal === rootReal || candReal.startsWith(rootWithSep);
+}
+
+/**
  * Get the mtime of the freshest live signal inside a Kimi session directory.
- * context.jsonl / wire.jsonl update on every agent turn. Probed in parallel
- * to avoid serial filesystem roundtrips.
+ * context.jsonl / wire.jsonl update on every agent turn. Returns null when
+ * neither file exists — callers must treat this dir as "not a real session".
+ * Probed in parallel to avoid serial filesystem roundtrips.
  */
 async function getKimiLiveSignalMtime(sessionDir: string): Promise<Date | null> {
   const stats = await Promise.all(
@@ -114,19 +145,27 @@ async function getKimiLiveSignalMtime(sessionDir: string): Promise<Date | null> 
  *     context.jsonl   — conversation history
  *     wire.jsonl      — turn events
  *
- * There is no `state.json`. We hash the workspace path to find the bucket,
- * then pick the most-recently-modified UUID subdirectory inside it.
- *
- * Race handling: kimi creates the UUID directory before writing context.jsonl
- * / wire.jsonl. During that brief window `getKimiLiveSignalMtime` returns
- * null; we fall back to the UUID directory's own mtime so callers get a
- * usable signal (dashboard won't flicker to "no signal" every session start).
+ * Stability rules:
+ *   1. A UUID is preferred when \`session.metadata.kimiSessionId\` pins it —
+ *      that binding is captured at launch and survives kimi cwd-normalization
+ *      changes, worktree moves, and manual \`kimi\` invocations in the same
+ *      repo (two AO sessions sharing a bucket would otherwise step on each
+ *      other's summaries / --resume targets).
+ *   2. If no UUID is pinned, only UUIDs whose live files exist AND whose mtime
+ *      is no older than the AO session's \`createdAt - 60s\` are considered —
+ *      stray temp dirs or crash leftovers never get picked up.
+ *   3. Every candidate dir is sandbox-checked to stay inside
+ *      ~/.kimi/sessions/; symlinks pointing outside are rejected.
  */
 async function findKimiSessionMatchUncached(
-  workspacePath: string,
+  session: Session,
 ): Promise<KimiSessionMatch | null> {
-  const resolved = await resolveWorkspacePath(workspacePath);
+  if (!session.workspacePath) return null;
+  const resolved = await resolveWorkspacePath(session.workspacePath);
   const bucket = join(kimiShareDir(), "sessions", kimiWorkspaceHash(resolved));
+
+  if (!(await isInsideKimiSessions(bucket))) return null;
+
   let entries: string[];
   try {
     entries = await readdir(bucket);
@@ -134,42 +173,83 @@ async function findKimiSessionMatchUncached(
     return null;
   }
 
+  const pinnedId =
+    typeof session.metadata?.["kimiSessionId"] === "string"
+      ? (session.metadata["kimiSessionId"] as string)
+      : null;
+
+  // Any UUID older than (session.createdAt - grace) is from a prior life.
+  const minAgeMs = session.createdAt.getTime() - 60_000;
+
   let best: { dir: string; sessionId: string; mtime: Date; mtimeMs: number } | null = null;
 
   for (const entry of entries) {
     const dir = join(bucket, entry);
-    let mtime = await getKimiLiveSignalMtime(dir);
-    if (!mtime) {
-      // Race fallback — UUID dir exists but live files haven't been written
-      // yet. Use the directory's own mtime as a stand-in.
-      try {
-        const s = await stat(dir);
-        if (s.isDirectory()) mtime = s.mtime;
-      } catch {
-        // UUID entry vanished between readdir and stat — skip.
-      }
+    if (!(await isInsideKimiSessions(dir))) continue;
+
+    const liveMtime = await getKimiLiveSignalMtime(dir);
+    if (!liveMtime) continue;
+
+    if (pinnedId) {
+      if (entry !== pinnedId) continue;
+      return { dir, sessionId: entry, mtime: liveMtime };
     }
-    if (!mtime) continue;
-    const mtimeMs = mtime.getTime();
+
+    if (liveMtime.getTime() < minAgeMs) continue;
+
+    const mtimeMs = liveMtime.getTime();
     if (!best || mtimeMs > best.mtimeMs) {
-      best = { dir, sessionId: entry, mtime, mtimeMs };
+      best = { dir, sessionId: entry, mtime: liveMtime, mtimeMs };
     }
+  }
+
+  if (pinnedId && !best) {
+    // Pinned UUID didn't match anything — don't silently fall back to a
+    // "closest guess"; that reintroduces the wrong-session bug.
+    return null;
   }
 
   return best ? { dir: best.dir, sessionId: best.sessionId, mtime: best.mtime } : null;
 }
 
-/** Cached wrapper around findKimiSessionMatchUncached. */
-async function findKimiSessionMatch(workspacePath: string): Promise<KimiSessionMatch | null> {
-  const cached = sessionMatchCache.get(workspacePath);
-  if (cached && Date.now() < cached.expiry) {
-    return cached.match;
+/** Prune expired entries; if still over the cap, drop the oldest. */
+function pruneSessionMatchCache(now: number): void {
+  for (const [key, entry] of sessionMatchCache) {
+    if (entry.expiry <= now) sessionMatchCache.delete(key);
   }
-  const match = await findKimiSessionMatchUncached(workspacePath);
-  sessionMatchCache.set(workspacePath, {
-    match,
-    expiry: Date.now() + SESSION_MATCH_CACHE_TTL_MS,
-  });
+  if (sessionMatchCache.size <= SESSION_MATCH_CACHE_MAX_ENTRIES) return;
+  const sorted = [...sessionMatchCache.entries()].sort((a, b) => a[1].expiry - b[1].expiry);
+  const toDrop = sessionMatchCache.size - SESSION_MATCH_CACHE_MAX_ENTRIES;
+  for (let i = 0; i < toDrop; i++) {
+    const entry = sorted[i];
+    if (entry) sessionMatchCache.delete(entry[0]);
+  }
+}
+
+/** Cached wrapper around findKimiSessionMatchUncached. */
+async function findKimiSessionMatch(session: Session): Promise<KimiSessionMatch | null> {
+  const workspacePath = session.workspacePath;
+  if (!workspacePath) return null;
+
+  // Key on (workspace, pinnedUuid) so two AO sessions in the same bucket
+  // don't poison each other's cache entries via the pinned-id lookup.
+  const pinnedId =
+    typeof session.metadata?.["kimiSessionId"] === "string"
+      ? (session.metadata["kimiSessionId"] as string)
+      : "";
+  const key = `${workspacePath} ${pinnedId}`;
+
+  const now = Date.now();
+  const cached = sessionMatchCache.get(key);
+  if (cached && cached.expiry > now) return cached.match;
+  if (cached) sessionMatchCache.delete(key);
+
+  const match = await findKimiSessionMatchUncached(session);
+  const ttl = match ? SESSION_MATCH_CACHE_TTL_MS : SESSION_MATCH_NEGATIVE_TTL_MS;
+  sessionMatchCache.set(key, { match, expiry: now + ttl });
+  if (sessionMatchCache.size > SESSION_MATCH_CACHE_MAX_ENTRIES) {
+    pruneSessionMatchCache(now);
+  }
   return match;
 }
 
@@ -322,16 +402,17 @@ function createKimicodeAgent(): Agent {
 
       const lines = terminalOutput.trim().split("\n");
       const lastLine = lines[lines.length - 1]?.trim() ?? "";
-
-      // Generic shell/REPL prompt — agent is idle waiting for user input.
-      if (/^[>$#]\s*$/.test(lastLine)) return "idle";
-      // Kimi's interactive prompt variants.
-      if (/^kimi[>:]?\s*$/i.test(lastLine)) return "idle";
-
       const tail = lines.slice(-6).join("\n");
 
-      // Approval / confirmation prompts. Anchored to avoid matching narration
-      // like "I approve of this approach" in the middle of agent output.
+      // Order matters: waiting_input → blocked → idle → active. Actionable
+      // states must be checked BEFORE the idle-prompt check, otherwise a
+      // confirmation prompt that re-renders `kimi>` on the last line would
+      // get classified as idle and the session would sit forever looking
+      // quiet. Matches agent-codex / agent-aider ordering.
+
+      // 1. waiting_input — approval / confirmation prompts. Line-anchored
+      //    where practical to avoid matching narration like "I approve of
+      //    this approach".
       if (/\(y\)es.*\(n\)o/i.test(tail)) return "waiting_input";
       if (/\[y\/n\]\s*[?:]?\s*$/im.test(tail)) return "waiting_input";
       if (/^\s*approve\??\s*$/im.test(tail)) return "waiting_input";
@@ -339,11 +420,18 @@ function createKimicodeAgent(): Agent {
       if (/^\s*do you want to (proceed|continue)\?\s*$/im.test(tail)) return "waiting_input";
       if (/^\s*allow .+\?\s*$/im.test(tail)) return "waiting_input";
 
-      // Hard errors surfaced to the terminal. Line-anchored to avoid matching
-      // narration like "I failed to connect earlier, so I tried X instead".
+      // 2. blocked — hard errors surfaced to the terminal. Line-anchored to
+      //    skip narration ("Earlier I failed to connect, then retried").
       if (/^\s*error:/im.test(tail)) return "blocked";
       if (/^\s*(?:error:\s*)?failed to (connect|authenticate|load)\b/im.test(tail)) return "blocked";
 
+      // 3. idle — only when nothing actionable is visible and the tail is a
+      //    bare prompt. Generic shell/REPL prompt…
+      if (/^[>$#]\s*$/.test(lastLine)) return "idle";
+      // …or kimi's interactive prompt.
+      if (/^kimi[>:]?\s*$/i.test(lastLine)) return "idle";
+
+      // 4. active — anything else with content is ongoing work.
       return "active";
     },
 
@@ -373,7 +461,7 @@ function createKimicodeAgent(): Agent {
       // 3. Native signal — mtime of the freshest live file (context.jsonl /
       //    wire.jsonl) inside ~/.kimi/sessions/<md5(cwd)>/<uuid>/. The match
       //    already captured the mtime during the scan, so no re-stat here.
-      const match = await findKimiSessionMatch(session.workspacePath);
+      const match = await findKimiSessionMatch(session);
       if (match) {
         const ageMs = Math.max(0, Date.now() - match.mtime.getTime());
         if (ageMs <= activeWindowMs) return { state: "active", timestamp: match.mtime };
@@ -437,7 +525,7 @@ function createKimicodeAgent(): Agent {
               const tok = argv[i];
               if (!tok || tok.startsWith("-")) continue;
               if (tok === "run" || tok === "tool" || tok === "-m") continue;
-              if (/(?:^|\/)\.?kimi$/.test(tok)) return true;
+              if (argv0Re.test(tok)) return true;
               break;
             }
           }
@@ -467,7 +555,7 @@ function createKimicodeAgent(): Agent {
     async getSessionInfo(session: Session): Promise<AgentSessionInfo | null> {
       if (!session.workspacePath) return null;
 
-      const match = await findKimiSessionMatch(session.workspacePath);
+      const match = await findKimiSessionMatch(session);
       if (!match) return null;
 
       // Best-effort summary: first user input from wire.jsonl. Kimi does not
@@ -484,7 +572,7 @@ function createKimicodeAgent(): Agent {
     async getRestoreCommand(session: Session, project: ProjectConfig): Promise<string | null> {
       if (!session.workspacePath) return null;
 
-      const match = await findKimiSessionMatch(session.workspacePath);
+      const match = await findKimiSessionMatch(session);
       if (!match) return null;
 
       const configuredModel =
@@ -527,9 +615,11 @@ export function _resetSessionMatchCache(): void {
  *  manager). `kimi info` on real kimi-cli prints "kimi-cli version: ..." which
  *  is a distinct identifier. */
 const KIMI_VENDOR_RE = /kimi[-_](?:cli|code)|moonshot/i;
-/** Keep `kimi info` output capture bounded — real output is ~80 bytes, but a
- *  hostile binary could print arbitrarily much. */
-const DETECT_BUFFER_BYTES = 4096;
+/** Keep `kimi info` output capture bounded. Real kimi-cli prints ~80 bytes,
+ *  but a future release adding plugin lists / telemetry banners could push
+ *  this higher. 64 KB is well above anything realistic while still guarding
+ *  against a hostile binary flooding stdout. */
+const DETECT_BUFFER_BYTES = 65_536;
 
 export function detect(): boolean {
   try {
