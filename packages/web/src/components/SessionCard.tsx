@@ -137,8 +137,11 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
   // Only play the entrance animation on the very first mount of this session.
   // Subsequent remounts (e.g. attention-level column change) skip the animation
   // to prevent the card from blinking (opacity 0→1 flash every SSE cycle).
-  const [hasEntered] = useState(() => enteredSessionIds.has(session.id));
-  useEffect(() => { enteredSessionIds.add(session.id); }, [session.id]);
+  const [hasEntered] = useState(() => {
+    const seen = enteredSessionIds.has(session.id);
+    enteredSessionIds.add(session.id);
+    return seen;
+  });
 
   const level = getAttentionLevel(session);
   const pr = session.pr;
@@ -470,7 +473,8 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
   return (
     <div
       className={cn(
-        "session-card border",\n        !hasEntered && "kanban-card-enter",
+        "session-card border",
+        !hasEntered && "kanban-card-enter",
         cardFrameClass,
         accentClass,
         isReadyToMerge && "card-merge-ready",
