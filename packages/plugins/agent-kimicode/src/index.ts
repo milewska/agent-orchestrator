@@ -13,6 +13,7 @@ import {
   type Agent,
   type AgentSessionInfo,
   type AgentLaunchConfig,
+  type AgentPermissionInput,
   type ActivityDetection,
   type ActivityState,
   type PluginModule,
@@ -49,39 +50,44 @@ interface KimiSessionState {
 interface KimiSessionMatch {
   dir: string;
   state: KimiSessionState;
+  /** mtime of state.json at the time the match was resolved. Reusing this
+   *  saves one stat call when getKimiSessionMtime() probes for the freshest
+   *  file in the session directory. */
+  stateMtime: Date;
 }
 
-/** Pick out the subset of state.json fields we consume. */
-function parseKimiSessionState(raw: string): KimiSessionState | null {
+interface ParsedKimiState extends KimiSessionState {
+  cwd: string | null;
+}
+
+/**
+ * Parse a Kimi `state.json` blob in a single pass. Returns `null` for
+ * malformed JSON, non-object payloads, or when every field we read is missing.
+ * Collapses the previous separate extractStateCwd + parseKimiSessionState
+ * helpers into one traversal.
+ */
+function parseKimiState(raw: string): ParsedKimiState | null {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
     const state = parsed as Record<string, unknown>;
-    return {
-      sessionId:
-        typeof state["session_id"] === "string"
-          ? state["session_id"]
-          : typeof state["id"] === "string"
-            ? state["id"]
-            : null,
-      model: typeof state["model"] === "string" ? state["model"] : null,
-      title: typeof state["title"] === "string" ? state["title"] : null,
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** Extract cwd/work_dir/workdir from an already-parsed state.json object. */
-function extractStateCwd(raw: string): string | null {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-    const state = parsed as Record<string, unknown>;
-    if (typeof state["cwd"] === "string") return state["cwd"];
-    if (typeof state["work_dir"] === "string") return state["work_dir"];
-    if (typeof state["workdir"] === "string") return state["workdir"];
-    return null;
+    const cwd =
+      typeof state["cwd"] === "string"
+        ? state["cwd"]
+        : typeof state["work_dir"] === "string"
+          ? state["work_dir"]
+          : typeof state["workdir"] === "string"
+            ? state["workdir"]
+            : null;
+    const sessionId =
+      typeof state["session_id"] === "string"
+        ? state["session_id"]
+        : typeof state["id"] === "string"
+          ? state["id"]
+          : null;
+    const model = typeof state["model"] === "string" ? state["model"] : null;
+    const title = typeof state["title"] === "string" ? state["title"] : null;
+    return { cwd, sessionId, model, title };
   } catch {
     return null;
   }
@@ -99,7 +105,7 @@ const sessionMatchCache = new Map<string, { match: KimiSessionMatch | null; expi
  * Find the Kimi session directory whose `state.json` references this workspace.
  * Scans immediate subdirectories of ~/.kimi/ looking for a `state.json` whose
  * `cwd` / `work_dir` / `workdir` matches. Returns the most recently modified
- * match (directory + parsed state), or null when nothing matches.
+ * match (directory + parsed state + state.json mtime), or null when nothing matches.
  */
 async function findKimiSessionMatchUncached(
   workspacePath: string,
@@ -112,18 +118,19 @@ async function findKimiSessionMatchUncached(
     return null;
   }
 
-  let best: { dir: string; raw: string; mtime: number } | null = null;
+  let best: { dir: string; parsed: ParsedKimiState; mtime: Date; mtimeMs: number } | null = null;
 
   for (const entry of entries) {
     const dir = join(root, entry);
     const stateFile = join(dir, "state.json");
     try {
       const raw = await readFile(stateFile, "utf-8");
-      if (extractStateCwd(raw) !== workspacePath) continue;
+      const parsed = parseKimiState(raw);
+      if (!parsed || parsed.cwd !== workspacePath) continue;
 
       const s = await stat(stateFile);
-      if (!best || s.mtimeMs > best.mtime) {
-        best = { dir, raw, mtime: s.mtimeMs };
+      if (!best || s.mtimeMs > best.mtimeMs) {
+        best = { dir, parsed, mtime: s.mtime, mtimeMs: s.mtimeMs };
       }
     } catch {
       // Missing/unreadable/non-JSON state.json — skip this entry.
@@ -131,9 +138,15 @@ async function findKimiSessionMatchUncached(
   }
 
   if (!best) return null;
-  const state = parseKimiSessionState(best.raw);
-  if (!state) return null;
-  return { dir: best.dir, state };
+  return {
+    dir: best.dir,
+    state: {
+      sessionId: best.parsed.sessionId,
+      model: best.parsed.model,
+      title: best.parsed.title,
+    },
+    stateMtime: best.mtime,
+  };
 }
 
 /** Cached wrapper around findKimiSessionMatchUncached. */
@@ -150,17 +163,22 @@ async function findKimiSessionMatch(workspacePath: string): Promise<KimiSessionM
   return match;
 }
 
-/** Get the mtime of the freshest signal inside a Kimi session directory. */
-async function getKimiSessionMtime(sessionDir: string): Promise<Date | null> {
-  const candidates = ["context.jsonl", "wire.jsonl", "state.json"];
+/**
+ * Get the mtime of the freshest live signal inside a Kimi session directory.
+ * context.jsonl / wire.jsonl update on every agent turn, so they're the real
+ * freshness indicators. state.json is omitted because its mtime is already
+ * captured in KimiSessionMatch.stateMtime (the caller folds it in).
+ * Probed in parallel to avoid serial filesystem roundtrips.
+ */
+async function getKimiLiveSignalMtime(sessionDir: string): Promise<Date | null> {
+  const stats = await Promise.all(
+    ["context.jsonl", "wire.jsonl"].map((name) =>
+      stat(join(sessionDir, name)).catch(() => null),
+    ),
+  );
   let newest: Date | null = null;
-  for (const name of candidates) {
-    try {
-      const s = await stat(join(sessionDir, name));
-      if (!newest || s.mtimeMs > newest.getTime()) newest = s.mtime;
-    } catch {
-      // Missing file — skip.
-    }
+  for (const s of stats) {
+    if (s && (!newest || s.mtimeMs > newest.getTime())) newest = s.mtime;
   }
   return newest;
 }
@@ -185,7 +203,10 @@ export const manifest = {
  * Append approval flags — kimi uses `--yolo` (aka `-y`, `--yes`, `--auto-approve`).
  * Suggest/ask modes have no dedicated flag; kimi prompts inline by default.
  */
-function appendApprovalFlags(parts: string[], permissions: string | undefined): void {
+function appendApprovalFlags(
+  parts: string[],
+  permissions: AgentPermissionInput | undefined,
+): void {
   const mode = normalizeAgentPermissionMode(permissions);
   if (mode === "permissionless" || mode === "auto-edit") {
     parts.push("--yolo");
@@ -298,17 +319,21 @@ function createKimicodeAgent(): Agent {
       const activityState = checkActivityLogState(activityResult);
       if (activityState) return activityState;
 
-      // 3. Native signal — mtime of context.jsonl / wire.jsonl / state.json
-      //    inside the matching ~/.kimi/<session>/ directory.
+      // 3. Native signal — freshest mtime across state.json (from the cached
+      //    match) and the per-turn context.jsonl / wire.jsonl files inside the
+      //    matching ~/.kimi/<session>/ directory. state.json's mtime is reused
+      //    from the match rather than re-stat'd.
       const match = await findKimiSessionMatch(session.workspacePath);
       if (match) {
-        const mtime = await getKimiSessionMtime(match.dir);
-        if (mtime) {
-          const ageMs = Math.max(0, Date.now() - mtime.getTime());
-          if (ageMs <= activeWindowMs) return { state: "active", timestamp: mtime };
-          if (ageMs <= threshold) return { state: "ready", timestamp: mtime };
-          return { state: "idle", timestamp: mtime };
-        }
+        const liveMtime = await getKimiLiveSignalMtime(match.dir);
+        const mtime =
+          liveMtime && liveMtime.getTime() > match.stateMtime.getTime()
+            ? liveMtime
+            : match.stateMtime;
+        const ageMs = Math.max(0, Date.now() - mtime.getTime());
+        if (ageMs <= activeWindowMs) return { state: "active", timestamp: mtime };
+        if (ageMs <= threshold) return { state: "ready", timestamp: mtime };
+        return { state: "idle", timestamp: mtime };
       }
 
       // 4. JSONL entry fallback (MANDATORY) — uses the last AO activity entry
@@ -452,9 +477,25 @@ export function _resetSessionMatchCache(): void {
 }
 
 export function detect(): boolean {
+  // `kimi` is not a uniquely-claimed binary name, so verify the output looks
+  // like MoonshotAI's kimi-cli rather than trusting any binary that exits 0.
+  // `kimi info` prints the package name and protocol versions; `--version`
+  // is a lighter-weight cross-check.
   try {
-    execFileSync("kimi", ["--version"], { stdio: "ignore" });
-    return true;
+    const versionOut = execFileSync("kimi", ["--version"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 10_000,
+    });
+    if (/\bkimi[-_ ]?(?:cli|code)?\b/i.test(versionOut)) return true;
+    // Some builds of kimi-cli print just a version number — cross-check with
+    // `kimi info` which includes the package identifier.
+    const infoOut = execFileSync("kimi", ["info"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 10_000,
+    });
+    return /\bkimi[-_ ]?(?:cli|code)?\b/i.test(infoOut) || /moonshot/i.test(infoOut);
   } catch {
     return false;
   }

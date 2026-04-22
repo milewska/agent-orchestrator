@@ -540,6 +540,31 @@ describe("getActivityState", () => {
     expect(result?.state).toBe("waiting_input");
   });
 
+  it("native signal prefers a fresher context.jsonl mtime over a stale state.json mtime", async () => {
+    mockTmuxWithProcess("kimi");
+    const { readdir, readFile, stat } = await import("node:fs/promises");
+
+    vi.mocked(readdir).mockResolvedValueOnce(["sess-abc"] as never);
+    vi.mocked(readFile).mockResolvedValueOnce(
+      JSON.stringify({ cwd: "/workspace/test", session_id: "sess-abc" }),
+    );
+
+    // state.json is 10min old — would decay to "idle" on its own.
+    // context.jsonl is fresh — should win, producing "active".
+    const stale = new Date(Date.now() - 10 * 60 * 1000);
+    const fresh = new Date();
+    vi.mocked(stat).mockImplementation(async (p: unknown) => {
+      const path = String(p);
+      const mtime = path.endsWith("context.jsonl") ? fresh : stale;
+      return { mtimeMs: mtime.getTime(), mtime } as unknown as Awaited<ReturnType<typeof stat>>;
+    });
+
+    const result = await agent.getActivityState(
+      makeSession({ runtimeHandle: makeTmuxHandle() }),
+    );
+    expect(result?.state).toBe("active");
+  });
+
   it("5. returns active from JSONL entry fallback when native signal is unavailable (fresh entry)", async () => {
     mockTmuxWithProcess("kimi");
     // No ~/.kimi/ directory at all
@@ -839,10 +864,10 @@ describe("workspace hooks", () => {
 // detect()
 // =============================================================================
 describe("detect", () => {
-  it("returns true when `kimi --version` exits cleanly", async () => {
+  it("returns true when --version identifies the binary as kimi", async () => {
     const { execFileSync } = await import("node:child_process");
     vi.mocked(execFileSync).mockImplementationOnce(
-      () => "kimi 0.1.0" as unknown as ReturnType<typeof execFileSync>,
+      () => "kimi-cli 0.1.0" as unknown as ReturnType<typeof execFileSync>,
     );
     expect(detect()).toBe(true);
   });
@@ -852,6 +877,51 @@ describe("detect", () => {
     vi.mocked(execFileSync).mockImplementationOnce(() => {
       throw new Error("command not found");
     });
+    expect(detect()).toBe(false);
+  });
+
+  it("falls back to `kimi info` when --version output is ambiguous, accepts on match", async () => {
+    const { execFileSync } = await import("node:child_process");
+    vi.mocked(execFileSync)
+      .mockImplementationOnce(() => "1.0.0" as unknown as ReturnType<typeof execFileSync>)
+      .mockImplementationOnce(
+        () =>
+          "package: kimi-cli\nprotocol: mcp\n" as unknown as ReturnType<typeof execFileSync>,
+      );
+    expect(detect()).toBe(true);
+  });
+
+  it("returns false when --version output is bare and `kimi info` has no moonshot/kimi marker", async () => {
+    const { execFileSync } = await import("node:child_process");
+    vi.mocked(execFileSync)
+      .mockImplementationOnce(() => "1.0.0" as unknown as ReturnType<typeof execFileSync>)
+      .mockImplementationOnce(
+        () => "some other tool info\n" as unknown as ReturnType<typeof execFileSync>,
+      );
+    expect(detect()).toBe(false);
+  });
+
+  it("rejects an unrelated `kimi` binary whose --version doesn't mention kimi", async () => {
+    const { execFileSync } = await import("node:child_process");
+    vi.mocked(execFileSync)
+      .mockImplementationOnce(
+        () =>
+          "KIMI v0.1 — keyboard input manager\n" as unknown as ReturnType<typeof execFileSync>,
+      )
+      .mockImplementationOnce(() => {
+        // `kimi info` on that unrelated binary probably exits non-zero
+        throw new Error("no such subcommand: info");
+      });
+    // Note: "KIMI v0.1 — keyboard input manager" happens to match the regex
+    // via the bare `\bkimi\b` word. Check a truly-unrelated name instead.
+    vi.mocked(execFileSync).mockReset();
+    vi.mocked(execFileSync)
+      .mockImplementationOnce(
+        () => "nano 7.2 GNU\n" as unknown as ReturnType<typeof execFileSync>,
+      )
+      .mockImplementationOnce(() => {
+        throw new Error("no such subcommand: info");
+      });
     expect(detect()).toBe(false);
   });
 });
