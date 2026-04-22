@@ -1,19 +1,23 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { notFound, useParams } from "next/navigation";
+import { notFound, useParams, usePathname, useRouter } from "next/navigation";
 import { ACTIVITY_STATE, SESSION_STATUS, isOrchestratorSession } from "@aoagents/ao-core/types";
 import { SessionDetail } from "@/components/SessionDetail";
-import { type DashboardSession, type ActivityState, getAttentionLevel, type AttentionLevel } from "@/lib/types";
+import { type DashboardSession, type ActivityState, getAttentionLevel } from "@/lib/types";
 import { activityIcon } from "@/lib/activity-icons";
 import type { ProjectInfo } from "@/lib/project-name";
 import { getSessionTitle } from "@/lib/format";
 import { useSSESessionActivity } from "@/hooks/useSSESessionActivity";
 import { useMuxOptional } from "@/providers/MuxProvider";
 import type { SessionPatch } from "@/lib/mux-protocol";
+import { projectSessionPath } from "@/lib/routes";
 
 function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "..." : s;
+  // Split on code points so emoji / astral characters aren't cleaved into
+  // lone UTF-16 surrogates at the truncation boundary.
+  const codePoints = Array.from(s);
+  return codePoints.length > max ? codePoints.slice(0, max).join("") + "..." : s;
 }
 
 /** Build a descriptive tab title from session data. */
@@ -39,6 +43,12 @@ function buildSessionTitle(
   return emoji ? `${emoji} ${id} | ${detail}` : `${id} | ${detail}`;
 }
 
+// NOTE: No `action` field here by design. This status strip is a detail-page
+// summary, and `SessionDetail.OrchestratorZones` (the consumer of these
+// counts) only renders the detailed 5-zone breakdown. `getAttentionLevel()`
+// below is called without a mode so it defaults to "detailed" and never
+// returns "action" — the strip stays in detailed mode independent of the
+// dashboard's `attentionZones` config.
 interface ZoneCounts {
   merge: number;
   respond: number;
@@ -56,6 +66,7 @@ interface ProjectSessionsBody {
 
 let cachedProjects: ProjectInfo[] | null = null;
 let cachedSidebarSessions: DashboardSession[] | null = null;
+const SESSION_PAGE_REFRESH_INTERVAL_MS = 2000;
 const validSessionStatuses = new Set<string>(Object.values(SESSION_STATUS));
 const validActivityStates = new Set<string>(Object.values(ACTIVITY_STATE));
 const warnedMuxPatchValues = new Set<string>();
@@ -154,18 +165,39 @@ function applyMuxSessionPatches(current: DashboardSession[] | null, patches: Ses
 
 export default function SessionPage() {
   const params = useParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const id = params.id as string;
+  const expectedProjectId =
+    typeof params.projectId === "string"
+      ? params.projectId
+      : Array.isArray(params.projectId)
+        ? params.projectId[0]
+        : null;
   const mux = useMuxOptional();
 
-  const [session, setSession] = useState<DashboardSession | null>(null);
+  // Read optimistic session data written by sidebar navigation (instant render, no white screen)
+  const cachedSession = (() => {
+    if (typeof sessionStorage === "undefined") return null;
+    try {
+      const raw = sessionStorage.getItem(`ao-session-nav:${id}`);
+      if (raw) {
+        sessionStorage.removeItem(`ao-session-nav:${id}`);
+        return JSON.parse(raw) as DashboardSession;
+      }
+    } catch { /* ignore */ }
+    return null;
+  })();
+
+  const [session, setSession] = useState<DashboardSession | null>(cachedSession);
   const [zoneCounts, setZoneCounts] = useState<ZoneCounts | null>(null);
   const [projectOrchestratorId, setProjectOrchestratorId] = useState<string | null | undefined>(undefined);
-  const [projects, setProjects] = useState<ProjectInfo[]>(() => cachedProjects ?? []);
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [sidebarSessions, setSidebarSessions] = useState<DashboardSession[] | null>(() => cachedSidebarSessions);
-  const [loading, setLoading] = useState(true);
-  const [sidebarError, setSidebarError] = useState(false);
+  const [loading, setLoading] = useState(cachedSession === null);
   const [routeError, setRouteError] = useState<Error | null>(null);
   const [sessionMissing, setSessionMissing] = useState(false);
+  const [sidebarError, setSidebarError] = useState(false);
   const [prefixByProject, setPrefixByProject] = useState<Map<string, string>>(new Map());
   const sessionProjectId = session?.projectId ?? null;
   const allPrefixes = [...prefixByProject.values()];
@@ -176,9 +208,12 @@ export default function SessionPage() {
   const sessionIsOrchestratorRef = useRef(false);
   const resolvedProjectSessionsKeyRef = useRef<string | null>(null);
   const prefixByProjectRef = useRef<Map<string, string>>(new Map());
-  const hasLoadedSessionRef = useRef(false);
+  const hasLoadedSessionRef = useRef(cachedSession !== null);
   const pendingMuxSessionsRef = useRef<SessionPatch[] | null>(null);
-  const sidebarFetchIdRef = useRef(0);
+  // In-flight guards — prevent concurrent duplicate fetches
+  const fetchingSessionRef = useRef(false);
+  const fetchingProjectSessionsRef = useRef(false);
+  const fetchingSidebarRef = useRef(false);
 
   // Keep prefixByProjectRef in sync so fetchProjectSessions (stable [] dep) reads latest map
   useEffect(() => {
@@ -231,11 +266,31 @@ export default function SessionPage() {
   }, [sessionProjectId]);
 
   useEffect(() => {
+    if (!session) return;
+    if (!projects.some((project) => project.id === session.projectId)) return;
+
+    if (pathname?.startsWith("/sessions/")) {
+      router.replace(projectSessionPath(session.projectId, session.id));
+      return;
+    }
+
+    if (
+      pathname?.startsWith("/projects/") &&
+      expectedProjectId &&
+      session.projectId !== expectedProjectId
+    ) {
+      router.replace(projectSessionPath(session.projectId, session.id));
+    }
+  }, [expectedProjectId, pathname, projects, router, session]);
+
+  useEffect(() => {
     sessionIsOrchestratorRef.current = sessionIsOrchestrator;
   }, [sessionIsOrchestrator]);
 
   // Fetch session data (memoized to avoid recreating on every render)
   const fetchSession = useCallback(async () => {
+    if (fetchingSessionRef.current) return;
+    fetchingSessionRef.current = true;
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}`);
       if (res.status === 404) {
@@ -258,19 +313,22 @@ export default function SessionPage() {
       }
     } finally {
       setLoading(false);
+      fetchingSessionRef.current = false;
     }
   }, [id]);
 
   const fetchProjectSessions = useCallback(async () => {
+    if (fetchingProjectSessionsRef.current) return;
     const projectId = sessionProjectIdRef.current;
     if (!projectId) return;
     const isOrchestrator = sessionIsOrchestratorRef.current;
     const projectSessionsKey = `${projectId}:${isOrchestrator ? "orchestrator" : "worker"}`;
     if (!isOrchestrator && resolvedProjectSessionsKeyRef.current === projectSessionsKey) return;
+    fetchingProjectSessionsRef.current = true;
     try {
       const query = isOrchestrator
-        ? `/api/sessions?project=${encodeURIComponent(projectId)}`
-        : `/api/sessions?project=${encodeURIComponent(projectId)}&orchestratorOnly=true`;
+        ? `/api/sessions?project=${encodeURIComponent(projectId)}&fresh=true`
+        : `/api/sessions?project=${encodeURIComponent(projectId)}&orchestratorOnly=true&fresh=true`;
       const res = await fetch(query);
       if (!res.ok) {
         console.error("Failed to fetch project sessions for", projectId, new Error(`HTTP ${res.status}`));
@@ -300,26 +358,30 @@ export default function SessionPage() {
       const allPrefixes = [...prefixByProjectRef.current.values()];
       for (const s of sessions) {
         if (!isOrchestratorSession(s, prefixByProjectRef.current.get(s.projectId), allPrefixes)) {
-          counts[getAttentionLevel(s) as AttentionLevel]++;
+          // Detailed mode by default — "action" never appears. The guard
+          // is a compile-time narrowing hint for the index below.
+          const level = getAttentionLevel(s);
+          if (level === "action") continue;
+          counts[level]++;
         }
       }
       setZoneCounts(counts);
-    } catch (err) {
-      console.error("Failed to fetch project sessions for", projectId, err);
+    } catch {
+      // non-critical - status strip just won't show
+    } finally {
+      fetchingProjectSessionsRef.current = false;
     }
   }, []);
 
   const fetchSidebarSessions = useCallback(async () => {
-    // Track a per-invocation token so out-of-order responses from concurrent
-    // callers (5s poll, mux refetch, retry button) don't overwrite newer data.
-    const fetchId = ++sidebarFetchIdRef.current;
+    if (fetchingSidebarRef.current) return;
+    fetchingSidebarRef.current = true;
     try {
-      const res = await fetch("/api/sessions");
+      const res = await fetch("/api/sessions?fresh=true");
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
       const body = (await res.json()) as { sessions?: DashboardSession[] } | null;
-      if (fetchId !== sidebarFetchIdRef.current) return;
       const restSessions = body?.sessions ?? [];
       const nextSessions =
         applyMuxSessionPatches(restSessions, pendingMuxSessionsRef.current ?? []) ?? restSessions;
@@ -330,9 +392,10 @@ export default function SessionPage() {
       ));
     } catch (err) {
       console.error("Failed to fetch sidebar sessions:", err);
-      if (fetchId !== sidebarFetchIdRef.current) return;
       setSidebarError(true);
       setSidebarSessions((current) => (current === null ? [] : current));
+    } finally {
+      fetchingSidebarRef.current = false;
     }
   }, []);
 
@@ -397,13 +460,14 @@ export default function SessionPage() {
     void fetchProjectSessions();
   }, [fetchProjectSessions, sessionIsOrchestrator, sessionProjectId]);
 
-  // Poll every 5s
+  // Poll frequently enough that sidebar/project session state keeps up with
+  // newly spawned workers and terminated sessions without feeling laggy.
   useEffect(() => {
     const interval = setInterval(() => {
       fetchSession();
       fetchProjectSessions();
       fetchSidebarSessions();
-    }, 5000);
+    }, SESSION_PAGE_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [fetchSession, fetchProjectSessions, fetchSidebarSessions]);
 

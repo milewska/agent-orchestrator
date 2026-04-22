@@ -176,6 +176,20 @@ describe("restore", () => {
     await expect(sm.restore("app-1")).rejects.toThrow(SessionNotRestorableError);
   });
 
+  it("throws SessionNotRestorableError for legacy merged sessions with a PR URL", async () => {
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "merged",
+      pr: "https://github.com/org/my-app/pull/10",
+      project: "my-app",
+      createdAt: "2025-01-01T00:00:00.000Z",
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    await expect(sm.restore("app-1")).rejects.toThrow(SessionNotRestorableError);
+  });
+
   it("throws SessionNotRestorableError for working sessions", async () => {
     writeMetadata(sessionsDir, "app-1", {
       worktree: "/tmp",
@@ -255,6 +269,34 @@ describe("restore", () => {
     expect(meta).not.toBeNull();
     expect(meta!["issue"]).toBe("TEST-1");
     expect(meta!["pr"]).toBe("https://github.com/org/my-app/pull/10");
+  });
+
+  it("preserves displayName when restoring from archive", async () => {
+    const wsPath = join(tmpDir, "ws-app-1");
+    mkdirSync(wsPath, { recursive: true });
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: wsPath,
+      branch: "feat/TEST-1",
+      status: "killed",
+      project: "my-app",
+      issue: "TEST-1",
+      createdAt: "2025-01-01T00:00:00.000Z",
+      runtimeHandle: JSON.stringify(makeHandle("rt-old")),
+      displayName: "Refactor session manager to use flat metadata files",
+    });
+
+    deleteMetadata(sessionsDir, "app-1");
+    expect(readMetadataRaw(sessionsDir, "app-1")).toBeNull();
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    await sm.restore("app-1");
+
+    const meta = readMetadataRaw(sessionsDir, "app-1");
+    expect(meta).not.toBeNull();
+    expect(meta!["displayName"]).toBe(
+      "Refactor session manager to use flat metadata files",
+    );
   });
 
   it("restores from archive with multiple archived versions (picks latest)", async () => {
@@ -577,8 +619,7 @@ describe("restore", () => {
     const wsPath = join(tmpDir, "ws-app-orchestrator-opencode-agentsmd");
     mkdirSync(wsPath, { recursive: true });
 
-    const projectPath = join(tmpDir, "my-app");
-    const baseDir = getProjectBaseDir(ctx.configPath, projectPath);
+    const baseDir = getProjectBaseDir(ctx.config.projects["my-app"]!.storageKey);
     mkdirSync(baseDir, { recursive: true });
     const promptFile = join(baseDir, "orchestrator-prompt-app-orchestrator.md");
     const promptContent = "You are the AO orchestrator. Delegate tasks.";
