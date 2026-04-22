@@ -24,7 +24,10 @@ import {
 } from "@aoagents/ao-core";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createInterface } from "node:readline";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -41,112 +44,84 @@ function kimiShareDir(): string {
   return join(homedir(), ".kimi");
 }
 
-interface KimiSessionState {
-  sessionId: string | null;
-  model: string | null;
-  title: string | null;
-}
-
 interface KimiSessionMatch {
+  /** Absolute path to the session directory, e.g.
+   *  ~/.kimi/sessions/<md5(cwd)>/<session-uuid>/ */
   dir: string;
-  state: KimiSessionState;
-  /** mtime of state.json at the time the match was resolved. Reusing this
-   *  saves one stat call when getKimiSessionMtime() probes for the freshest
-   *  file in the session directory. */
-  stateMtime: Date;
+  /** Session UUID (directory basename) — accepted by `kimi --resume <id>`. */
+  sessionId: string;
+  /** mtime of the newest live-signal file (context.jsonl / wire.jsonl).
+   *  Captured during the scan so callers don't re-stat. */
+  mtime: Date;
 }
 
-interface ParsedKimiState extends KimiSessionState {
-  cwd: string | null;
+/** MD5 hex digest of an absolute workspace path — kimi uses this as the
+ *  per-workspace bucket under ~/.kimi/sessions/. */
+function kimiWorkspaceHash(workspacePath: string): string {
+  return createHash("md5").update(workspacePath).digest("hex");
 }
 
-/**
- * Parse a Kimi `state.json` blob in a single pass. Returns `null` for
- * malformed JSON, non-object payloads, or when every field we read is missing.
- * Collapses the previous separate extractStateCwd + parseKimiSessionState
- * helpers into one traversal.
- */
-function parseKimiState(raw: string): ParsedKimiState | null {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-    const state = parsed as Record<string, unknown>;
-    const cwd =
-      typeof state["cwd"] === "string"
-        ? state["cwd"]
-        : typeof state["work_dir"] === "string"
-          ? state["work_dir"]
-          : typeof state["workdir"] === "string"
-            ? state["workdir"]
-            : null;
-    const sessionId =
-      typeof state["session_id"] === "string"
-        ? state["session_id"]
-        : typeof state["id"] === "string"
-          ? state["id"]
-          : null;
-    const model = typeof state["model"] === "string" ? state["model"] : null;
-    const title = typeof state["title"] === "string" ? state["title"] : null;
-    return { cwd, sessionId, model, title };
-  } catch {
-    return null;
-  }
-}
-
-/** TTL for session match cache (ms) — avoids redundant ~/.kimi/ scans when
+/** TTL for session match cache (ms) — avoids redundant scans when
  *  getActivityState / getSessionInfo / getRestoreCommand all fire in one
  *  refresh cycle. Mirrors agent-codex's SESSION_FILE_CACHE_TTL_MS. */
 const SESSION_MATCH_CACHE_TTL_MS = 30_000;
 
-/** Per-workspace cache of the resolved session directory + parsed state. */
+/** Per-workspace cache of the resolved session directory. */
 const sessionMatchCache = new Map<string, { match: KimiSessionMatch | null; expiry: number }>();
 
 /**
- * Find the Kimi session directory whose `state.json` references this workspace.
- * Scans immediate subdirectories of ~/.kimi/ looking for a `state.json` whose
- * `cwd` / `work_dir` / `workdir` matches. Returns the most recently modified
- * match (directory + parsed state + state.json mtime), or null when nothing matches.
+ * Get the mtime of the freshest live signal inside a Kimi session directory.
+ * context.jsonl / wire.jsonl update on every agent turn. Probed in parallel
+ * to avoid serial filesystem roundtrips.
+ */
+async function getKimiLiveSignalMtime(sessionDir: string): Promise<Date | null> {
+  const stats = await Promise.all(
+    ["context.jsonl", "wire.jsonl"].map((name) =>
+      stat(join(sessionDir, name)).catch(() => null),
+    ),
+  );
+  let newest: Date | null = null;
+  for (const s of stats) {
+    if (s && (!newest || s.mtimeMs > newest.getTime())) newest = s.mtime;
+  }
+  return newest;
+}
+
+/**
+ * Find the Kimi session directory for this workspace.
+ *
+ * Layout (kimi-cli 1.38):
+ *   ~/.kimi/sessions/<md5(cwd)>/<session-uuid>/
+ *     context.jsonl   — conversation history
+ *     wire.jsonl      — turn events
+ *
+ * There is no `state.json`. We hash the workspace path to find the bucket,
+ * then pick the most-recently-modified UUID subdirectory inside it.
  */
 async function findKimiSessionMatchUncached(
   workspacePath: string,
 ): Promise<KimiSessionMatch | null> {
-  const root = kimiShareDir();
+  const bucket = join(kimiShareDir(), "sessions", kimiWorkspaceHash(workspacePath));
   let entries: string[];
   try {
-    entries = await readdir(root);
+    entries = await readdir(bucket);
   } catch {
     return null;
   }
 
-  let best: { dir: string; parsed: ParsedKimiState; mtime: Date; mtimeMs: number } | null = null;
+  let best: { dir: string; sessionId: string; mtime: Date; mtimeMs: number } | null = null;
 
   for (const entry of entries) {
-    const dir = join(root, entry);
-    const stateFile = join(dir, "state.json");
-    try {
-      const raw = await readFile(stateFile, "utf-8");
-      const parsed = parseKimiState(raw);
-      if (!parsed || parsed.cwd !== workspacePath) continue;
-
-      const s = await stat(stateFile);
-      if (!best || s.mtimeMs > best.mtimeMs) {
-        best = { dir, parsed, mtime: s.mtime, mtimeMs: s.mtimeMs };
-      }
-    } catch {
-      // Missing/unreadable/non-JSON state.json — skip this entry.
+    const dir = join(bucket, entry);
+    const mtime = await getKimiLiveSignalMtime(dir);
+    if (!mtime) continue;
+    const mtimeMs = mtime.getTime();
+    if (!best || mtimeMs > best.mtimeMs) {
+      best = { dir, sessionId: entry, mtime, mtimeMs };
     }
   }
 
-  if (!best) return null;
-  return {
-    dir: best.dir,
-    state: {
-      sessionId: best.parsed.sessionId,
-      model: best.parsed.model,
-      title: best.parsed.title,
-    },
-    stateMtime: best.mtime,
-  };
+  return best ? { dir: best.dir, sessionId: best.sessionId, mtime: best.mtime } : null;
 }
 
 /** Cached wrapper around findKimiSessionMatchUncached. */
@@ -163,24 +138,57 @@ async function findKimiSessionMatch(workspacePath: string): Promise<KimiSessionM
   return match;
 }
 
+/** Max chars we keep from a wire.jsonl user-input summary. */
+const SUMMARY_MAX_CHARS = 120;
+/** Max bytes of wire.jsonl we read looking for the first TurnBegin. */
+const SUMMARY_SCAN_BYTE_LIMIT = 1_000_000;
+
 /**
- * Get the mtime of the freshest live signal inside a Kimi session directory.
- * context.jsonl / wire.jsonl update on every agent turn, so they're the real
- * freshness indicators. state.json is omitted because its mtime is already
- * captured in KimiSessionMatch.stateMtime (the caller folds it in).
- * Probed in parallel to avoid serial filesystem roundtrips.
+ * Extract the first user prompt from a session's wire.jsonl as a fallback
+ * summary. Stops after the first TurnBegin or after reading ~1 MB (whichever
+ * comes first) so we never slurp huge session logs.
  */
-async function getKimiLiveSignalMtime(sessionDir: string): Promise<Date | null> {
-  const stats = await Promise.all(
-    ["context.jsonl", "wire.jsonl"].map((name) =>
-      stat(join(sessionDir, name)).catch(() => null),
-    ),
-  );
-  let newest: Date | null = null;
-  for (const s of stats) {
-    if (s && (!newest || s.mtimeMs > newest.getTime())) newest = s.mtime;
+async function extractKimiSummary(sessionDir: string): Promise<string | null> {
+  const wirePath = join(sessionDir, "wire.jsonl");
+  let summary: string | null = null;
+  try {
+    const rl = createInterface({
+      input: createReadStream(wirePath, { encoding: "utf-8" }),
+      crlfDelay: Infinity,
+    });
+    let bytes = 0;
+    for await (const line of rl) {
+      bytes += line.length;
+      if (bytes > SUMMARY_SCAN_BYTE_LIMIT) break;
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed: unknown = JSON.parse(trimmed);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+        const entry = parsed as Record<string, unknown>;
+        const message = entry["message"];
+        if (!message || typeof message !== "object" || Array.isArray(message)) continue;
+        const msg = message as Record<string, unknown>;
+        if (msg["type"] !== "TurnBegin") continue;
+        const payload = msg["payload"];
+        if (!payload || typeof payload !== "object" || Array.isArray(payload)) continue;
+        const userInput = (payload as Record<string, unknown>)["user_input"];
+        if (typeof userInput === "string" && userInput.length > 0) {
+          summary =
+            userInput.length > SUMMARY_MAX_CHARS
+              ? userInput.slice(0, SUMMARY_MAX_CHARS) + "..."
+              : userInput;
+          break;
+        }
+      } catch {
+        // Skip malformed line
+      }
+    }
+    rl.close();
+  } catch {
+    return null;
   }
-  return newest;
+  return summary;
 }
 
 // =============================================================================
@@ -319,21 +327,15 @@ function createKimicodeAgent(): Agent {
       const activityState = checkActivityLogState(activityResult);
       if (activityState) return activityState;
 
-      // 3. Native signal — freshest mtime across state.json (from the cached
-      //    match) and the per-turn context.jsonl / wire.jsonl files inside the
-      //    matching ~/.kimi/<session>/ directory. state.json's mtime is reused
-      //    from the match rather than re-stat'd.
+      // 3. Native signal — mtime of the freshest live file (context.jsonl /
+      //    wire.jsonl) inside ~/.kimi/sessions/<md5(cwd)>/<uuid>/. The match
+      //    already captured the mtime during the scan, so no re-stat here.
       const match = await findKimiSessionMatch(session.workspacePath);
       if (match) {
-        const liveMtime = await getKimiLiveSignalMtime(match.dir);
-        const mtime =
-          liveMtime && liveMtime.getTime() > match.stateMtime.getTime()
-            ? liveMtime
-            : match.stateMtime;
-        const ageMs = Math.max(0, Date.now() - mtime.getTime());
-        if (ageMs <= activeWindowMs) return { state: "active", timestamp: mtime };
-        if (ageMs <= threshold) return { state: "ready", timestamp: mtime };
-        return { state: "idle", timestamp: mtime };
+        const ageMs = Math.max(0, Date.now() - match.mtime.getTime());
+        if (ageMs <= activeWindowMs) return { state: "active", timestamp: match.mtime };
+        if (ageMs <= threshold) return { state: "ready", timestamp: match.mtime };
+        return { state: "idle", timestamp: match.mtime };
       }
 
       // 4. JSONL entry fallback (MANDATORY) — uses the last AO activity entry
@@ -411,14 +413,14 @@ function createKimicodeAgent(): Agent {
       const match = await findKimiSessionMatch(session.workspacePath);
       if (!match) return null;
 
-      const { state } = match;
-      const summary = state.title ?? (state.model ? `Kimi session (${state.model})` : null);
+      // Best-effort summary: first user input from wire.jsonl. Kimi does not
+      // store a title, model, or cost breakdown on disk.
+      const summary = await extractKimiSummary(match.dir);
 
       return {
         summary,
         summaryIsFallback: true,
-        agentSessionId: state.sessionId,
-        // Kimi does not expose token/cost data in state.json.
+        agentSessionId: match.sessionId,
       };
     },
 
@@ -431,23 +433,10 @@ function createKimicodeAgent(): Agent {
       const configuredModel =
         typeof project.agentConfig?.model === "string" ? project.agentConfig.model : undefined;
 
-      if (!match.state.sessionId) {
-        // Fall back to `--continue` — resumes the latest session for the
-        // current working directory. The runtime spawns kimi with cwd set to
-        // the workspace, so this is safe.
-        const parts: string[] = ["kimi", "--continue"];
-        appendApprovalFlags(parts, project.agentConfig?.permissions);
-        if (configuredModel) {
-          parts.push("--model", shellEscape(configuredModel));
-        }
-        return parts.join(" ");
-      }
-
-      const parts: string[] = ["kimi", "--resume", shellEscape(match.state.sessionId)];
+      const parts: string[] = ["kimi", "--resume", shellEscape(match.sessionId)];
       appendApprovalFlags(parts, project.agentConfig?.permissions);
-      const effectiveModel = configuredModel ?? match.state.model ?? undefined;
-      if (effectiveModel) {
-        parts.push("--model", shellEscape(effectiveModel));
+      if (configuredModel) {
+        parts.push("--model", shellEscape(configuredModel));
       }
       return parts.join(" ");
     },
