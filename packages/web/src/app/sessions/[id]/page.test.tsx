@@ -135,7 +135,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions") {
+      if (url === "/api/sessions?fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -143,7 +143,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
+      if (url === "/api/sessions?project=my-app&orchestratorOnly=true&fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -177,18 +177,18 @@ describe("SessionPage project polling", () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(fetch).toHaveBeenCalledWith(
-      "/api/sessions",
+      "/api/sessions?fresh=true",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
 
     expect(fetch).toHaveBeenCalledWith(
-      "/api/sessions?project=my-app&orchestratorOnly=true",
+      "/api/sessions?project=my-app&orchestratorOnly=true&fresh=true",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
 
     expect(
       vi.mocked(fetch).mock.calls.filter(
-        ([url]) => url === "/api/sessions?project=my-app&orchestratorOnly=true",
+        ([url]) => url === "/api/sessions?project=my-app&orchestratorOnly=true&fresh=true",
       ),
     ).toHaveLength(1);
 
@@ -199,12 +199,12 @@ describe("SessionPage project polling", () => {
 
     expect(
       vi.mocked(fetch).mock.calls.filter(
-        ([url]) => url === "/api/sessions?project=my-app&orchestratorOnly=true",
+        ([url]) => url === "/api/sessions?project=my-app&orchestratorOnly=true&fresh=true",
       ),
     ).toHaveLength(1);
 
     expect(
-      vi.mocked(fetch).mock.calls.filter(([url]) => url === "/api/sessions"),
+      vi.mocked(fetch).mock.calls.filter(([url]) => url === "/api/sessions?fresh=true"),
     ).toHaveLength(3);
   });
 
@@ -236,7 +236,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions") {
+      if (url === "/api/sessions?fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -244,7 +244,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
+      if (url === "/api/sessions?project=my-app&orchestratorOnly=true&fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -252,7 +252,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions?project=my-app") {
+      if (url === "/api/sessions?project=my-app&fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -274,7 +274,7 @@ describe("SessionPage project polling", () => {
     await flushAsyncWork();
 
     expect(fetch).toHaveBeenCalledWith(
-      "/api/sessions?project=my-app",
+      "/api/sessions?project=my-app&fresh=true",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
@@ -360,7 +360,7 @@ describe("SessionPage project polling", () => {
         return new Promise<Response>(() => {});
       }
 
-      if (url === "/api/sessions") {
+      if (url === "/api/sessions?fresh=true") {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -411,13 +411,13 @@ describe("SessionPage project polling", () => {
         } as Response);
       }
 
-      if (url === "/api/sessions") {
+      if (url === "/api/sessions?fresh=true") {
         return new Promise<Response>((resolve) => {
           resolveSidebarSessions = resolve;
         });
       }
 
-      if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
+      if (url === "/api/sessions?project=my-app&orchestratorOnly=true&fresh=true") {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -481,7 +481,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions") {
+      if (url === "/api/sessions?fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -489,7 +489,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
+      if (url === "/api/sessions?project=my-app&orchestratorOnly=true&fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -514,7 +514,7 @@ describe("SessionPage project polling", () => {
       fetchMock.mock.calls.filter(([url]) => url === "/api/projects"),
     ).toHaveLength(2);
     expect(
-      fetchMock.mock.calls.filter(([url]) => url === "/api/sessions"),
+      fetchMock.mock.calls.filter(([url]) => url === "/api/sessions?fresh=true"),
     ).toHaveLength(2);
   });
 
@@ -541,7 +541,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions") {
+      if (url === "/api/sessions?fresh=true") {
         return {
           ok: false,
           status: 500,
@@ -549,7 +549,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
+      if (url === "/api/sessions?project=my-app&orchestratorOnly=true&fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -614,13 +614,13 @@ describe("SessionPage project polling", () => {
         } as Response);
       }
 
-      if (url === "/api/sessions") {
+      if (url === "/api/sessions?fresh=true") {
         return new Promise<Response>((resolve) => {
           resolveSidebarSessions = resolve;
         });
       }
 
-      if (url === "/api/sessions?project=my-app&orchestratorOnly=true") {
+      if (url === "/api/sessions?project=my-app&orchestratorOnly=true&fresh=true") {
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -682,7 +682,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions") {
+      if (url === "/api/sessions?fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -742,7 +742,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions?project=broken-app&orchestratorOnly=true") {
+      if (url === "/api/sessions?project=broken-app&orchestratorOnly=true&fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -789,7 +789,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions") {
+      if (url === "/api/sessions?fresh=true") {
         return {
           ok: true,
           status: 200,
@@ -797,7 +797,7 @@ describe("SessionPage project polling", () => {
         } as Response;
       }
 
-      if (url === "/api/sessions?project=other-app&orchestratorOnly=true") {
+      if (url === "/api/sessions?project=other-app&orchestratorOnly=true&fresh=true") {
         return {
           ok: true,
           status: 200,

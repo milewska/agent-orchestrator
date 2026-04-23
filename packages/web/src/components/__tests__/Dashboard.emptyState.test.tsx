@@ -127,6 +127,24 @@ describe("Dashboard empty state", () => {
     });
   });
 
+  it("clears a live load error banner after a healthy snapshot with unchanged sessions", async () => {
+    render(<Dashboard initialSessions={[]} />);
+
+    await waitFor(() => {
+      lastEventSourceMock.onmessage?.({
+        data: JSON.stringify({ type: "error", error: "session list timed out" }),
+      } as MessageEvent);
+      expect(screen.getByRole("alert")).toHaveTextContent("session list timed out");
+    });
+
+    await waitFor(() => {
+      lastEventSourceMock.onmessage?.({
+        data: JSON.stringify({ type: "snapshot", sessions: [] }),
+      } as MessageEvent);
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+  });
+
   it("shows empty state when only done sessions exist", () => {
     render(
       <Dashboard

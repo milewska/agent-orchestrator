@@ -92,7 +92,13 @@ function reducer(state: State, action: Action): State {
         Object.keys(levels).length !== Object.keys(state.sseAttentionLevels).length ||
         action.patches.some((p) => state.sseAttentionLevels[p.id] !== p.attentionLevel);
 
-      if (!sessionsChanged && !levelsChanged) return state;
+      if (!sessionsChanged && !levelsChanged) {
+        if (state.loadError === undefined) return state;
+        return {
+          ...state,
+          loadError: undefined,
+        };
+      }
 
       return {
         ...state,

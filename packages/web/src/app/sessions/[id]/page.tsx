@@ -335,8 +335,8 @@ export default function SessionPage() {
     fetchingProjectSessionsRef.current = true;
     try {
       const query = isOrchestrator
-        ? `/api/sessions?project=${encodeURIComponent(projectId)}`
-        : `/api/sessions?project=${encodeURIComponent(projectId)}&orchestratorOnly=true`;
+        ? `/api/sessions?project=${encodeURIComponent(projectId)}&fresh=true`
+        : `/api/sessions?project=${encodeURIComponent(projectId)}&orchestratorOnly=true&fresh=true`;
       const body = await fetchJsonWithTimeout<ProjectSessionsBody>(query, {
         timeoutMs: PROJECT_SIDEBAR_FETCH_TIMEOUT_MS,
         timeoutMessage: `Project sessions request timed out after ${PROJECT_SIDEBAR_FETCH_TIMEOUT_MS}ms`,
@@ -383,7 +383,7 @@ export default function SessionPage() {
     if (fetchingSidebarRef.current) return;
     fetchingSidebarRef.current = true;
     try {
-      const body = await fetchJsonWithTimeout<{ sessions?: DashboardSession[] } | null>("/api/sessions", {
+      const body = await fetchJsonWithTimeout<{ sessions?: DashboardSession[] } | null>("/api/sessions?fresh=true", {
         timeoutMs: PROJECT_SIDEBAR_FETCH_TIMEOUT_MS,
         timeoutMessage: `Sidebar sessions request timed out after ${PROJECT_SIDEBAR_FETCH_TIMEOUT_MS}ms`,
       });
