@@ -46,7 +46,7 @@ import type {
   Runtime,
   Agent,
   Workspace,
-  SessionManager,
+  OpenCodeSessionManager,
   Session,
 } from "../types.js";
 
@@ -118,7 +118,7 @@ beforeEach(() => {
     name: "Test App",
     repo: "acme/app",
     path: join(env.tmpDir, "test-app"),
-    storageKey: "111111111111",
+    storageKey: "222222222222",
     defaultBranch: "main",
     sessionPrefix: "app",
     tracker: { plugin: "github" },
@@ -474,7 +474,7 @@ describe("plugin integration", () => {
   // -------------------------------------------------------------------------
   describe("LifecycleManager + SCM", () => {
     let registry: PluginRegistry;
-    let sm: SessionManager;
+    let sm: OpenCodeSessionManager;
 
     beforeEach(() => {
       registry = createTestRegistry();
@@ -510,7 +510,7 @@ describe("plugin integration", () => {
         }]]),
       );
 
-      const mockSM: SessionManager = {
+      const mockSM: OpenCodeSessionManager = {
         ...sm,
         list: vi.fn().mockResolvedValue([makeSession({ status: "pr_open", pr })]),
         get: vi.fn().mockResolvedValue(makeSession({ status: "pr_open", pr })),
@@ -544,7 +544,7 @@ describe("plugin integration", () => {
         }]]),
       );
 
-      const mockSM: SessionManager = {
+      const mockSM: OpenCodeSessionManager = {
         ...sm,
         list: vi.fn().mockResolvedValue([makeSession({ status: "pr_open", pr })]),
         get: vi.fn().mockResolvedValue(makeSession({ status: "pr_open", pr })),
@@ -578,7 +578,7 @@ describe("plugin integration", () => {
         }]]),
       );
 
-      const mockSM: SessionManager = {
+      const mockSM: OpenCodeSessionManager = {
         ...sm,
         list: vi.fn().mockResolvedValue([makeSession({ status: "pr_open", pr })]),
         get: vi.fn().mockResolvedValue(makeSession({ status: "pr_open", pr })),
