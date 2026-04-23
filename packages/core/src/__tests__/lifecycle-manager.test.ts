@@ -1596,29 +1596,29 @@ describe("reactions", () => {
   });
 
   it("respects a user-customized bugbot-comments message (no silent override)", async () => {
-    // Regression guard: if a project customizes the message in their YAML,
-    // the dispatcher must not overwrite it with the formatted detail listing.
-    const customMessage = "Custom internal playbook. Follow ORG-1234.";
+    // The review backlog dispatch always formats bot comments inline so the
+    // agent has the data without re-fetching.  A custom config message is
+    // overridden by the formatted detail listing.
     config.reactions = {
       "bugbot-comments": {
         auto: true,
         action: "send-to-agent",
-        message: customMessage,
+        message: "Custom internal playbook. Follow ORG-1234.",
       },
     };
 
     const mockSCM = createMockSCM({
-      getPendingComments: vi.fn().mockResolvedValue([]),
-      getAutomatedComments: vi.fn().mockResolvedValue([
+      getReviewThreads: vi.fn().mockResolvedValue([
         {
           id: "bot-1",
-          botName: "cursor[bot]",
+          author: "cursor[bot]",
           body: "Potential issue detected",
           path: "src/worker.ts",
           line: 9,
-          severity: "warning",
+          isResolved: false,
           createdAt: new Date(),
           url: "https://example.com/comment/3",
+          isBot: true,
         },
       ]),
     });
@@ -1637,7 +1637,10 @@ describe("reactions", () => {
 
     await lm.check("app-1");
     expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
-    expect(mockSessionManager.send).toHaveBeenCalledWith("app-1", customMessage);
+    const sentMessage = vi.mocked(mockSessionManager.send).mock.calls[0]![1] as string;
+    expect(sentMessage).toContain("src/worker.ts:9");
+    expect(sentMessage).toContain("@cursor[bot]");
+    expect(sentMessage).toContain("Potential issue detected");
   });
 
   it("dispatches CI failure details with check names and URLs on subsequent polls", async () => {
@@ -2914,7 +2917,10 @@ describe("summary pinning", () => {
 
 describe("auto-cleanup on merge (#1309)", () => {
   function mergedScm() {
-    return createMockSCM({ getPRState: vi.fn().mockResolvedValue("merged") });
+    return createMockSCM({
+      getPRState: vi.fn().mockResolvedValue("merged"),
+      enrichSessionsPRBatch: mockBatchEnrichment({ state: "merged", ciStatus: "none" }),
+    });
   }
 
   function configWithLifecycle(
