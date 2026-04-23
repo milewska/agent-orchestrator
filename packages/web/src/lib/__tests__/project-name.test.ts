@@ -21,6 +21,7 @@ vi.mock("@aoagents/ao-core", () => ({
 
 describe("project-name fallback discovery", () => {
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.resetModules();
     mockLoadConfig.mockReset();
     mockGetGlobalConfigPath.mockClear();
@@ -51,5 +52,31 @@ describe("project-name fallback discovery", () => {
     expect(getProjectName()).toBe("Mono");
     expect(mockLoadConfig).toHaveBeenNthCalledWith(1, "/tmp/global-config.yaml");
     expect(mockLoadConfig).toHaveBeenNthCalledWith(2);
+  });
+
+  it("prefers the current repo project over the first configured project", async () => {
+    const config = {
+      projects: {
+        "vinesight-web": {
+          name: "vinesight-web",
+          path: "/Users/ashishhuddar/vinesight",
+          sessionPrefix: "vw",
+        },
+        "agent-orchestrator": {
+          name: "Agent Orchestrator",
+          path: "/Users/ashishhuddar/agent-orchestrator",
+          sessionPrefix: "ao",
+        },
+      },
+      degradedProjects: {},
+    };
+
+    mockLoadConfig.mockReturnValue(config);
+    vi.spyOn(process, "cwd").mockReturnValue("/Users/ashishhuddar/agent-orchestrator");
+
+    const { getPrimaryProjectId, getProjectName } = await import("../project-name");
+
+    expect(getPrimaryProjectId()).toBe("agent-orchestrator");
+    expect(getProjectName()).toBe("Agent Orchestrator");
   });
 });
