@@ -1994,7 +1994,7 @@ describe("reactions", () => {
     expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
     vi.mocked(mockSessionManager.send).mockClear();
 
-    // Second: conflicts resolved
+    // Second: conflicts resolved (first clear poll — debounce count = 1)
     getMergeabilityMock.mockResolvedValue({
       mergeable: true,
       ciPassing: true,
@@ -2005,10 +2005,12 @@ describe("reactions", () => {
     await lm.check("app-1");
     expect(mockSessionManager.send).not.toHaveBeenCalled();
 
+    // Third: still resolved (second clear poll — debounce count = 2 → flag cleared)
+    await lm.check("app-1");
     const metadata = readMetadataRaw(env.sessionsDir, "app-1");
     expect(metadata?.["lastMergeConflictDispatched"]).toBeFalsy();
 
-    // Third: conflicts recur — should re-dispatch
+    // Fourth: conflicts recur — should re-dispatch
     getMergeabilityMock.mockResolvedValue({
       mergeable: false,
       ciPassing: true,
@@ -2894,6 +2896,7 @@ describe("reaction tracker oscillation protection (#1409)", () => {
   const pr = makePR();
 
   it("does not re-dispatch CI failure on status oscillation (ci_failed → working → ci_failed)", async () => {
+    vi.useFakeTimers();
     config.reactions = {
       "ci-failed": {
         auto: true,
@@ -2983,6 +2986,7 @@ describe("reaction tracker oscillation protection (#1409)", () => {
   });
 
   it("does not re-dispatch merge conflicts when enrichment cache oscillates", async () => {
+    vi.useFakeTimers();
     config.reactions = {
       "merge-conflicts": {
         auto: true,
@@ -3067,6 +3071,7 @@ describe("reaction tracker oscillation protection (#1409)", () => {
   });
 
   it("re-dispatches merge conflicts after genuine resolution followed by new conflicts", async () => {
+    vi.useFakeTimers();
     config.reactions = {
       "merge-conflicts": {
         auto: true,
