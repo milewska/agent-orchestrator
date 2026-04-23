@@ -456,6 +456,7 @@ async function checkPRListETag(
     }
 
     const errorMsg = err instanceof Error ? err.message : String(err);
+    // Log but don't throw - allow GraphQL batch to proceed
     // eslint-disable-next-line no-console -- Observability logging for ETag errors
     console.warn(`[ETag Guard 1] PR list check failed for ${repoKey}: ${errorMsg}`);
     return true; // Assume changed to be safe
@@ -521,6 +522,7 @@ async function checkCommitStatusETag(
     }
 
     const errorMsg = err instanceof Error ? err.message : String(err);
+    // Log but don't throw - allow GraphQL batch to proceed
     // eslint-disable-next-line no-console -- Observability logging for ETag errors
     console.warn(
       `[ETag Guard 2] Commit status check failed for ${commitKey}: ${errorMsg}`,
