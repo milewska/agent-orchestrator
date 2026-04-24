@@ -920,6 +920,7 @@ function createGitHubSCM(): SCM {
               pullRequest(number: $number) {
                 reviewThreads(first: 100) {
                   nodes {
+                    id
                     isResolved
                     comments(first: 1) {
                       nodes {
@@ -945,6 +946,7 @@ function createGitHubSCM(): SCM {
               pullRequest: {
                 reviewThreads: {
                   nodes: Array<{
+                    id: string;
                     isResolved: boolean;
                     comments: {
                       nodes: Array<{
@@ -978,6 +980,7 @@ function createGitHubSCM(): SCM {
             const c = t.comments.nodes[0];
             return {
               id: c.id,
+              threadId: t.id,
               author: c.author?.login ?? "unknown",
               body: c.body,
               path: c.path || undefined,
@@ -1011,6 +1014,7 @@ function createGitHubSCM(): SCM {
                 pullRequest(number: $number) {
                   reviewThreads(first: 100) {
                     nodes {
+                      id
                       isResolved
                       comments(first: 1) {
                         nodes {
@@ -1036,6 +1040,7 @@ function createGitHubSCM(): SCM {
                 pullRequest: {
                   reviewThreads: {
                     nodes: Array<{
+                      id: string;
                       isResolved: boolean;
                       comments: {
                         nodes: Array<{
@@ -1068,6 +1073,7 @@ function createGitHubSCM(): SCM {
               const author = c.author?.login ?? "unknown";
               return {
                 id: c.id,
+                threadId: t.id,
                 author,
                 body: c.body,
                 path: c.path || undefined,
@@ -1265,8 +1271,9 @@ function createGitHubSCM(): SCM {
     async enrichSessionsPRBatch(
       prs: PRInfo[],
       observer?: BatchObserver,
+      repos?: string[],
     ): Promise<Map<string, PREnrichmentData>> {
-      const batchResult = await enrichSessionsPRBatchImpl(prs, observer);
+      const batchResult = await enrichSessionsPRBatchImpl(prs, observer, repos);
       return batchResult.enrichment;
     },
   };

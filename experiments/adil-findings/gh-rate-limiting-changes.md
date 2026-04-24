@@ -200,3 +200,13 @@ Stored in `$AO_DATA_DIR/.ghcache/$AO_SESSION/`. Cache key includes `--json` fiel
 24. **Web dashboard reads metadata instead of calling GitHub API** — `serialize.ts` reads enrichment from disk. Dashboard freshness improved from 5 min → 30s (tied to lifecycle poll)
 25. **Removed web dashboard's duplicate lifecycle manager** — eliminated the second independent polling loop that was the source of ~54% of remaining duplicate traffic. Dashboard API calls: ~150/15 min → 0
 26. **Fixed `storageKey` usage in `persistPREnrichmentToMetadata`** — was using wrong key for `getSessionsDir`
+
+---
+
+### Track F — Gate detectPR behind Guard 1 ETag (Apr 24)
+
+27. **Moved detectPR out of `determineStatus()` into `populatePREnrichmentCache()`** — detectPR now runs once per poll cycle for all PR-less sessions, gated by Guard 1. When Guard 1 returns 304 (no PR list changes in the repo), all detectPR calls are skipped — no new PRs can exist. When Guard 1 returns 200, detectPR runs for PR-less sessions in that repo only.
+28. **Added `prListUnchangedRepos` to ETag guard result** — `shouldRefreshPREnrichment()` now tracks which repos returned 304. Reported to the lifecycle manager via `BatchObserver.reportPRListUnchangedRepos()` callback.
+29. **Removed detectPR block from `determineStatus()`** — PR discovery is fully handled in `populatePREnrichmentCache` before session checks run. No flags, no fallback.
+   - Impact: 10 sessions with no PRs for 10 minutes → ~200 wasted calls reduced to ~10 (only on 200 cycles). ~95% reduction in detectPR calls.
+   - Tradeoff: max 30-second delay (one poll cycle) in discovering a just-created PR.

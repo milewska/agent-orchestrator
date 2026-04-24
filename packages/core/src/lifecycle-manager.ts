@@ -346,33 +346,43 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     prEnrichmentCache.clear();
     prListUnchangedRepos = new Set();
 
-    // Collect all unique PRs keyed by their owning session's project/plugin.
+    // Collect all unique PRs and repos keyed by their owning session's project/plugin.
+    // Repos are collected from ALL sessions (not just ones with PRs) so Guard 1 runs
+    // for every active repo — enabling detectPR gating even when no PRs exist yet.
     const prsByPlugin = new Map<string, Array<NonNullable<Session["pr"]>>>();
+    const reposByPlugin = new Map<string, Set<string>>();
     const seenPRKeys = new Set<string>();
     for (const session of sessions) {
-      if (!session.pr) continue;
       const project = config.projects[session.projectId];
-      if (!project?.scm?.plugin) continue;
-
-      const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
-      if (seenPRKeys.has(prKey)) continue;
-      seenPRKeys.add(prKey);
+      if (!project?.scm?.plugin || !project.repo) continue;
 
       const pluginKey = project.scm.plugin;
       if (!prsByPlugin.has(pluginKey)) {
         prsByPlugin.set(pluginKey, []);
       }
+      if (!reposByPlugin.has(pluginKey)) {
+        reposByPlugin.set(pluginKey, new Set());
+      }
+      reposByPlugin.get(pluginKey)!.add(project.repo);
+
+      if (!session.pr) continue;
+
+      const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
+      if (seenPRKeys.has(prKey)) continue;
+      seenPRKeys.add(prKey);
+
       const pluginPRs = prsByPlugin.get(pluginKey);
       if (pluginPRs) {
         pluginPRs.push(session.pr);
       }
     }
 
-    // Fetch enrichment data for each plugin's PRs
+    // Fetch enrichment data and run Guard 1 for all active repos
     for (const [pluginKey, pluginPRs] of prsByPlugin) {
       const scm = registry.get<SCM>("scm", pluginKey);
       if (!scm?.enrichSessionsPRBatch) continue;
 
+      const pluginRepos = [...(reposByPlugin.get(pluginKey) ?? [])];
       const batchStartTime = Date.now();
       try {
         const enrichmentData = await scm.enrichSessionsPRBatch(
@@ -431,6 +441,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
               }
             },
           },
+          pluginRepos,
         );
 
         // Merge into cache
@@ -1321,8 +1332,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       const location = c.path ? `${c.path}${c.line ? `:${c.line}` : ""}` : "(general)";
       lines.push(`${i + 1}. ${location} (@${c.author}): "${c.body}"`);
       if (c.url) lines.push(`   ${c.url}`);
+      if (c.threadId) lines.push(`   Thread ID: ${c.threadId}`);
     }
-    lines.push("", "Address each comment, push fixes.");
+    lines.push("", "Address each comment, push fixes. Use the thread ID to resolve each thread directly after pushing — do not re-fetch review data.");
     return lines.join("\n");
   }
 

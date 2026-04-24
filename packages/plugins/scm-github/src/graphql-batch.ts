@@ -195,13 +195,10 @@ function updatePRMetadataCache(
  */
 export async function shouldRefreshPREnrichment(
   prs: PRInfo[],
+  extraRepos: string[] = [],
 ): Promise<ETagGuardResult> {
   const details: string[] = [];
   let shouldRefresh = false;
-
-  if (prs.length === 0) {
-    return { shouldRefresh: false, details: ["No PRs to check"], prListUnchangedRepos: new Set() };
-  }
 
   // Group PRs by repository for Guard 1 (PR list check)
   const repos = new Map<string, PRInfo[]>();
@@ -215,6 +212,17 @@ export async function shouldRefreshPREnrichment(
     if (repoPrs) {
       repoPrs.push(pr);
     }
+  }
+
+  // Include repos from PR-less sessions so Guard 1 runs for them too
+  for (const repoKey of extraRepos) {
+    if (!repos.has(repoKey)) {
+      repos.set(repoKey, []);
+    }
+  }
+
+  if (repos.size === 0) {
+    return { shouldRefresh: false, details: ["No repos to check"], prListUnchangedRepos: new Set() };
   }
 
   // Guard 1: Check PR list ETag for each repository
@@ -929,15 +937,14 @@ function extractPREnrichment(
 export async function enrichSessionsPRBatch(
   prs: PRInfo[],
   observer?: BatchObserver,
+  repos: string[] = [],
 ): Promise<BatchEnrichmentResult> {
   const result = new Map<string, PREnrichmentData>();
 
-  if (prs.length === 0) {
-    return { enrichment: result, prListUnchangedRepos: new Set() };
-  }
-
   // Step 1: Check if we need to refresh using 2-Guard ETag Strategy
-  const guardResult = await shouldRefreshPREnrichment(prs);
+  // Guard 1 runs for all repos (including those with no PRs yet) so the
+  // lifecycle manager knows whether detectPR can be skipped.
+  const guardResult = await shouldRefreshPREnrichment(prs, repos);
 
   // Report which repos had no PR list changes so the lifecycle can skip detectPR
   observer?.reportPRListUnchangedRepos?.(guardResult.prListUnchangedRepos);

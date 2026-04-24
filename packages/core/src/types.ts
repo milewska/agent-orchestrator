@@ -812,7 +812,7 @@ export interface SCM {
    * @param observer - Optional observer for batch operation metrics
    * @returns Map keyed by "${owner}/${repo}#${number}" containing enrichment data
    */
-  enrichSessionsPRBatch?(prs: PRInfo[], observer?: BatchObserver): Promise<Map<string, PREnrichmentData>>;
+  enrichSessionsPRBatch?(prs: PRInfo[], observer?: BatchObserver, repos?: string[]): Promise<Map<string, PREnrichmentData>>;
 }
 
 /**
@@ -964,6 +964,8 @@ export type ReviewDecision = "approved" | "changes_requested" | "pending" | "non
 
 export interface ReviewComment {
   id: string;
+  /** GraphQL node ID of the review thread (for resolveReviewThread mutation). */
+  threadId?: string;
   author: string;
   body: string;
   path?: string;

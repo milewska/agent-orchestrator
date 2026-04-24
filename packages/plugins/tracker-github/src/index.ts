@@ -132,6 +132,7 @@ function issueCacheKey(repo: string, identifier: string): string {
 
 function createGitHubTracker(): Tracker {
   const issueCache = new Map<string, CachedIssue>();
+  const inflight = new Map<string, Promise<Issue>>();
 
   function readCachedIssue(repo: string, identifier: string): Issue | null {
     const key = issueCacheKey(repo, identifier);
@@ -167,31 +168,45 @@ function createGitHubTracker(): Tracker {
       const cached = readCachedIssue(repo, identifier);
       if (cached) return cached;
 
-      const raw = await ghIssueViewJson(identifier, project);
+      // Deduplicate concurrent requests for the same issue
+      const key = issueCacheKey(repo, identifier);
+      const pending = inflight.get(key);
+      if (pending) return pending;
 
-      const data: {
-        number: number;
-        title: string;
-        body: string;
-        url: string;
-        state: string;
-        stateReason?: string | null;
-        labels: Array<{ name: string }>;
-        assignees: Array<{ login: string }>;
-      } = JSON.parse(raw);
+      const promise = (async () => {
+        const raw = await ghIssueViewJson(identifier, project);
 
-      const issue: Issue = {
-        id: String(data.number),
-        title: data.title,
-        description: data.body ?? "",
-        url: data.url,
-        state: mapState(data.state, data.stateReason),
-        labels: data.labels.map((l) => l.name),
-        assignee: data.assignees[0]?.login,
-      };
+        const data: {
+          number: number;
+          title: string;
+          body: string;
+          url: string;
+          state: string;
+          stateReason?: string | null;
+          labels: Array<{ name: string }>;
+          assignees: Array<{ login: string }>;
+        } = JSON.parse(raw);
 
-      writeCachedIssue(repo, identifier, issue);
-      return issue;
+        const issue: Issue = {
+          id: String(data.number),
+          title: data.title,
+          description: data.body ?? "",
+          url: data.url,
+          state: mapState(data.state, data.stateReason),
+          labels: data.labels.map((l) => l.name),
+          assignee: data.assignees[0]?.login,
+        };
+
+        writeCachedIssue(repo, identifier, issue);
+        return issue;
+      })();
+
+      inflight.set(key, promise);
+      try {
+        return await promise;
+      } finally {
+        inflight.delete(key);
+      }
     },
 
     async isCompleted(identifier: string, project: ProjectConfig): Promise<boolean> {
@@ -241,6 +256,8 @@ function createGitHubTracker(): Tracker {
       }
 
       lines.push(
+        "",
+        "The issue context above is complete and current. You should not need to call gh issue view unless you need additional context beyond what is provided here.",
         "",
         "Please implement the changes described in this issue. When done, commit and push your changes.",
       );
