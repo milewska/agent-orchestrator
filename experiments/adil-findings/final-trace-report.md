@@ -20,7 +20,7 @@
 
 | Budget | Before | After | Consumed (snapshot) | Projected/hour |
 |--------|--------|-------|---------------------|----------------|
-| **GraphQL** (5,000/hr) | 8 used | 370 used | **362** | **~905** (18%) |
+| **GraphQL** (5,000/hr) | 8 used | 370 used | **362** | **~604** (12%) |
 | **REST** (5,000/hr) | 4 used | 6 used | **2** (see note) | **~110** (~2%) |
 
 ### REST budget note
@@ -173,9 +173,9 @@ These are legitimate — triggered by GitHub webhook events (PR created, CI stat
 |--------|----------|-------|:---------:|
 | **Total calls / test** | 465 | 266 | **-43%** |
 | **Calls / min** | 31 | 11 | **-65%** |
-| **GraphQL / hour** | 2,072 | 905 | **-56%** |
+| **GraphQL / hour** | 2,072 | 604 | **-56%** |
 | **REST / hour** | 168 | 5 | **-97%** |
-| **Max sessions** | ~12 | ~27 | **+125%** |
+| **Max sessions** | ~12 | ~41 | **+242%** |
 | **Dashboard API calls** | ~150 | 0 | **-100%** |
 | **Lifecycle managers** | 2 (duplicate) | 1 | **-50%** |
 | **Automated comment REST** | 40 | 0 | **-100%** |
