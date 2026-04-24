@@ -5,7 +5,9 @@ interface FetchJsonOptions extends RequestInit {
   timeoutMessage?: string;
 }
 
-function mergeAbortSignals(signals: Array<AbortSignal | null | undefined>): AbortSignal | undefined {
+function mergeAbortSignals(
+  signals: Array<AbortSignal | null | undefined>,
+): AbortSignal | undefined {
   const activeSignals = signals.filter((signal): signal is AbortSignal => Boolean(signal));
   if (activeSignals.length === 0) return undefined;
   if (activeSignals.length === 1) return activeSignals[0];
@@ -50,6 +52,7 @@ export async function fetchJsonWithTimeout<T>(
   const { timeoutMs = 8_000, timeoutMessage, signal, ...init } = options;
   const timeoutController = new AbortController();
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let timedOut = false;
 
   try {
     const mergedSignal = mergeAbortSignals([signal, timeoutController.signal]);
@@ -60,12 +63,23 @@ export async function fetchJsonWithTimeout<T>(
 
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
+        timedOut = true;
         timeoutController.abort();
         reject(new Error(timeoutMessage ?? `Request timed out after ${timeoutMs}ms`));
       }, timeoutMs);
     });
 
-    const response = await Promise.race([fetch(input, requestInit), timeoutPromise]);
+    const response = await Promise.race([
+      fetch(input, requestInit).catch((error: unknown) => {
+        if (timedOut) {
+          throw new Error(timeoutMessage ?? `Request timed out after ${timeoutMs}ms`, {
+            cause: error,
+          });
+        }
+        throw error;
+      }),
+      timeoutPromise,
+    ]);
 
     if (!response.ok) {
       throw new Error(await readErrorMessage(response));

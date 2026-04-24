@@ -18,7 +18,9 @@ import { homedir } from "node:os";
 import { promisify } from "node:util";
 import {
   isIssueNotFoundError,
+  isOrchestratorSession,
   isRestorable,
+  isTerminalSession,
   SessionNotFoundError,
   SessionNotRestorableError,
   WorkspaceMissingError,
@@ -1520,8 +1522,39 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       validateAndStoreOrigin(config.configPath, project.storageKey!);
     }
 
-    // Reserve a new unique orchestrator identity (e.g. {prefix}-orchestrator-1, -2, …).
-    // Each spawnOrchestrator call gets its own numbered session and isolated worktree.
+    if (orchestratorSessionStrategy === "reuse") {
+      const allSessionPrefixes = Object.entries(config.projects).map(
+        ([configuredProjectId, configuredProject]) =>
+          configuredProject.sessionPrefix ?? configuredProjectId,
+      );
+      const orchestrators = (await list(orchestratorConfig.projectId))
+        .filter((session) =>
+          isOrchestratorSession(
+            session,
+            project.sessionPrefix ?? orchestratorConfig.projectId,
+            allSessionPrefixes,
+          ),
+        )
+        .sort(
+          (a, b) =>
+            (b.lastActivityAt?.getTime() ?? 0) - (a.lastActivityAt?.getTime() ?? 0) ||
+            (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0) ||
+            a.id.localeCompare(b.id),
+        );
+      const live = orchestrators.filter((session) => !isTerminalSession(session));
+      const candidates =
+        live.length > 0 ? live : orchestrators.filter((session) => isRestorable(session));
+      const existing = candidates[0];
+      if (existing) {
+        if (!isTerminalSession(existing)) {
+          return existing;
+        }
+        return restore(existing.id);
+      }
+    }
+
+    // Reserve a unique orchestrator identity only after the reusable singleton
+    // path is exhausted.
     const identity = reserveNextOrchestratorIdentity(project, sessionsDir);
     const sessionId = identity.sessionId;
     const tmuxName = identity.tmuxName;

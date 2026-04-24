@@ -1251,15 +1251,15 @@ describe("spawn", () => {
       expect(meta?.["project"]).toBe("my-app");
     });
 
-    it("increments the orchestrator counter for each new session", async () => {
+    it("reuses the existing orchestrator session by default", async () => {
       const sm = createSessionManager({ config, registry: mockRegistry });
 
       const s1 = await sm.spawnOrchestrator({ projectId: "my-app" });
       const s2 = await sm.spawnOrchestrator({ projectId: "my-app" });
 
       expect(s1.id).toBe("app-orchestrator-1");
-      expect(s2.id).toBe("app-orchestrator-2");
-      expect(mockWorkspace.create).toHaveBeenCalledTimes(2);
+      expect(s2.id).toBe("app-orchestrator-1");
+      expect(mockWorkspace.create).toHaveBeenCalledTimes(1);
     });
 
     it("cleans up reserved metadata on workspace creation failure", async () => {

@@ -18,11 +18,23 @@ const STALE_REFRESH_INTERVAL_MS = 15000;
 const DISCONNECTED_GRACE_PERIOD_MS = 4000;
 const LIVE_REFRESH_TIMEOUT_MS = 6000;
 
+function isAbortLikeError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === "AbortError";
+  }
+
+  if (error instanceof Error) {
+    const message = error.message.toLowerCase();
+    return message.includes("aborted") || message.includes("aborterror");
+  }
+
+  return false;
+}
+
 type ConnectionStatus = "connected" | "reconnecting" | "disconnected";
 
 /** Server-computed attention levels from the latest SSE snapshot. */
 export type SSEAttentionMap = Readonly<Record<string, AttentionLevel>>;
-
 
 interface State {
   sessions: DashboardSession[];
@@ -78,7 +90,12 @@ function reducer(state: State, action: Action): State {
           return s;
         }
         changed = true;
-        return { ...s, status: patch.status, activity: patch.activity, lastActivityAt: patch.lastActivityAt };
+        return {
+          ...s,
+          status: patch.status,
+          activity: patch.activity,
+          lastActivityAt: patch.lastActivityAt,
+        };
       });
 
       // Build attention level map from server-computed values
@@ -122,7 +139,13 @@ function createMembershipKey(
 export interface UseSessionEventsOptions {
   initialSessions: DashboardSession[];
   project?: string;
-  muxSessions?: Array<{ id: string; status: string; activity: string | null; attentionLevel: AttentionLevel; lastActivityAt: string }>;
+  muxSessions?: Array<{
+    id: string;
+    status: string;
+    activity: string | null;
+    attentionLevel: AttentionLevel;
+    lastActivityAt: string;
+  }>;
   initialAttentionLevels?: SSEAttentionMap;
   disabled?: boolean;
   /**
@@ -164,6 +187,7 @@ export function useSessionEvents(options: UseSessionEventsOptions): State {
   const lastFetchStartedAtRef = useRef(0);
   const disconnectedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeRefreshControllerRef = useRef<AbortController | null>(null);
+  const pageUnloadingRef = useRef(false);
 
   // Reset state when server-rendered props change (e.g. full page refresh)
   useEffect(() => {
@@ -182,6 +206,22 @@ export function useSessionEvents(options: UseSessionEventsOptions): State {
   // not on every new snapshot array reference. Used in the SSE effect deps so
   // SSE setup/teardown runs only on that transition, not every mux update.
   const muxActive = muxSessions !== undefined;
+
+  useEffect(() => {
+    pageUnloadingRef.current = false;
+
+    const markPageUnloading = () => {
+      pageUnloadingRef.current = true;
+    };
+
+    window.addEventListener("pagehide", markPageUnloading);
+    window.addEventListener("beforeunload", markPageUnloading);
+
+    return () => {
+      window.removeEventListener("pagehide", markPageUnloading);
+      window.removeEventListener("beforeunload", markPageUnloading);
+    };
+  }, []);
 
   // Define scheduleRefresh with useCallback so both effects can use it
   const scheduleRefresh = useCallback(() => {
@@ -212,30 +252,29 @@ export function useSessionEvents(options: UseSessionEventsOptions): State {
         timeoutMs: LIVE_REFRESH_TIMEOUT_MS,
         timeoutMessage: `Dashboard refresh timed out after ${LIVE_REFRESH_TIMEOUT_MS}ms`,
       })
-        .then(
-          (updated) => {
-            if (refreshController.signal.aborted || !updated?.sessions) {
-              // Update timestamp even for non-OK responses to prevent retry storms
-              if (!refreshController.signal.aborted) {
-                lastRefreshAtRef.current = Date.now();
-              }
-              return;
+        .then((updated) => {
+          if (refreshController.signal.aborted || !updated?.sessions) {
+            // Update timestamp even for non-OK responses to prevent retry storms
+            if (!refreshController.signal.aborted) {
+              lastRefreshAtRef.current = Date.now();
             }
+            return;
+          }
 
-            lastRefreshAtRef.current = Date.now();
-            dispatch({ type: "markLiveSessionsResolved" });
-            const sseAttentionLevels = Object.fromEntries(
-              updated.sessions.map((s) => [s.id, getAttentionLevel(s, attentionZones)]),
-            ) as SSEAttentionMap;
-            dispatch({
-              type: "reset",
-              sessions: updated.sessions,
-              sseAttentionLevels,
-            });
-          },
-        )
+          lastRefreshAtRef.current = Date.now();
+          dispatch({ type: "markLiveSessionsResolved" });
+          const sseAttentionLevels = Object.fromEntries(
+            updated.sessions.map((s) => [s.id, getAttentionLevel(s, attentionZones)]),
+          ) as SSEAttentionMap;
+          dispatch({
+            type: "reset",
+            sessions: updated.sessions,
+            sseAttentionLevels,
+          });
+        })
         .catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === "AbortError") return;
+          if (pageUnloadingRef.current || refreshController.signal.aborted || isAbortLikeError(err))
+            return;
           console.warn("[useSessionEvents] refresh failed:", err);
           dispatch({
             type: "setLoadError",
