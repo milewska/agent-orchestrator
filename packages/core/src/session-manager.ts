@@ -18,9 +18,7 @@ import { homedir } from "node:os";
 import { promisify } from "node:util";
 import {
   isIssueNotFoundError,
-  isOrchestratorSession,
   isRestorable,
-  isTerminalSession,
   SessionNotFoundError,
   SessionNotRestorableError,
   WorkspaceMissingError,
