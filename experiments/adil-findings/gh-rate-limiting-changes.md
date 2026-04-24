@@ -102,6 +102,10 @@ AO was hitting GitHub's 5,000 pts/hr GraphQL limit at just ~12 concurrent sessio
 
 11. **Enriched review data for agents** — `getReviewThreads` now fetches `reviewThreads(last: 100)` + `reviews(last: 5)`. Agent messages include review summaries, thread IDs, and inline comment data. Prompt instructs agents to resolve threads directly and not re-fetch.
 
+12. **CI failure details in transition reaction** — removed the two-message flow. Agent gets full CI check names + URLs on the first message when status transitions to `ci_failed`. Removed `maybeDispatchCIFailureDetails` (Phase 4) entirely.
+
+13. **Enriched merge conflict message** — dynamic message with base branch name and behind status from batch cache. Agent no longer needs to call `gh pr view` for merge status.
+
 ---
 
 ## Architectural Caches
@@ -274,3 +278,18 @@ Stored in `$AO_DATA_DIR/.ghcache/$AO_SESSION/`. Cache key includes `--json` fiel
    The following 1 unresolved review comment(s)...
    ```
 39. **Review summaries persisted to metadata** — `prReviewComments` blob now includes review summaries for dashboard consumption.
+
+---
+
+### Track H — CI Details in Transition + Merge Conflict Enrichment (Apr 25)
+
+40. **Merged CI failure details into transition reaction** — when status transitions to `ci_failed`, the transition reaction now sends the full detailed message (check names, statuses, URLs) from batch cache instead of a static "Run `gh pr checks`" string. Agent gets everything in one message on the first poll.
+41. **Removed `maybeDispatchCIFailureDetails` (Phase 4)** — the separate follow-up dispatch is no longer needed. Transition reaction handles everything. Removes the two-message flow, CI fingerprinting/dedup logic, and `lastCIFailureFingerprint`/`lastCIFailureDispatchHash` metadata.
+42. **Updated default ci-failed config message** — removed "Run `gh pr checks`" instruction. Fallback message is now "Investigate the failures, fix the issues, and push again."
+43. **Enriched merge conflict message** — replaced static "Your branch has merge conflicts" with dynamic message using `cachedData.isBehind` and `session.pr.baseBranch`:
+   ```
+   Your PR branch is behind main and has merge conflicts with main.
+   Rebase your branch on main, resolve the conflicts, and push.
+   You should not need to call gh for merge status unless you need
+   additional context — this information is current.
+   ```

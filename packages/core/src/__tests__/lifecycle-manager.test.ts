@@ -1692,16 +1692,9 @@ describe("reactions", () => {
       registry,
     });
 
-    // First check: transition to ci_failed — sends the reaction message
+    // First check: transition to ci_failed — sends detailed CI info directly
     await lm.check("app-1");
     expect(lm.getStates().get("app-1")).toBe("ci_failed");
-    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
-    expect(mockSessionManager.send).toHaveBeenCalledWith("app-1", "CI is failing. Fix it.");
-
-    vi.mocked(mockSessionManager.send).mockClear();
-
-    // Second check: still ci_failed, same failures — dispatches detailed CI info
-    await lm.check("app-1");
     expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
     const sentMessage = vi.mocked(mockSessionManager.send).mock.calls[0]![1];
     expect(sentMessage).toContain("lint");
@@ -1712,7 +1705,7 @@ describe("reactions", () => {
     expect(sentMessage).not.toContain("runs/124");
   });
 
-  it("does not re-dispatch CI failure details when failure set is unchanged", async () => {
+  it("does not re-send CI failure details on subsequent polls (transition fires once)", async () => {
     config.reactions = {
       "ci-failed": {
         auto: true,
@@ -1742,232 +1735,14 @@ describe("reactions", () => {
       registry,
     });
 
-    // First check: transition reaction
+    // First check: transition to ci_failed — sends detailed CI info
     await lm.check("app-1");
     expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
 
     vi.mocked(mockSessionManager.send).mockClear();
 
-    // Second check: dispatches CI details
+    // Second check: still ci_failed, same failures — no transition, no message
     await lm.check("app-1");
-    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
-
-    vi.mocked(mockSessionManager.send).mockClear();
-
-    // Third check: same failures — should NOT dispatch again
-    await lm.check("app-1");
-    expect(mockSessionManager.send).not.toHaveBeenCalled();
-
-    const metadata = readMetadataRaw(env.sessionsDir, "app-1");
-    expect(metadata?.["lastCIFailureDispatchHash"]).toBeTruthy();
-  });
-
-  it("re-dispatches CI failure details when a new check fails", async () => {
-    config.reactions = {
-      "ci-failed": {
-        auto: true,
-        action: "send-to-agent",
-        message: "CI is failing.",
-        retries: 5,
-        escalateAfter: 5,
-      },
-    };
-
-    const initialChecks = [
-      { name: "lint", status: "failed", conclusion: "FAILURE" },
-    ];
-    const getCIChecksMock = vi.fn().mockResolvedValue(initialChecks);
-    const enrichmentMock = mockBatchEnrichment({ ciStatus: "failing", ciChecks: initialChecks });
-    const mockSCM = createMockSCM({
-      getCISummary: vi.fn().mockResolvedValue("failing"),
-      getCIChecks: getCIChecksMock,
-      enrichSessionsPRBatch: enrichmentMock,
-    });
-    const registry = createMockRegistry({
-      runtime: plugins.runtime,
-      agent: plugins.agent,
-      scm: mockSCM,
-    });
-
-    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
-
-    const lm = setupCheck("app-1", {
-      session: makeSession({ status: "pr_open", pr: makePR() }),
-      registry,
-    });
-
-    // First check: transition + second poll to dispatch details
-    await lm.check("app-1");
-    vi.mocked(mockSessionManager.send).mockClear();
-    await lm.check("app-1");
-    vi.mocked(mockSessionManager.send).mockClear();
-
-    // Third check: same failures — no dispatch
-    await lm.check("app-1");
-    expect(mockSessionManager.send).not.toHaveBeenCalled();
-
-    // Now a different check fails too
-    const updatedChecks = [
-      { name: "lint", status: "failed", conclusion: "FAILURE" },
-      { name: "test", status: "failed", conclusion: "FAILURE" },
-    ];
-    getCIChecksMock.mockResolvedValue(updatedChecks);
-    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(
-      mockBatchEnrichment({ ciStatus: "failing", ciChecks: updatedChecks }),
-    );
-
-    await lm.check("app-1");
-    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
-    const sentMessage = vi.mocked(mockSessionManager.send).mock.calls[0]![1];
-    expect(sentMessage).toContain("lint");
-    expect(sentMessage).toContain("test");
-  });
-
-  it("clears CI failure tracking when PR is merged", async () => {
-    config.reactions = {
-      "ci-failed": {
-        auto: true,
-        action: "send-to-agent",
-        message: "CI is failing.",
-      },
-    };
-
-    const mockSCM = createMockSCM({
-      getCISummary: vi.fn().mockResolvedValue("failing"),
-      getCIChecks: vi.fn().mockResolvedValue([
-        { name: "lint", status: "failed", conclusion: "FAILURE" },
-      ]),
-    });
-    const registry = createMockRegistry({
-      runtime: plugins.runtime,
-      agent: plugins.agent,
-      scm: mockSCM,
-    });
-
-    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
-
-    const lm = setupCheck("app-1", {
-      session: makeSession({ status: "pr_open", pr: makePR() }),
-      registry,
-    });
-
-    await lm.check("app-1");
-
-    // Now PR is merged
-    vi.mocked(mockSCM.getCISummary).mockResolvedValue("passing");
-    vi.mocked(mockSCM.getPRState).mockResolvedValue("merged");
-
-    await lm.check("app-1");
-
-    const metadata = readMetadataRaw(env.sessionsDir, "app-1");
-    expect(metadata?.["lastCIFailureFingerprint"]).toBeFalsy();
-    expect(metadata?.["lastCIFailureDispatchHash"]).toBeFalsy();
-  });
-
-  it("clears CI failure tracking when CI recovers to passing", async () => {
-    config.reactions = {
-      "ci-failed": {
-        auto: true,
-        action: "send-to-agent",
-        message: "CI is failing.",
-      },
-    };
-
-    const getCISummaryMock = vi.fn().mockResolvedValue("failing");
-    const failingChecks = [{ name: "lint", status: "failed", conclusion: "FAILURE" }];
-    const getCIChecksMock = vi.fn().mockResolvedValue(failingChecks);
-    const mockSCM = createMockSCM({
-      getCISummary: getCISummaryMock,
-      getCIChecks: getCIChecksMock,
-      enrichSessionsPRBatch: mockBatchEnrichment({ ciStatus: "failing", ciChecks: failingChecks }),
-    });
-    const registry = createMockRegistry({
-      runtime: plugins.runtime,
-      agent: plugins.agent,
-      scm: mockSCM,
-    });
-
-    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
-
-    const lm = setupCheck("app-1", {
-      session: makeSession({ status: "pr_open", pr: makePR() }),
-      registry,
-    });
-
-    // First: transition to ci_failed, then dispatch details
-    await lm.check("app-1");
-    await lm.check("app-1");
-
-    // Verify tracking was set
-    let metadata = readMetadataRaw(env.sessionsDir, "app-1");
-    expect(metadata?.["lastCIFailureDispatchHash"]).toBeTruthy();
-
-    // CI recovers
-    getCISummaryMock.mockResolvedValue("passing");
-    getCIChecksMock.mockResolvedValue([]);
-    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(
-      mockBatchEnrichment({ ciStatus: "passing", ciChecks: [] }),
-    );
-    await lm.check("app-1");
-
-    metadata = readMetadataRaw(env.sessionsDir, "app-1");
-    expect(metadata?.["lastCIFailureFingerprint"]).toBeFalsy();
-    expect(metadata?.["lastCIFailureDispatchHash"]).toBeFalsy();
-  });
-
-  it("uses notify action for CI failure details when configured", async () => {
-    const notifier = createMockNotifier();
-
-    const configWithNotify = {
-      ...config,
-      reactions: {
-        "ci-failed": {
-          auto: true,
-          action: "notify" as const,
-          retries: 3,
-          escalateAfter: 3,
-        },
-      },
-      notificationRouting: {
-        ...config.notificationRouting,
-        warning: ["desktop"],
-        info: ["desktop"],
-      },
-    };
-
-    const ciChecks = [{ name: "lint", status: "failed", conclusion: "FAILURE" }];
-    const mockSCM = createMockSCM({
-      getCISummary: vi.fn().mockResolvedValue("failing"),
-      getCIChecks: vi.fn().mockResolvedValue(ciChecks),
-      enrichSessionsPRBatch: mockBatchEnrichment({ ciStatus: "failing", ciChecks }),
-    });
-
-    const registry: PluginRegistry = {
-      ...mockRegistry,
-      get: vi.fn().mockImplementation((slot: string, name: string) => {
-        if (slot === "runtime") return plugins.runtime;
-        if (slot === "agent") return plugins.agent;
-        if (slot === "scm") return mockSCM;
-        if (slot === "notifier" && name === "desktop") return notifier;
-        return null;
-      }),
-    };
-
-    const lm = setupCheck("app-1", {
-      session: makeSession({ status: "pr_open", pr: makePR() }),
-      registry,
-      configOverride: configWithNotify,
-    });
-
-    // First check: transition — notifier called for reaction
-    await lm.check("app-1");
-    expect(notifier.notify).toHaveBeenCalled();
-
-    vi.mocked(notifier.notify).mockClear();
-
-    // Second check: CI detail dispatch via notify action
-    await lm.check("app-1");
-    expect(notifier.notify).toHaveBeenCalled();
     expect(mockSessionManager.send).not.toHaveBeenCalled();
   });
 
@@ -2638,77 +2413,6 @@ describe("rate limiting optimizations", () => {
     expect(getMergeabilityMock).not.toHaveBeenCalled();
     // Conflict notification should have been sent
     expect(mockSessionManager.send).toHaveBeenCalledWith("s-1", "Resolve conflicts.");
-  });
-
-  it("skips getCIChecks() when batch enrichment has ciChecks data", async () => {
-    config.reactions = {
-      "ci-failed": {
-        auto: true,
-        action: "send-to-agent",
-        message: "CI failing.",
-        retries: 3,
-        escalateAfter: 3,
-      },
-    };
-
-    const pr = makeMatchingPR();
-    const getCIChecksMock = vi.fn();
-    const mockSCM = createMockSCM({
-      getCIChecks: getCIChecksMock,
-      getCISummary: vi.fn().mockResolvedValue("failing"),
-      enrichSessionsPRBatch: vi.fn().mockResolvedValue(
-        new Map([
-          [
-            `${pr.owner}/${pr.repo}#${pr.number}`,
-            {
-              state: "open" as const,
-              ciStatus: "failing" as const,
-              reviewDecision: "none" as const,
-              mergeable: false,
-              hasConflicts: false,
-              ciChecks: [
-                { name: "lint", status: "failed" as const, conclusion: "FAILURE", url: "https://example.com/lint" },
-                { name: "test", status: "passed" as const, conclusion: "SUCCESS" },
-              ],
-            },
-          ],
-        ]),
-      ),
-    });
-
-    const registry = createMockRegistry({
-      runtime: plugins.runtime,
-      agent: plugins.agent,
-      scm: mockSCM,
-    });
-
-    // Start with pr_open state so that ci_failed transition happens on first poll
-    const session = makeSession({ id: "s-2", status: "pr_open", pr });
-    vi.mocked(mockSessionManager.list).mockResolvedValue([session]);
-    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
-
-    const lm = createLifecycleManager({ config, registry, sessionManager: mockSessionManager });
-    lm.start(60_000);
-    // First poll: transitions to ci_failed, sends reaction message
-    await vi.advanceTimersByTimeAsync(0);
-
-    vi.mocked(mockSessionManager.send).mockClear();
-
-    // Second poll: dispatches detailed CI failure info
-    await vi.advanceTimersByTimeAsync(60_000);
-
-    // getCIChecks() should NOT be called — batch enrichment has ciChecks
-    expect(getCIChecksMock).not.toHaveBeenCalled();
-    // Detailed message with lint check name/URL should be sent
-    const calls = vi.mocked(mockSessionManager.send).mock.calls;
-    const sentMessages = calls.map((c) => c[1] as string);
-    const detailMessage = sentMessages.find((m) => m.includes("lint"));
-    expect(detailMessage).toBeDefined();
-    expect(detailMessage).toContain("https://example.com/lint");
-    // Passing check should not be included
-    expect(detailMessage).not.toContain("test");
-
-    lm.stop();
   });
 
   it("throttles review backlog API calls to at most once per 2 minutes", async () => {

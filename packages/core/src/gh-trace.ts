@@ -85,6 +85,12 @@ export interface GhTraceEntry {
   rateLimitRemaining?: number;
   rateLimitReset?: number;
   rateLimitResource?: string;
+  /** Exact GraphQL cost from response body `rateLimit { cost }` (only for GraphQL calls). */
+  graphqlCost?: number;
+  /** GraphQL remaining from response body (more accurate than header). */
+  graphqlRemaining?: number;
+  /** GraphQL reset time from response body. */
+  graphqlResetAt?: string;
 }
 
 interface HeaderMap {
@@ -242,7 +248,32 @@ function buildTraceEntry(
     rateLimitRemaining: parseIntHeader(headers["x-ratelimit-remaining"]),
     rateLimitReset: parseIntHeader(headers["x-ratelimit-reset"]),
     rateLimitResource: headers["x-ratelimit-resource"],
+    ...parseGraphQLRateLimit(result.stdout ?? "", args),
   };
+}
+
+/** Extract rateLimit { cost, remaining, resetAt } from GraphQL response body. */
+function parseGraphQLRateLimit(
+  stdout: string,
+  args: string[],
+): Pick<GhTraceEntry, "graphqlCost" | "graphqlRemaining" | "graphqlResetAt"> {
+  // Only attempt for GraphQL calls
+  if (!args.includes("graphql")) return {};
+  // Strip HTTP headers if present (-i flag)
+  const bodyMatch = stdout.match(/\r?\n\r?\n([\s\S]*)$/);
+  const body = bodyMatch ? bodyMatch[1] : stdout;
+  try {
+    const parsed = JSON.parse(body.trim());
+    const rl = parsed?.data?.rateLimit;
+    if (!rl) return {};
+    return {
+      graphqlCost: typeof rl.cost === "number" ? rl.cost : undefined,
+      graphqlRemaining: typeof rl.remaining === "number" ? rl.remaining : undefined,
+      graphqlResetAt: typeof rl.resetAt === "string" ? rl.resetAt : undefined,
+    };
+  } catch {
+    return {};
+  }
 }
 
 export async function execGhObserved(

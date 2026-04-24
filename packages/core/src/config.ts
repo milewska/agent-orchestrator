@@ -678,7 +678,7 @@ function applyDefaultReactions(config: OrchestratorConfig): OrchestratorConfig {
       auto: true,
       action: "send-to-agent",
       message:
-        "CI is failing on your PR. Run `gh pr checks` to see the failures, fix them, and push.",
+        "CI is failing on your PR. Investigate the failures, fix the issues, and push again.",
       retries: 2,
       escalateAfter: 2,
     },

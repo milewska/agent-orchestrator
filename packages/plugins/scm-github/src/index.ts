@@ -1054,6 +1054,7 @@ function createGitHubSCM(): SCM {
                 }
               }
             }
+            rateLimit { cost remaining resetAt }
           }`,
         ]);
         // Strip HTTP headers from -i response to get JSON body

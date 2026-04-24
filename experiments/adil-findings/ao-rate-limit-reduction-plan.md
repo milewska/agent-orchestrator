@@ -315,10 +315,49 @@ Cost: 105 / 100 = **2 points** (up from 1). Same cost even with `reviews(last: 5
 - Last 5 review submissions (state, author, body, timestamp)
 - Thread ID already included (from Track F changes)
 
-### Step 6: Increase review backlog throttle
+### Step 6: Merge CI failure details into transition reaction, remove Phase 4
+
+Currently two messages are sent when CI fails:
+1. Transition reaction sends a static `"CI is failing on your PR. Run gh pr checks..."` — tells the agent to call `gh pr checks` (unnecessary API call)
+2. `maybeDispatchCIFailureDetails` (Phase 4) sends the actual check names + URLs from batch cache via `sessionManager.send()`
+
+The batch cache always has CI check data when `ci_failed` fires — the status itself is derived from it. So the detail dispatch is redundant as a separate phase.
+
+**Fix:** Override the transition reaction's static message with `formatCIFailureMessage(failedChecks)` from the batch cache. Remove `maybeDispatchCIFailureDetails` entirely. The agent gets full CI details (check names, statuses, URLs) in a single message through `executeReaction`, which preserves retry counting and escalation (`retries: 2, escalateAfter: 2`).
+
+**What changes:**
+- Transition reaction message: static string → detailed check names + URLs from cache
+- `maybeDispatchCIFailureDetails` (Phase 4): removed entirely
+- `sessionManager.send()` for CI: removed — goes through `executeReaction` instead
+- Agent no longer told to call `gh pr checks` — saves 1 REST call per CI failure
+
+**What stays the same:**
+- Retry/escalation logic (owned by `executeReaction`)
+- Fingerprint dedup (transition only fires on status change, not every cycle)
+- CI check data source (batch cache)
+
+### Step 7: Increase review backlog throttle
 Change `REVIEW_BACKLOG_THROTTLE_MS` from 2 minutes to 5 minutes. Simple config change, cuts ~60% of review backlog traffic. Would reduce the 55 GraphQL calls to ~22.
 
-### Step 7: Cache issue data in session metadata
+### Step 8: Enrich merge conflict message from batch cache
+
+Currently `maybeDispatchMergeConflicts` sends a static `"Your branch has merge conflicts. Rebase on the default branch and resolve them."` — generic, no context, and the agent may call `gh pr view` to understand the situation.
+
+The batch cache already has `hasConflicts`, `isBehind`, and `blockers`. The session has `pr.baseBranch`.
+
+**Fix:** Build a specific message from cached data:
+```
+Your PR has merge conflicts with main. Rebase your branch on main, resolve the conflicts, and push. You should not need to call gh for merge status unless you need additional context — this information is current.
+```
+
+If `isBehind` is also true:
+```
+Your PR branch is behind main and has merge conflicts. Rebase your branch on main, resolve the conflicts, and push. You should not need to call gh for merge status unless you need additional context — this information is current.
+```
+
+Saves agent-side `gh pr view` calls by providing all context inline.
+
+### Step 9: Cache issue data in session metadata
 Persist issue data (number, title, body, url, state, labels, assignees) to session metadata at spawn time. Currently fetched 27 times for 5 sessions — should be 5 (once per session).
 
 The tracker plugin already has a 5-minute TTL in-memory cache (`ISSUE_CACHE_TTL_MS` at `tracker-github/index.ts:121`), but it's per-process — both CLI and web create their own instance.
