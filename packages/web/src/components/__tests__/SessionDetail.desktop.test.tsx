@@ -216,8 +216,8 @@ describe("SessionDetail desktop layout", () => {
       within(screen.getByRole("banner")).getByRole("button", { name: "Restore" }),
     ).toBeInTheDocument();
     expect(
-      within(screen.getByRole("banner")).getByRole("link", { name: "Orchestrator" }),
-    ).toHaveAttribute("href", "/orchestrators?project=my-app");
+      within(screen.getByRole("banner")).queryByRole("link", { name: "Orchestrator" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to dashboard" })).toHaveAttribute(
       "href",
       "/projects/my-app",
@@ -309,7 +309,7 @@ describe("SessionDetail desktop layout", () => {
     expect(screen.getByText("orchestrator")).toBeInTheDocument();
   });
 
-  it("always shows the main orchestrator button in the header", () => {
+  it("shows the main orchestrator button when an orchestrator target exists", () => {
     const { rerender } = render(
       <SessionDetail
         session={makeSession({ id: "worker-with-orchestrator", projectId: "my-app" })}
@@ -331,8 +331,8 @@ describe("SessionDetail desktop layout", () => {
     );
 
     expect(
-      within(screen.getByRole("banner")).getByRole("link", { name: "Orchestrator" }),
-    ).toHaveAttribute("href", "/orchestrators?project=my-app");
+      within(screen.getByRole("banner")).queryByRole("link", { name: "Orchestrator" }),
+    ).not.toBeInTheDocument();
 
     rerender(
       <SessionDetail

@@ -1509,10 +1509,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       throw new Error(`Agent plugin '${selection.agentName}' not found`);
     }
 
-    const orchestratorSessionStrategy = normalizeOrchestratorSessionStrategy(
-      project.orchestratorSessionStrategy,
-    );
-
     // Get the sessions directory for this project
     const sessionsDir = getProjectSessionsDir(project);
 
@@ -1522,39 +1518,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       validateAndStoreOrigin(config.configPath, project.storageKey!);
     }
 
-    if (orchestratorSessionStrategy === "reuse") {
-      const allSessionPrefixes = Object.entries(config.projects).map(
-        ([configuredProjectId, configuredProject]) =>
-          configuredProject.sessionPrefix ?? configuredProjectId,
-      );
-      const orchestrators = (await list(orchestratorConfig.projectId))
-        .filter((session) =>
-          isOrchestratorSession(
-            session,
-            project.sessionPrefix ?? orchestratorConfig.projectId,
-            allSessionPrefixes,
-          ),
-        )
-        .sort(
-          (a, b) =>
-            (b.lastActivityAt?.getTime() ?? 0) - (a.lastActivityAt?.getTime() ?? 0) ||
-            (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0) ||
-            a.id.localeCompare(b.id),
-        );
-      const live = orchestrators.filter((session) => !isTerminalSession(session));
-      const candidates =
-        live.length > 0 ? live : orchestrators.filter((session) => isRestorable(session));
-      const existing = candidates[0];
-      if (existing) {
-        if (!isTerminalSession(existing)) {
-          return existing;
-        }
-        return restore(existing.id);
-      }
-    }
+    const orchestratorSessionStrategy = normalizeOrchestratorSessionStrategy(
+      project.orchestratorSessionStrategy,
+    );
 
-    // Reserve a unique orchestrator identity only after the reusable singleton
-    // path is exhausted.
+    // Reserve a new unique orchestrator identity (e.g. {prefix}-orchestrator-1, -2, ...).
+    // Each spawnOrchestrator call gets its own numbered session and isolated worktree.
     const identity = reserveNextOrchestratorIdentity(project, sessionsDir);
     const sessionId = identity.sessionId;
     const tmuxName = identity.tmuxName;

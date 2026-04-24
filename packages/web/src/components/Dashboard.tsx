@@ -171,6 +171,8 @@ function DashboardInner({
     loadError ?? (recoveredFromLoadError ? undefined : dashboardLoadError);
   const searchParams = useSearchParams();
   const router = useRouter();
+  const routerRef = useRef(router);
+  routerRef.current = router;
   const activeSessionId = searchParams.get("session") ?? undefined;
   const [rateLimitDismissed, setRateLimitDismissed] = useState(false);
   const [activeOrchestrators, setActiveOrchestrators] =
@@ -385,14 +387,14 @@ function DashboardInner({
           showToast(`Restore failed: ${text}`, "error");
         } else {
           showToast("Session restored", "success");
-          router.refresh();
+          routerRef.current.refresh();
         }
       } catch (error) {
         console.error(`Network error restoring ${sessionId}:`, error);
         showToast("Network error while restoring session", "error");
       }
     },
-    [router, showToast],
+    [showToast],
   );
 
   const handleSpawnOrchestrator = async (project: ProjectInfo) => {

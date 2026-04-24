@@ -366,7 +366,7 @@ export function SessionDetail({
   const orchestratorHref = useMemo(() => {
     if (isOrchestrator) return projectSessionPath(session.projectId, session.id);
     if (projectOrchestratorId) return projectSessionPath(session.projectId, projectOrchestratorId);
-    return `/orchestrators?project=${encodeURIComponent(session.projectId)}`;
+    return null;
   }, [isOrchestrator, projectOrchestratorId, session.id, session.projectId]);
 
   useEffect(() => {
