@@ -1,6 +1,13 @@
-import { getOrchestratorSessionId, type Session } from "@aoagents/ao-core";
-import { isOrchestratorSession, isTerminalSession } from "@aoagents/ao-core/types";
+import {
+  isOrchestratorSession,
+  isTerminalSession,
+  type Session,
+} from "@aoagents/ao-core/types";
 import type { Orchestrator } from "@/components/OrchestratorSelector";
+
+export function getOrchestratorSessionId(project: { sessionPrefix: string }): string {
+  return `${project.sessionPrefix}-orchestrator`;
+}
 
 /**
  * Filter and map sessions to orchestrator DTOs.
