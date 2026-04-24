@@ -89,7 +89,7 @@ export const getDashboardPageData = cache(async function getDashboardPageData(pr
 
   let config: Awaited<ReturnType<typeof getServices>>["config"];
   let registry: Awaited<ReturnType<typeof getServices>>["registry"];
-  let allSessions: Awaited<ReturnType<Awaited<ReturnType<typeof getServices>>["sessionManager"]["list"]>>;
+  let allSessions: Awaited<ReturnType<Awaited<ReturnType<typeof getServices>>["sessionManager"]["listCached"]>>;
 
   try {
     const services = await getServices();
@@ -97,7 +97,7 @@ export const getDashboardPageData = cache(async function getDashboardPageData(pr
     registry = services.registry;
     pageData.attentionZones = config.dashboard?.attentionZones ?? DEFAULT_ATTENTION_ZONE_MODE;
     try {
-      allSessions = await services.sessionManager.list();
+      allSessions = await services.sessionManager.listCached();
     } catch (listErr) {
       pageData.dashboardLoadError = formatDashboardLoadError(listErr);
       return pageData;

@@ -73,7 +73,7 @@ describe("getDashboardPageData fast path", () => {
     hoisted.getServicesMock.mockResolvedValue({
       config: { projects: { docs: { id: "docs" } } },
       registry: { scm: "registry" },
-      sessionManager: { list: vi.fn().mockResolvedValue(allSessions) },
+      sessionManager: { listCached: vi.fn().mockResolvedValue(allSessions) },
     });
     hoisted.filterProjectSessionsMock.mockReturnValue(allSessions);
     hoisted.filterWorkerSessionsMock.mockReturnValue(allSessions);
@@ -110,7 +110,7 @@ describe("getDashboardPageData fast path", () => {
       hoisted.getServicesMock.mockResolvedValue({
         config: { projects: { mono: { id: "mono" } } },
         registry: { scm: "registry" },
-        sessionManager: { list: vi.fn().mockResolvedValue([core]) },
+        sessionManager: { listCached: vi.fn().mockResolvedValue([core]) },
       });
       hoisted.filterProjectSessionsMock.mockReturnValue([core]);
       hoisted.filterWorkerSessionsMock.mockReturnValue([core]);
@@ -141,7 +141,7 @@ describe("getDashboardPageData fast path", () => {
     hoisted.getServicesMock.mockResolvedValue({
       config: { projects: { mono: { id: "mono" } } },
       registry: { scm: "registry" },
-      sessionManager: { list: vi.fn().mockResolvedValue([core]) },
+      sessionManager: { listCached: vi.fn().mockResolvedValue([core]) },
     });
     hoisted.filterProjectSessionsMock.mockReturnValue([core]);
     hoisted.filterWorkerSessionsMock.mockReturnValue([core]);
@@ -175,7 +175,7 @@ describe("getDashboardPageData fast path", () => {
         dashboard: { attentionZones: "detailed" },
       },
       registry: { scm: "registry" },
-      sessionManager: { list: vi.fn().mockRejectedValue(new Error("list boom")) },
+      sessionManager: { listCached: vi.fn().mockRejectedValue(new Error("list boom")) },
     });
 
     const pageData = await getDashboardPageData("docs");
@@ -192,7 +192,7 @@ describe("getDashboardPageData fast path", () => {
     hoisted.getServicesMock.mockResolvedValue({
       config: { projects: { docs: { id: "docs" } } },
       registry: { scm: "registry" },
-      sessionManager: { list: vi.fn().mockResolvedValue([core]) },
+      sessionManager: { listCached: vi.fn().mockResolvedValue([core]) },
     });
     hoisted.filterProjectSessionsMock.mockReturnValue([core]);
     hoisted.filterWorkerSessionsMock.mockReturnValue([core]);
