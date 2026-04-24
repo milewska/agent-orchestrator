@@ -701,6 +701,7 @@ export function SessionDetail({
               ) : (
                 <DirectTerminal
                   sessionId={session.id}
+                  tmuxName={session.metadata?.tmuxName}
                   startFullscreen={startFullscreen}
                   variant={terminalVariant}
                   appearance="dark"
