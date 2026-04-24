@@ -823,7 +823,7 @@ describe("shouldRefreshPREnrichment - ETag Guard Strategy", () => {
       const result = await shouldRefreshPREnrichment([]);
 
       expect(result.shouldRefresh).toBe(false);
-      expect(result.details).toContain("No PRs to check");
+      expect(result.details).toContain("No repos to check");
       // Should not make any API calls
       expect(mockExecFileImpl).not.toHaveBeenCalled();
     });

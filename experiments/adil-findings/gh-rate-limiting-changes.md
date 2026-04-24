@@ -57,7 +57,7 @@ AO was hitting GitHub's 5,000 pts/hr GraphQL limit at just ~12 concurrent sessio
 
 3. **Added in-process caches to `scm-github`** — per-method TTLs (5s–60s) on all PR-related calls (`detectPR`, `resolvePR`, `getPRState`, `getCIChecks`, `getMergeability`, `getReviews`, `getReviewDecision`, `getPendingComments`).
 
-4. **Added in-process cache to `tracker-github`** — 5-min TTL on issue reads, which were being called 64+ times per session.
+4. **Added in-process cache to `tracker-github`** — 5-min TTL on issue reads with inflight dedup (concurrent requests share one API call).
 
 5. **Removed individual REST fallbacks from lifecycle polling** — `determineStatus()`, `maybeDispatchCIFailureDetails()`, `maybeDispatchMergeConflicts()` no longer fall back to individual `gh pr view` / `gh pr checks` calls on batch miss.
 
@@ -67,12 +67,21 @@ AO was hitting GitHub's 5,000 pts/hr GraphQL limit at just ~12 concurrent sessio
 
 8. **Shared enrichment + single lifecycle manager** — CLI lifecycle manager persists batch enrichment to session metadata files; web dashboard reads from disk instead of calling GitHub. Eliminated the duplicate web polling loop entirely, reducing lifecycle managers from 2 to 1.
 
+9. **Gated detectPR behind Guard 1 ETag** — moved detectPR out of `determineStatus()` into `populatePREnrichmentCache()`. Guard 1 runs for all repos every cycle. When 304, detectPR is skipped entirely. When 200, detectPR runs for PR-less sessions only.
+
+10. **Added Guard 3 (review comments ETag)** — REST ETag check on review comments gates the `getReviewThreads` GraphQL call. 304 → skip GraphQL (0 points). 200 → fetch (2 points). ETag-controlled cache replaces TTL cache.
+
+11. **Enriched review data for agents** — `getReviewThreads` now fetches `reviewThreads(last: 100)` + `reviews(last: 5)`. Agent messages include review summaries, thread IDs, and inline comment data. Prompt instructs agents to resolve threads directly and not re-fetch.
+
 ---
 
 ## Architectural Caches
 
-**1. ETag guard (HTTP 304)**
-Before firing the full GraphQL batch, AO makes a cheap REST call with `If-None-Match`. If GitHub returns 304 (nothing changed), the batch is skipped entirely. Guard 1 covers PR list changes (62% hit rate), Guard 2 covers commit status changes (87% hit rate). The bug was this was completely broken — `gh` exits code 1 on 304 and the catch block assumed "changed" every time. Fixing it meant most poll cycles skip the batch entirely.
+**1. ETag guards (HTTP 304)**
+Three REST ETag guards gate expensive operations:
+- **Guard 1** — PR list changes per repo (88% hit rate). Gates the GraphQL batch query AND detectPR for all sessions in that repo.
+- **Guard 2** — Commit status changes per PR (85% hit rate). Gates the GraphQL batch when Guard 1 returns 304.
+- **Guard 3** — Review comments per PR (~95% hit rate in steady state). Gates the `getReviewThreads` GraphQL call. ETag-controlled cache replaces TTL — cached results reused until Guard 3 detects new comments.
 
 **2. Shared enrichment metadata (disk)**
 The lifecycle manager now persists the full batch result (`prEnrichment` + `prReviewComments`) to session metadata files on disk after every poll. The web dashboard reads from these files instead of calling GitHub itself. Why: the dashboard and CLI were running two independent polling loops — both hitting GitHub for the same data. Removing the dashboard's loop and having it read from disk eliminated ~54% of all duplicate traffic and brought dashboard API calls to zero.
@@ -98,15 +107,16 @@ Max 1,000 entries. Invalidated on mutations (`mergePR`, `closePR`, `assignPRToCu
 | `getMergeability` | 5s | Composite merge readiness + blockers | |
 | `getReviews` | 10s | Review array (state, body, author) | |
 | `getReviewDecision` | 10s | approved / changes_requested / pending | |
-| `getPendingComments` | 10s | Unresolved review threads (GraphQL) | Also shared by `getReviewThreads` (same cache key). |
+| `getPendingComments` | 10s | Unresolved review threads (GraphQL) | Backward compat for GitLab. GitHub uses `getReviewThreads` instead. |
+| `getReviewThreads` | ETag-controlled | Threads + review summaries | No TTL. Freshness managed by Guard 3 — cached until new comments detected. |
 
 ### `tracker-github` — In-process per-instance cache
 
-Max 500 entries. Invalidated on mutations (`updateIssue`).
+Max 500 entries. Invalidated on mutations (`updateIssue`). Inflight dedup prevents concurrent duplicate requests.
 
 | Method | TTL | What's cached | Notes |
 |--------|-----|---------------|-------|
-| `getIssue` | 5 min | Issue metadata (title, body, state, labels, assignees) | `isCompleted` routes through this. |
+| `getIssue` | 5 min | Issue metadata (title, body, state, labels, assignees) | `isCompleted` routes through this. Concurrent calls share one request. |
 
 ### `~/.ao/bin/gh` wrapper — Agent-side bash cache (disk, per-session)
 
@@ -131,13 +141,17 @@ Stored in `$AO_DATA_DIR/.ghcache/$AO_SESSION/`. Cache key includes `--json` fiel
 
 5. **Reverted PR-scoped ETag guards** — Added per-PR ETag checks instead of per-repo, but this increased REST calls (1 per PR vs 1 per repo) without meaningful GraphQL savings. Reverted when traces showed REST delta went 16→142 while GraphQL stayed flat.
 
+6. **detectPR gated by Guard 1** — detectPR only runs when Guard 1 returns 200. Max 30-second delay in discovering a just-created PR (one poll cycle). Eliminates ~95% of detectPR calls.
+
+7. **Review threads cost doubled (1 → 2 points)** — Adding `reviews(last: 5)` to the query increases cost from 1 to 2 GraphQL points. But Guard 3 skips ~95% of calls, so net cost is lower than before.
+
 ---
 
 ## Future Scope
 
-1. **Review thread throttle (2 min → 5 min)** — Review threads are currently fetched via GraphQL every 2 minutes per session. Loosening this to 5 minutes would cut review thread calls by ~60% with no meaningful impact — humans don't leave review comments faster than every few minutes in practice.
+1. **Review thread throttle (2 min → 5 min)** — Review threads are currently checked via Guard 3 every 2 minutes per session. Guard 3 makes this much cheaper (0 points on 304), but loosening the throttle would further reduce REST calls.
 
-2. **Agent prompt modification** — A significant chunk of API consumption comes from agents re-querying GitHub for data AO already has (PR state, issue context, CI status). Since AO fetches and persists all this to session metadata, we can inject it directly into the agent's prompt at spawn and on each reaction. This would instruct the agent to use the provided context instead of calling `gh` itself, reducing non-deterministic agent-side API consumption without needing to control the LLM's behavior.
+2. **Persist issue data to session metadata** — Currently fetched via API with 5-min TTL cache. Could write issue data to metadata at spawn time so it's never re-fetched. Would eliminate all `gh issue view` calls after the first.
 
 ---
 
@@ -210,3 +224,24 @@ Stored in `$AO_DATA_DIR/.ghcache/$AO_SESSION/`. Cache key includes `--json` fiel
 29. **Removed detectPR block from `determineStatus()`** — PR discovery is fully handled in `populatePREnrichmentCache` before session checks run. No flags, no fallback.
    - Impact: 10 sessions with no PRs for 10 minutes → ~200 wasted calls reduced to ~10 (only on 200 cycles). ~95% reduction in detectPR calls.
    - Tradeoff: max 30-second delay (one poll cycle) in discovering a just-created PR.
+30. **Guard 1 now always runs for all repos** — `enrichSessionsPRBatch` accepts optional `repos` param. Lifecycle passes repos from all sessions (not just ones with PRs). Guard 1 runs even when no sessions have PRs yet, so detectPR is gated from the very first cycle.
+31. **Issue view inflight dedup** — Added promise-based dedup in `tracker-github`. Concurrent calls for the same issue share one request instead of two. Reduced issue view calls from 6 to 3 per 15 min.
+32. **Thread ID included in review messages** — `getReviewThreads` and `getPendingComments` now return `threadId` (the GraphQL node ID for `resolveReviewThread`). Agent message includes it so agents can resolve threads directly without re-fetching.
+33. **Agent prompt nudge for issue context** — `generatePrompt` now tells the agent "You should not need to call gh issue view unless you need additional context beyond what is provided here."
+
+---
+
+### Track G — Enrich Review Data + Guard 3 (Apr 24)
+
+34. **Added Guard 3 (review comments ETag)** — `checkReviewCommentsETag()` checks `GET /repos/{owner}/{repo}/pulls/{number}/comments?per_page=1` with ETag before the `getReviewThreads` GraphQL call. 304 → skip GraphQL entirely (0 points), 200 → proceed (2 points).
+35. **Enriched `getReviewThreads` query** — Changed from `reviewThreads(first: 100)` to `reviewThreads(last: 100)` (most recent threads). Added `reviews(last: 5)` to fetch review submission summaries (the body submitted with "Changes requested" / "Approve"). Cost: 105/100 = 2 GraphQL points (up from 1, but Guard 3 skips ~95% of calls).
+36. **Added `ReviewSummary` and `ReviewThreadsResult` types** — `getReviewThreads` now returns `{ threads: ReviewComment[]; reviews: ReviewSummary[] }` instead of just `ReviewComment[]`.
+37. **ETag-controlled cache replaces TTL cache** — Review threads + reviews cached per PR instance. Freshness controlled by Guard 3 ETag (not a TTL timer). Cache invalidated only when Guard 3 returns 200 (new comments exist).
+38. **Review summaries included in agent message** — When dispatching review feedback, the agent now sees the reviewer's high-level summary prepended before inline comments:
+   ```
+   Review by @reviewer (CHANGES_REQUESTED):
+   "This approach is wrong, use strategy X instead"
+
+   The following 1 unresolved review comment(s)...
+   ```
+39. **Review summaries persisted to metadata** — `prReviewComments` blob now includes review summaries for dashboard consumption.

@@ -789,7 +789,7 @@ export interface SCM {
    * Single GraphQL call replaces separate getPendingComments + getAutomatedComments.
    * Returns unresolved threads only.
    */
-  getReviewThreads?(pr: PRInfo): Promise<ReviewComment[]>;
+  getReviewThreads?(pr: PRInfo): Promise<ReviewThreadsResult>;
 
   /** @deprecated Use getReviewThreads() instead. Kept for backward compatibility. */
   getAutomatedComments(pr: PRInfo): Promise<AutomatedComment[]>;
@@ -975,6 +975,18 @@ export interface ReviewComment {
   url: string;
   /** Whether the comment was authored by a known bot */
   isBot?: boolean;
+}
+
+export interface ReviewSummary {
+  author: string;
+  state: string;
+  body: string;
+  submittedAt: Date;
+}
+
+export interface ReviewThreadsResult {
+  threads: ReviewComment[];
+  reviews: ReviewSummary[];
 }
 
 export interface AutomatedComment {

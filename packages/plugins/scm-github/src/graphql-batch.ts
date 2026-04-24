@@ -44,6 +44,7 @@ export function setExecFileAsync(fn: typeof execFileAsync): void {
  */
 const MAX_PR_LIST_ETAGS = 100;  // Number of repos to cache
 const MAX_COMMIT_STATUS_ETAGS = 500;  // Number of commits to cache
+const MAX_REVIEW_COMMENTS_ETAGS = 500;  // Number of PRs to cache review ETags
 const MAX_PR_METADATA = 200;  // Number of PRs to cache full data
 
 /**
@@ -57,6 +58,7 @@ const MAX_PR_METADATA = 200;  // Number of PRs to cache full data
 interface ETagCache {
   prList: LRUCache<string, string>; // Key: "owner/repo", Value: ETag
   commitStatus: LRUCache<string, string>; // Key: "owner/repo#sha", Value: ETag
+  reviewComments: LRUCache<string, string>; // Key: "owner/repo#number", Value: ETag
 }
 
 /**
@@ -69,6 +71,7 @@ interface ETagCache {
 const etagCache: ETagCache = {
   prList: new LRUCache(MAX_PR_LIST_ETAGS),
   commitStatus: new LRUCache(MAX_COMMIT_STATUS_ETAGS),
+  reviewComments: new LRUCache(MAX_REVIEW_COMMENTS_ETAGS),
 };
 
 /**
@@ -487,6 +490,58 @@ async function checkCommitStatusETag(
     console.warn(
       `[ETag Guard 2] Commit status check failed for ${commitKey}: ${errorMsg}`,
     );
+    return true; // Assume changed to be safe
+  }
+}
+
+/**
+ * Guard 3: Review Comments ETag Check (per PR)
+ *
+ * Detects if inline review comments have changed on a PR.
+ * Used to gate the getReviewThreads GraphQL call — if no new comments
+ * exist (304), the cached result is reused without a GraphQL call.
+ *
+ * - Endpoint: GET /repos/{owner}/{repo}/pulls/{number}/comments?per_page=1
+ * - Detects: New review comments, edited comments, deleted comments
+ * - Cost: 0 REST points on 304, 1 REST point on 200
+ */
+export async function checkReviewCommentsETag(
+  owner: string,
+  repo: string,
+  prNumber: number,
+): Promise<boolean> {
+  const cacheKey = `${owner}/${repo}#${prNumber}`;
+  const cachedETag = etagCache.reviewComments.get(cacheKey);
+
+  const url = `repos/${owner}/${repo}/pulls/${prNumber}/comments?per_page=1`;
+  const args = ["api", "--method", "GET", url, "-i"];
+
+  if (cachedETag) {
+    args.push("-H", `If-None-Match: ${cachedETag}`);
+  }
+
+  try {
+    const output = await execGhAsync(args, 10_000, "gh.api.guard-review-comments");
+
+    if (is304(output)) {
+      return false;
+    }
+
+    const etagMatch = output.match(/etag:\s*(.+)/i);
+    if (etagMatch) {
+      etagCache.reviewComments.set(cacheKey, etagMatch[1].trim());
+    }
+
+    return true;
+  } catch (err) {
+    const output = extractErrorOutput(err);
+    if (output && is304(output)) {
+      return false;
+    }
+
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    // eslint-disable-next-line no-console -- Observability logging for ETag errors
+    console.warn(`[ETag Guard 3] Review comments check failed for ${cacheKey}: ${errorMsg}`);
     return true; // Assume changed to be safe
   }
 }

@@ -287,10 +287,38 @@ No body parsing, no `per_page` change, no flags, no fallback. Just move detectPR
 
 In the original 5-session trace, `detectPR` was 82 calls out of 465 total (18%). At 10+ sessions with slow PR creation, it dominates.
 
-### Step 5: Increase review backlog throttle
+### Step 5: Enrich review data + add REST ETag guard for review threads
+
+Currently we fetch `reviewThreads(first: 100)` with `comments(first: 1)` — only the opening comment per thread, no review summary body. The agent misses the reviewer's high-level guidance submitted with "Changes requested" and any follow-up replies in threads.
+
+**Proposed query change:**
+```graphql
+reviewThreads(last: 100) → comments(first: 1)   # 100 × 1 = 100
+reviews(last: 5)                                  #           =   5
+                                            Total             = 105
+```
+Cost: 105 / 100 = **2 points** (up from 1). Same cost even with `reviews(last: 5)` because `105 / 100` rounds to 2.
+
+**Add Guard 3 — REST ETag check on review comments:**
+- `GET /repos/{owner}/{repo}/pulls/{number}/comments` with `If-None-Match`
+- 304 → skip the GraphQL `getReviewThreads` call entirely (0 GraphQL points)
+- 200 → new comments exist, run the GraphQL call (2 points)
+- Expected 304 rate: ~95% (review comments change less frequently than PR list)
+
+**Net impact with Guard 3:**
+- Current: ~4 GraphQL calls × 1 point = 4 points per trace window
+- Proposed: ~1 call gets through (5%) × 2 points = 2 points + 4 free 304 REST checks
+- Agent gets: review summary body + all unresolved threads + thread IDs for resolving
+
+**What the agent gains:**
+- Review body (the summary comment from "Request changes" / "Approve" submission)
+- Last 5 review submissions (state, author, body, timestamp)
+- Thread ID already included (from Track F changes)
+
+### Step 6: Increase review backlog throttle
 Change `REVIEW_BACKLOG_THROTTLE_MS` from 2 minutes to 5 minutes. Simple config change, cuts ~60% of review backlog traffic. Would reduce the 55 GraphQL calls to ~22.
 
-### Step 6: Cache issue data in session metadata
+### Step 7: Cache issue data in session metadata
 Persist issue data (number, title, body, url, state, labels, assignees) to session metadata at spawn time. Currently fetched 27 times for 5 sessions — should be 5 (once per session).
 
 The tracker plugin already has a 5-minute TTL in-memory cache (`ISSUE_CACHE_TTL_MS` at `tracker-github/index.ts:121`), but it's per-process — both CLI and web create their own instance.

@@ -1444,7 +1444,7 @@ describe("reactions", () => {
     };
 
     const mockSCM = createMockSCM({
-      getReviewThreads: vi.fn().mockResolvedValue([
+      getReviewThreads: vi.fn().mockResolvedValue({ threads: [
         {
           id: "c1",
           author: "reviewer",
@@ -1456,7 +1456,7 @@ describe("reactions", () => {
           url: "https://example.com/comment/1",
           isBot: false,
         },
-      ]),
+      ], reviews: [] }),
     });
     const registry = createMockRegistry({
       runtime: plugins.runtime,
@@ -1506,7 +1506,7 @@ describe("reactions", () => {
         }
         return result;
       }),
-      getReviewThreads: vi.fn().mockResolvedValue([
+      getReviewThreads: vi.fn().mockResolvedValue({ threads: [
         {
           id: "c1",
           author: "reviewer",
@@ -1518,7 +1518,7 @@ describe("reactions", () => {
           url: "https://example.com/comment/2",
           isBot: false,
         },
-      ]),
+      ], reviews: [] }),
     });
     const registry = createMockRegistry({
       runtime: plugins.runtime,
@@ -1553,7 +1553,7 @@ describe("reactions", () => {
     };
 
     const mockSCM = createMockSCM({
-      getReviewThreads: vi.fn().mockResolvedValue([
+      getReviewThreads: vi.fn().mockResolvedValue({ threads: [
         {
           id: "bot-1",
           author: "cursor[bot]",
@@ -1565,7 +1565,7 @@ describe("reactions", () => {
           url: "https://example.com/comment/3",
           isBot: true,
         },
-      ]),
+      ], reviews: [] }),
     });
     const registry = createMockRegistry({
       runtime: plugins.runtime,
@@ -1608,7 +1608,7 @@ describe("reactions", () => {
     };
 
     const mockSCM = createMockSCM({
-      getReviewThreads: vi.fn().mockResolvedValue([
+      getReviewThreads: vi.fn().mockResolvedValue({ threads: [
         {
           id: "bot-1",
           author: "cursor[bot]",
@@ -1620,7 +1620,7 @@ describe("reactions", () => {
           url: "https://example.com/comment/3",
           isBot: true,
         },
-      ]),
+      ], reviews: [] }),
     });
     const registry = createMockRegistry({
       runtime: plugins.runtime,
@@ -2720,7 +2720,7 @@ describe("rate limiting optimizations", () => {
       },
     };
 
-    const getReviewThreadsMock = vi.fn().mockResolvedValue([
+    const getReviewThreadsMock = vi.fn().mockResolvedValue({ threads: [
       {
         id: "c1",
         author: "reviewer",
@@ -2732,7 +2732,7 @@ describe("rate limiting optimizations", () => {
         url: "https://example.com/comment/1",
         isBot: false,
       },
-    ]);
+    ], reviews: [] });
     const mockSCM = createMockSCM({
       getReviewThreads: getReviewThreadsMock,
     });

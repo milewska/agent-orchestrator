@@ -1157,12 +1157,15 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     }
     lastReviewBacklogCheckAt.set(session.id, Date.now());
 
-    // Single GraphQL call for all review threads (human + bot).
+    // Single GraphQL call for all review threads (human + bot) + review summaries.
     // Split locally by isBot for separate reaction pipelines.
     let allThreads: import("./types.js").ReviewComment[] | null = null;
+    let reviewSummaries: import("./types.js").ReviewSummary[] = [];
     try {
       if (scm.getReviewThreads) {
-        allThreads = await scm.getReviewThreads(session.pr);
+        const result = await scm.getReviewThreads(session.pr);
+        allThreads = result.threads;
+        reviewSummaries = result.reviews;
       } else {
         // Fallback for SCM plugins that don't implement getReviewThreads yet
         allThreads = await scm.getPendingComments(session.pr);
@@ -1171,7 +1174,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       // Failed to fetch — preserve existing metadata
     }
 
-    // Persist review comments to metadata for dashboard consumption
+    // Persist review comments + summaries to metadata for dashboard consumption
     if (allThreads !== null) {
       const unresolved = allThreads.filter((c) => !c.isBot);
       const reviewBlob = JSON.stringify({
@@ -1181,6 +1184,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           path: c.path ?? "",
           author: c.author,
           body: c.body,
+        })),
+        reviews: reviewSummaries.map((r) => ({
+          author: r.author,
+          state: r.state,
+          body: r.body,
         })),
         commentsUpdatedAt: new Date().toISOString(),
       });
@@ -1244,7 +1252,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         ) {
           const enrichedConfig = {
             ...reactionConfig,
-            message: formatReviewCommentsMessage(pendingComments, "reviewer"),
+            message: formatReviewCommentsMessage(pendingComments, "reviewer", reviewSummaries),
           };
           const result = await executeReaction(
             session.id,
@@ -1321,12 +1329,24 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
   function formatReviewCommentsMessage(
     comments: import("./types.js").ReviewComment[],
     source: "reviewer" | "bot",
+    reviews: import("./types.js").ReviewSummary[] = [],
   ): string {
+    const lines: string[] = [];
+
+    // Prepend review summaries (the body submitted with "Changes requested" / "Approve")
+    const nonEmptyReviews = reviews.filter((r) => r.body && r.body.trim().length > 0);
+    if (nonEmptyReviews.length > 0) {
+      for (const r of nonEmptyReviews) {
+        lines.push(`Review by @${r.author} (${r.state}):`);
+        lines.push(`"${r.body.trim()}"`, "");
+      }
+    }
+
     const header =
       source === "reviewer"
         ? `The following ${comments.length} unresolved review comment(s) are on your PR (as of just now). You should not need to re-fetch this data unless you need additional context.`
         : `The following ${comments.length} automated review comment(s) are on your PR (as of just now). You should not need to re-fetch this data unless you need additional context.`;
-    const lines = [header, ""];
+    lines.push(header, "");
     for (let i = 0; i < comments.length; i++) {
       const c = comments[i];
       const location = c.path ? `${c.path}${c.line ? `:${c.line}` : ""}` : "(general)";

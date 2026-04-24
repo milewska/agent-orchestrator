@@ -25,6 +25,8 @@ import {
   type Review,
   type ReviewDecision,
   type ReviewComment,
+  type ReviewSummary,
+  type ReviewThreadsResult,
   type AutomatedComment,
   type MergeReadiness,
   type PREnrichmentData,
@@ -32,6 +34,7 @@ import {
 } from "@aoagents/ao-core";
 import {
   enrichSessionsPRBatch as enrichSessionsPRBatchImpl,
+  checkReviewCommentsETag,
 } from "./graphql-batch.js";
 import {
   getWebhookHeader,
@@ -481,6 +484,9 @@ function createGitHubSCM(): SCM {
   // Per-instance cache so each createGitHubSCM() returns an isolated cache —
   // tests get clean state on each create() call.
   const prCache = new Map<string, { value: unknown; expiresAt: number }>();
+  // ETag-controlled cache for review threads + reviews. Freshness is managed by
+  // Guard 3 (checkReviewCommentsETag) — not a TTL timer.
+  const reviewThreadsCache = new Map<string, ReviewThreadsResult>();
 
   function prCacheKey(owner: string, repo: string, prKey: string, method: PRCacheMethod): string {
     return `${owner}/${repo}#${prKey}:${method}`;
@@ -996,98 +1002,135 @@ function createGitHubSCM(): SCM {
       });
     },
 
-    async getReviewThreads(pr: PRInfo): Promise<ReviewComment[]> {
-      return withPRCache(pr.owner, pr.repo, String(pr.number), "getPendingComments", async () => {
-        try {
-          const raw = await gh([
-            "api",
-            "graphql",
-            "-f",
-            `owner=${pr.owner}`,
-            "-f",
-            `name=${pr.repo}`,
-            "-F",
-            `number=${pr.number}`,
-            "-f",
-            `query=query($owner: String!, $name: String!, $number: Int!) {
-              repository(owner: $owner, name: $name) {
-                pullRequest(number: $number) {
-                  reviewThreads(first: 100) {
-                    nodes {
-                      id
-                      isResolved
-                      comments(first: 1) {
-                        nodes {
-                          id
-                          author { login }
-                          body
-                          path
-                          line
-                          url
-                          createdAt
-                        }
+    async getReviewThreads(pr: PRInfo): Promise<ReviewThreadsResult> {
+      const cacheKey = `${pr.owner}/${pr.repo}#${pr.number}`;
+
+      // Guard 3: check if review comments changed via REST ETag
+      const reviewsChanged = await checkReviewCommentsETag(pr.owner, pr.repo, pr.number);
+      if (!reviewsChanged) {
+        const cached = reviewThreadsCache.get(cacheKey);
+        if (cached) return cached;
+      }
+
+      try {
+        const raw = await gh([
+          "api",
+          "graphql",
+          "-f",
+          `owner=${pr.owner}`,
+          "-f",
+          `name=${pr.repo}`,
+          "-F",
+          `number=${pr.number}`,
+          "-f",
+          `query=query($owner: String!, $name: String!, $number: Int!) {
+            repository(owner: $owner, name: $name) {
+              pullRequest(number: $number) {
+                reviewThreads(last: 100) {
+                  nodes {
+                    id
+                    isResolved
+                    comments(first: 1) {
+                      nodes {
+                        id
+                        author { login }
+                        body
+                        path
+                        line
+                        url
+                        createdAt
                       }
                     }
                   }
                 }
+                reviews(last: 5) {
+                  nodes {
+                    author { login }
+                    state
+                    body
+                    submittedAt
+                  }
+                }
               }
-            }`,
-          ]);
+            }
+          }`,
+        ]);
 
-          const data: {
-            data: {
-              repository: {
-                pullRequest: {
-                  reviewThreads: {
-                    nodes: Array<{
-                      id: string;
-                      isResolved: boolean;
-                      comments: {
-                        nodes: Array<{
-                          id: string;
-                          author: { login: string } | null;
-                          body: string;
-                          path: string | null;
-                          line: number | null;
-                          url: string;
-                          createdAt: string;
-                        }>;
-                      };
-                    }>;
-                  };
+        const data: {
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: Array<{
+                    id: string;
+                    isResolved: boolean;
+                    comments: {
+                      nodes: Array<{
+                        id: string;
+                        author: { login: string } | null;
+                        body: string;
+                        path: string | null;
+                        line: number | null;
+                        url: string;
+                        createdAt: string;
+                      }>;
+                    };
+                  }>;
+                };
+                reviews: {
+                  nodes: Array<{
+                    author: { login: string } | null;
+                    state: string;
+                    body: string;
+                    submittedAt: string;
+                  }>;
                 };
               };
             };
-          } = JSON.parse(raw);
+          };
+        } = JSON.parse(raw);
 
-          const threads = data.data.repository.pullRequest.reviewThreads.nodes;
+        const threadNodes = data.data.repository.pullRequest.reviewThreads.nodes;
+        const reviewNodes = data.data.repository.pullRequest.reviews.nodes;
 
-          return threads
-            .filter((t) => {
-              if (t.isResolved) return false;
-              const c = t.comments.nodes[0];
-              return !!c;
-            })
-            .map((t) => {
-              const c = t.comments.nodes[0];
-              const author = c.author?.login ?? "unknown";
-              return {
-                id: c.id,
-                threadId: t.id,
-                author,
-                body: c.body,
-                path: c.path || undefined,
-                line: c.line ?? undefined,
-                isResolved: t.isResolved,
-                createdAt: parseDate(c.createdAt),
-                url: c.url,
-                isBot: BOT_AUTHORS.has(author),
-              };
-            });
-        } catch (err) {
-          throw new Error("Failed to fetch review threads", { cause: err });
-        }
-      });
+        const threads: ReviewComment[] = threadNodes
+          .filter((t) => {
+            if (t.isResolved) return false;
+            const c = t.comments.nodes[0];
+            return !!c;
+          })
+          .map((t) => {
+            const c = t.comments.nodes[0];
+            const author = c.author?.login ?? "unknown";
+            return {
+              id: c.id,
+              threadId: t.id,
+              author,
+              body: c.body,
+              path: c.path || undefined,
+              line: c.line ?? undefined,
+              isResolved: t.isResolved,
+              createdAt: parseDate(c.createdAt),
+              url: c.url,
+              isBot: BOT_AUTHORS.has(author),
+            };
+          });
+
+        const reviews: ReviewSummary[] = reviewNodes
+          .filter((r) => r.body && r.body.trim().length > 0)
+          .map((r) => ({
+            author: r.author?.login ?? "unknown",
+            state: r.state,
+            body: r.body,
+            submittedAt: parseDate(r.submittedAt),
+          }));
+
+        const result: ReviewThreadsResult = { threads, reviews };
+        reviewThreadsCache.set(cacheKey, result);
+        return result;
+      } catch (err) {
+        throw new Error("Failed to fetch review threads", { cause: err });
+      }
     },
 
     async getAutomatedComments(pr: PRInfo): Promise<AutomatedComment[]> {
