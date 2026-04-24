@@ -252,8 +252,9 @@ class TerminalManager {
       throw new Error(`Invalid session ID: ${id}`);
     }
 
-    // Use provided tmuxName directly if available, fall back to resolution
-    const tmuxSessionId = tmuxName ?? resolveTmuxSession(id, this.TMUX);
+    // Use provided tmuxName, or reuse from existing terminal entry, or resolve
+    const existing = this.terminals.get(id);
+    const tmuxSessionId = tmuxName ?? existing?.tmuxSessionId ?? resolveTmuxSession(id, this.TMUX);
     if (!tmuxSessionId) {
       throw new Error(`Session not found: ${id}`);
     }

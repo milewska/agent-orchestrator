@@ -26,20 +26,49 @@ Before we started, extrapolation from 5-session runs showed:
 
 Practical ceiling with the bugs in place: **~20–35 sessions max**.
 
-### The hard numbers (after)
+### The hard numbers (after) — 15-session benchmark
 
-| Metric | Before | After | Reduction |
-|--------|--------|-------|-----------|
-| GraphQL pts/hr | ~2,072 | ~604 | **−56%** |
-| REST calls/hr | ~275 | ~110 | **−60%** |
-| Dashboard API calls/15 min | ~150 | 0 | **−100%** |
-| Max sessions before exhaustion | ~12 | ~41 | **+242%** |
-| Total calls/min | 31 | 11 | **−65%** |
+| Metric | Before (projected) | After (actual) | Reduction |
+|--------|-------------------|----------------|-----------|
+| Total calls (22.6 min) | ~1,724 | 132 | **−92%** |
+| Calls/min | 76.3 | 5.6 | **−93%** |
+| GraphQL pts/hr | ~6,216 | ~96 | **−98%** |
+| REST calls (22.6 min) | ~1,423 | 122 | **−91%** |
+| GraphQL calls (22.6 min) | ~301 | 10 | **−97%** |
+| Dashboard API calls | ~150/15 min | 0 | **−100%** |
+| Per session GraphQL | ~414 pts/hr | ~6.4 pts/hr | **−98%** |
+| Max sessions before exhaustion | ~12 | ~50 | **+317%** |
 | Lifecycle managers | 2 | 1 | removed duplication |
+| Budget status (15 sessions) | **Over budget at 48 min** | ~2% used | — |
 
-**How max sessions is calculated:** `5,000 pts/hr budget ÷ GraphQL pts/hr per session`
-- After: 604 ÷ 5 sessions = 120.8 pts/hr per session → 5,000 ÷ 120.8 = **~41 sessions**
-- Before: 2,072 ÷ 5 sessions = 414.4 pts/hr per session → 5,000 ÷ 414.4 = **~12 sessions**
+### Current poll architecture (15 sessions, 22.6 min trace)
+
+```
+pollAll()
+  │
+  ├── Phase 1: populatePREnrichmentCache()        ← ONCE for all sessions
+  │     ├── ETag Guard 1 (per repo)                  20 calls (14×304, 6×200)
+  │     ├── ETag Guard 2 (per PR)                     0 calls (Guard 1 covered it)
+  │     ├── GraphQL Batch Query                       3 calls (~36 GraphQL pts)
+  │     └── detectPR (only on Guard 1 200)           66 calls (6 cycles × ~11 PR-less sessions)
+  │
+  ├── Phase 2: checkSession() × N                 ← per session
+  │     └── determineStatus()
+  │           ├── PR Auto-Detect                      0 calls (moved to Phase 1)
+  │           └── Fallback Individual Calls           0 calls (removed)
+  │
+  ├── Phase 3: maybeDispatchReviewBacklog() × N   ← per session (throttled 2min)
+  │     ├── Guard 3 (review comments ETag)            1 call (0×304, 1×200)
+  │     └── GraphQL review threads + reviews          1 call (~2 GraphQL pts)
+  │
+  ├── Phase 4: maybeDispatchCIFailureDetails()        0 calls (batch has checks)
+  │
+  └── Phase 5: maybeDispatchMergeConflicts()          0 calls (batch has data)
+
+  Issue view (tracker, 5-min TTL + dedup):           35 calls (2.3 per issue)
+
+  Total: 126 calls | 5.6 calls/min | ~96 GraphQL pts/hr
+```
 
 ---
 
