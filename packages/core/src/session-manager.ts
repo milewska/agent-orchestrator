@@ -1476,10 +1476,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       throw new Error(`Agent plugin '${selection.agentName}' not found`);
     }
 
-    const orchestratorSessionStrategy = normalizeOrchestratorSessionStrategy(
-      project.orchestratorSessionStrategy,
-    );
-
     // Get the sessions directory for this project
     const sessionsDir = getProjectSessionsDir(project);
 
@@ -1488,6 +1484,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     if (config.configPath) {
       validateAndStoreOrigin(config.configPath, project.storageKey!);
     }
+
+    const orchestratorSessionStrategy = normalizeOrchestratorSessionStrategy(
+      project.orchestratorSessionStrategy,
+    );
 
     const identity = reserveFixedOrchestratorIdentity(project, sessionsDir);
     const sessionId = identity.sessionId;
@@ -1765,6 +1765,16 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const sessionId = getOrchestratorSessionId(project);
     const existing = await get(sessionId);
     if (existing) {
+      const orchestratorSessionStrategy = normalizeOrchestratorSessionStrategy(
+        project.orchestratorSessionStrategy,
+      );
+      if (
+        orchestratorSessionStrategy === "delete" ||
+        orchestratorSessionStrategy === "ignore"
+      ) {
+        await kill(sessionId, { purgeOpenCode: orchestratorSessionStrategy === "delete" });
+        return spawnOrchestrator(orchestratorConfig);
+      }
       if (existing.lifecycle.session.state === "done") {
         throw new SessionNotRestorableError(
           sessionId,

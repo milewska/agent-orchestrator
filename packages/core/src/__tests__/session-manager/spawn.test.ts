@@ -1280,6 +1280,37 @@ describe("spawn", () => {
       expect(mockRuntime.create).toHaveBeenCalledTimes(1);
     });
 
+    it("ensureOrchestrator replaces the canonical session for delete strategy", async () => {
+      const configWithDelete: OrchestratorConfig = {
+        ...config,
+        projects: {
+          ...config.projects,
+          "my-app": {
+            ...config.projects["my-app"]!,
+            orchestratorSessionStrategy: "delete",
+          },
+        },
+      };
+      writeMetadata(sessionsDir, "app-orchestrator", {
+        role: "orchestrator",
+        project: "my-app",
+        status: "working",
+        branch: "orchestrator/app-orchestrator",
+        worktree: join(tmpDir, "old-orchestrator"),
+        runtimeHandle: JSON.stringify(makeHandle("old-rt")),
+      });
+      const sm = createSessionManager({ config: configWithDelete, registry: mockRegistry });
+
+      const session = await sm.ensureOrchestrator({ projectId: "my-app" });
+
+      expect(session.id).toBe("app-orchestrator");
+      expect(mockRuntime.destroy).toHaveBeenCalledWith(makeHandle("old-rt"));
+      expect(mockWorkspace.create).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "app-orchestrator" }),
+      );
+      expect(readMetadataRaw(sessionsDir, "app-orchestrator")?.["status"]).toBe("working");
+    });
+
     it("ensureOrchestrator ignores numbered legacy orchestrators and creates the canonical session", async () => {
       writeMetadata(sessionsDir, "app-orchestrator-5", {
         role: "orchestrator",
