@@ -10,7 +10,7 @@ import {
   type DashboardPR,
 } from "@/lib/types";
 import { buildGitHubCompareUrl } from "@/lib/github-links";
-import { cleanBugbotComment } from "./session-detail-utils";
+import { PRCommentThread } from "./PRCommentThread";
 
 interface SessionDetailPRCardProps {
   pr: DashboardPR;
@@ -23,19 +23,19 @@ interface SessionDetailPRCardProps {
   ) => Promise<void>;
 }
 
-interface BlockerChip {
+export interface BlockerChip {
   icon: string;
   text: string;
   variant: "fail" | "warn" | "muted";
   notified?: boolean;
 }
 
-function hasMergeConflicts(pr: DashboardPR): boolean {
+export function hasMergeConflicts(pr: DashboardPR): boolean {
   const mergeabilityReliable = !isPRUnenriched(pr) && !isPRRateLimited(pr);
   return mergeabilityReliable && pr.state !== "merged" && !pr.mergeability.noConflicts;
 }
 
-function buildBlockerChips(
+export function buildBlockerChips(
   pr: DashboardPR,
   metadata: Record<string, string>,
   lifecyclePrReason?: string,
@@ -115,7 +115,11 @@ export function SessionDetailPRCard({
     };
   }, []);
 
-  const handleAskAgentToFix = async (comment: { url: string; path: string; body: string }) => {
+  const handleAskAgentToFix = async (comment: {
+    url: string;
+    path: string;
+    body: string;
+  }) => {
     setSentComments((prev) => {
       const next = new Set(prev);
       next.delete(comment.url);
@@ -174,7 +178,6 @@ export function SessionDetailPRCard({
   const allGreen = isPRMergeReady(pr);
   const blockerIssues = buildBlockerChips(pr, metadata, lifecyclePrReason);
   const fileCount = pr.changedFiles ?? 0;
-
   const showConflictActions = hasMergeConflicts(pr) && pr.state === "open";
   const compareUrl = showConflictActions ? buildGitHubCompareUrl(pr) : "";
 
@@ -331,80 +334,14 @@ export function SessionDetailPRCard({
         ) : null}
       </div>
 
-      {pr.unresolvedComments.length > 0 ? (
-        <details className="session-detail-comments-strip">
-          <summary>
-            <div className="session-detail-comments-strip__toggle">
-              <svg
-                className="session-detail-comments-strip__chevron"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                viewBox="0 0 24 24"
-              >
-                <path d="M9 5l7 7-7 7" />
-              </svg>
-              <span className="session-detail-comments-strip__label">Unresolved Comments</span>
-              <span className="session-detail-comments-strip__count">{pr.unresolvedThreads}</span>
-              <span className="session-detail-comments-strip__hint">click to expand</span>
-            </div>
-          </summary>
-          <div className="session-detail-comments-strip__body">
-            {pr.unresolvedComments.map((comment, index) => {
-              const { title, description } = cleanBugbotComment(comment.body);
-              return (
-                <details key={comment.url} className="session-detail-comment" open={index === 0}>
-                  <summary>
-                    <div className="session-detail-comment__row">
-                      <svg
-                        className="session-detail-comment__chevron"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        viewBox="0 0 24 24"
-                      >
-                        <path d="M9 5l7 7-7 7" />
-                      </svg>
-                      <span className="session-detail-comment__title">{title}</span>
-                      <span className="session-detail-comment__author">· {comment.author}</span>
-                      <a
-                        href={comment.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(event) => event.stopPropagation()}
-                        className="session-detail-comment__view"
-                      >
-                        view &rarr;
-                      </a>
-                    </div>
-                  </summary>
-                  <div className="session-detail-comment__body">
-                    <div className="session-detail-comment__file">{comment.path}</div>
-                    <p className="session-detail-comment__text">{description}</p>
-                    <button
-                      onClick={() => handleAskAgentToFix(comment)}
-                      disabled={sendingComments.has(comment.url)}
-                      className={cn(
-                        "session-detail-comment__fix-btn",
-                        sentComments.has(comment.url) && "session-detail-comment__fix-btn--sent",
-                        errorComments.has(comment.url) && "session-detail-comment__fix-btn--error",
-                      )}
-                    >
-                      {sendingComments.has(comment.url)
-                        ? "Sending…"
-                        : sentComments.has(comment.url)
-                          ? "Sent ✓"
-                          : errorComments.has(comment.url)
-                            ? "Failed"
-                            : "Ask Agent to Fix"}
-                    </button>
-                  </div>
-                </details>
-              );
-            })}
-          </div>
-        </details>
-      ) : null}
+      <PRCommentThread
+        comments={pr.unresolvedComments}
+        unresolvedThreads={pr.unresolvedThreads}
+        sendingUrls={sendingComments}
+        sentUrls={sentComments}
+        errorUrls={errorComments}
+        onAskAgentToFix={handleAskAgentToFix}
+      />
     </div>
   );
 }
