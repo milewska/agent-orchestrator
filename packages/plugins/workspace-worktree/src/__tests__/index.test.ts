@@ -44,7 +44,15 @@ vi.mock("node:path", async () => {
 // ---------------------------------------------------------------------------
 
 import * as childProcess from "node:child_process";
-import { existsSync, lstatSync, symlinkSync, cpSync, rmSync, mkdirSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  symlinkSync,
+  cpSync,
+  rmSync,
+  mkdirSync,
+  readdirSync,
+} from "node:fs";
 import * as core from "@aoagents/ao-core";
 import { create, manifest } from "../index.js";
 
@@ -180,18 +188,20 @@ describe("workspace.create()", () => {
     // First call: git remote get-url origin
     expect(mockExecFileAsync).toHaveBeenCalledWith("git", ["remote", "get-url", "origin"], {
       cwd: "/repo/path",
+      windowsHide: true,
     });
 
     // Second call: git fetch origin --quiet
     expect(mockExecFileAsync).toHaveBeenCalledWith("git", ["fetch", "origin", "--quiet"], {
       cwd: "/repo/path",
+      windowsHide: true,
     });
 
     // Third call: git rev-parse --verify --quiet origin/main
     expect(mockExecFileAsync).toHaveBeenCalledWith(
       "git",
       ["rev-parse", "--verify", "--quiet", "origin/main"],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
 
     // Fourth call: git worktree add -b <branch> <path> <baseRef>
@@ -205,7 +215,7 @@ describe("workspace.create()", () => {
         "/mock-home/.worktrees/myproject/session-1",
         "origin/main",
       ],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
   });
 
@@ -242,8 +252,15 @@ describe("workspace.create()", () => {
 
     expect(mockExecFileAsync).toHaveBeenCalledWith(
       "git",
-      ["worktree", "add", "-b", "feat/TEST-1", "/mock-home/.worktrees/myproject/session-1", "origin/main"],
-      { cwd: "/repo/path" },
+      [
+        "worktree",
+        "add",
+        "-b",
+        "feat/TEST-1",
+        "/mock-home/.worktrees/myproject/session-1",
+        "origin/main",
+      ],
+      { cwd: "/repo/path", windowsHide: true },
     );
   });
 
@@ -285,7 +302,7 @@ describe("workspace.create()", () => {
     expect(mockExecFileAsync).toHaveBeenCalledWith(
       "git",
       ["rev-parse", "--verify", "--quiet", "refs/heads/main"],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
 
     expect(mockExecFileAsync).toHaveBeenCalledWith(
@@ -298,7 +315,7 @@ describe("workspace.create()", () => {
         "/mock-home/.worktrees/myproject/session-1",
         "refs/heads/main",
       ],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
   });
 
@@ -328,12 +345,13 @@ describe("workspace.create()", () => {
     expect(mockExecFileAsync).toHaveBeenCalledWith(
       "git",
       ["worktree", "add", "/mock-home/.worktrees/myproject/session-1", "origin/main"],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
 
     // Fourth call: checkout
     expect(mockExecFileAsync).toHaveBeenCalledWith("git", ["checkout", "feat/TEST-1"], {
       cwd: "/mock-home/.worktrees/myproject/session-1",
+      windowsHide: true,
     });
 
     expect(info.branch).toBe("feat/TEST-1");
@@ -353,11 +371,12 @@ describe("workspace.create()", () => {
     expect(mockExecFileAsync).toHaveBeenCalledWith(
       "git",
       ["worktree", "add", "/mock-home/.worktrees/myproject/session-1", "refs/heads/main"],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
 
     expect(mockExecFileAsync).toHaveBeenCalledWith("git", ["checkout", "feat/TEST-1"], {
       cwd: "/mock-home/.worktrees/myproject/session-1",
+      windowsHide: true,
     });
 
     expect(info.branch).toBe("feat/TEST-1");
@@ -381,7 +400,7 @@ describe("workspace.create()", () => {
     expect(mockExecFileAsync).toHaveBeenCalledWith(
       "git",
       ["worktree", "remove", "--force", "/mock-home/.worktrees/myproject/session-1"],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
   });
 
@@ -477,6 +496,7 @@ describe("workspace.create()", () => {
     // fetch should use expanded path
     expect(mockExecFileAsync).toHaveBeenCalledWith("git", ["fetch", "origin", "--quiet"], {
       cwd: "/mock-home/my-repo",
+      windowsHide: true,
     });
   });
 
@@ -499,7 +519,7 @@ describe("workspace.create()", () => {
         "/mock-home/.worktrees/myproject/session-1",
         "refs/heads/main",
       ],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
   });
 });
@@ -526,7 +546,7 @@ describe("workspace.restore()", () => {
         "/mock-home/.worktrees/myproject/session-1",
         "origin/feat/TEST-1",
       ],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
 
     expect(info.branch).toBe("feat/TEST-1");
@@ -553,7 +573,7 @@ describe("workspace.restore()", () => {
         "/mock-home/.worktrees/myproject/session-1",
         "refs/heads/main",
       ],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
 
     expect(info).toEqual({
@@ -580,14 +600,14 @@ describe("workspace.destroy()", () => {
     expect(mockExecFileAsync).toHaveBeenCalledWith(
       "git",
       ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-      { cwd: "/mock-home/.worktrees/myproject/session-1" },
+      { cwd: "/mock-home/.worktrees/myproject/session-1", windowsHide: true },
     );
 
     // Second call: worktree remove
     expect(mockExecFileAsync).toHaveBeenCalledWith(
       "git",
       ["worktree", "remove", "--force", "/mock-home/.worktrees/myproject/session-1"],
-      { cwd: "/repo/path" },
+      { cwd: "/repo/path", windowsHide: true },
     );
   });
 
@@ -939,9 +959,11 @@ describe("workspace.postCreate()", () => {
     expect(mockGetShell).toHaveBeenCalled();
     expect(mockExecFileAsync).toHaveBeenCalledWith("sh", ["-c", "pnpm install"], {
       cwd: "/mock-home/.worktrees/myproject/session-1",
+      windowsHide: true,
     });
     expect(mockExecFileAsync).toHaveBeenCalledWith("sh", ["-c", "pnpm build"], {
       cwd: "/mock-home/.worktrees/myproject/session-1",
+      windowsHide: true,
     });
   });
 
@@ -960,7 +982,7 @@ describe("workspace.postCreate()", () => {
     expect(mockExecFileAsync).toHaveBeenCalledWith(
       "pwsh",
       ["-NoLogo", "-NonInteractive", "-Command", "npm install"],
-      { cwd: "/mock-home/.worktrees/myproject/session-1" },
+      { cwd: "/mock-home/.worktrees/myproject/session-1", windowsHide: true },
     );
   });
 
@@ -1039,6 +1061,7 @@ describe("workspace.postCreate()", () => {
     expect(mockSymlinkSync).toHaveBeenCalledTimes(1);
     expect(mockExecFileAsync).toHaveBeenCalledWith("sh", ["-c", "pnpm install"], {
       cwd: "/mock-home/.worktrees/myproject/session-1",
+      windowsHide: true,
     }); // getShell() returns { cmd: "sh", args: ["-c", cmd] } in tests
   });
 

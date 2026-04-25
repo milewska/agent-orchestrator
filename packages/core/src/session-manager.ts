@@ -11,7 +11,15 @@
  * Reference: scripts/claude-ao-session, scripts/send-to-session
  */
 
-import { statSync, existsSync, readdirSync, writeFileSync, mkdirSync, utimesSync, unlinkSync } from "node:fs";
+import {
+  statSync,
+  existsSync,
+  readdirSync,
+  writeFileSync,
+  mkdirSync,
+  utimesSync,
+  unlinkSync,
+} from "node:fs";
 import { execFile } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -73,9 +81,7 @@ import {
 } from "./paths.js";
 import { isWindows } from "./platform.js";
 import { asValidOpenCodeSessionId } from "./opencode-session-id.js";
-import {
-  writeWorkspaceOpenCodeAgentsMd,
-} from "./opencode-agents-md.js";
+import { writeWorkspaceOpenCodeAgentsMd } from "./opencode-agents-md.js";
 import { normalizeOrchestratorSessionStrategy } from "./orchestrator-session-strategy.js";
 import { sessionFromMetadata } from "./utils/session-from-metadata.js";
 import { safeJsonParse, validateStatus } from "./utils/validation.js";
@@ -86,7 +92,9 @@ const execFileAsync = promisify(execFile);
 const OPENCODE_DISCOVERY_TIMEOUT_MS = 10_000;
 const OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS = 10_000;
 // On Windows, execFile cannot resolve .cmd shim extensions without invoking the shell.
-const EXEC_SHELL_OPTION = process.platform === "win32" ? ({ shell: true } as const) : ({} as const);
+// windowsHide:true suppresses the conhost popup that the shell would otherwise flash.
+const EXEC_SHELL_OPTION =
+  process.platform === "win32" ? ({ shell: true, windowsHide: true } as const) : ({} as const);
 
 function errorIncludesSessionNotFound(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
@@ -246,10 +254,7 @@ const DISPLAY_NAME_MAX_LENGTH = 80;
  * Returns `undefined` when no usable context exists so callers can skip
  * writing the field entirely.
  */
-function deriveDisplayName(input: {
-  issueTitle?: string;
-  prompt?: string;
-}): string | undefined {
+function deriveDisplayName(input: { issueTitle?: string; prompt?: string }): string | undefined {
   const pickLine = (text: string): string => {
     const line = text
       .split(/\r?\n/)
@@ -265,7 +270,10 @@ function deriveDisplayName(input: {
     const codePoints = Array.from(collapsed);
     if (codePoints.length <= DISPLAY_NAME_MAX_LENGTH) return collapsed;
     // Leave room for the ellipsis character.
-    return `${codePoints.slice(0, DISPLAY_NAME_MAX_LENGTH - 1).join("").trimEnd()}…`;
+    return `${codePoints
+      .slice(0, DISPLAY_NAME_MAX_LENGTH - 1)
+      .join("")
+      .trimEnd()}…`;
   };
 
   if (input.issueTitle && input.issueTitle.trim()) {
@@ -297,7 +305,7 @@ async function getTmuxForegroundCommand(sessionName: string): Promise<string | n
     const { stdout } = await execFileAsync(
       "tmux",
       ["display-message", "-p", "-t", sessionName, "#{pane_current_command}"],
-      { timeout: 5_000 },
+      { timeout: 5_000, windowsHide: true },
     );
     const command = stdout.trim();
     return command.length > 0 ? command : null;
@@ -367,7 +375,9 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const normalizedPath = normalizePath(path);
     const normalizedParent = normalizePath(parentPath);
     const sep = process.platform === "win32" ? "\\" : "/";
-    return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}${sep}`);
+    return (
+      normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}${sep}`)
+    );
   }
 
   function getManagedWorkspaceRoots(project: ProjectConfig, projectId?: string): string[] {
@@ -505,12 +515,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   }
 
   const SESSION_CACHE_TTL_MS = 35_000;
-  let sessionCache:
-    | {
-        sessions: Session[];
-        expiresAt: number;
-      }
-    | null = null;
+  let sessionCache: {
+    sessions: Session[];
+    expiresAt: number;
+  } | null = null;
 
   function invalidateCache(): void {
     sessionCache = null;
@@ -925,8 +933,9 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     );
     // After config validation, plugin is always set if tracker/scm exists
     // (either from user config or auto-generated from package/path)
-    const tracker =
-      project.tracker?.plugin ? registry.get<Tracker>("tracker", project.tracker.plugin) : null;
+    const tracker = project.tracker?.plugin
+      ? registry.get<Tracker>("tracker", project.tracker.plugin)
+      : null;
     const scm = project.scm?.plugin ? registry.get<SCM>("scm", project.scm.plugin) : null;
 
     return { runtime, agent, workspace, tracker, scm };
@@ -1065,7 +1074,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     // Fabricated handles (constructed as fallback for external sessions) should
     // NOT override status to "killed" — we don't know if the session ever had
     // a tmux session, and we'd clobber meaningful statuses like "pr_open".
-    if (handleFromMetadata && session.runtimeHandle && plugins.runtime && session.status !== "spawning") {
+    if (
+      handleFromMetadata &&
+      session.runtimeHandle &&
+      plugins.runtime &&
+      session.status !== "spawning"
+    ) {
       try {
         const alive = await plugins.runtime.isAlive(session.runtimeHandle);
         if (!alive) {
@@ -1710,7 +1724,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           AO_CALLER_TYPE: "orchestrator",
           AO_PROJECT_ID: orchestratorConfig.projectId,
           AO_CONFIG_PATH: config.configPath,
-          ...(config.port !== undefined && config.port !== null && { AO_PORT: String(config.port) }),
+          ...(config.port !== undefined &&
+            config.port !== null && { AO_PORT: String(config.port) }),
         },
       });
     } catch (err) {
@@ -1897,9 +1912,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
     };
 
-    return projectId
-      ? sessions.filter((session) => session.projectId === projectId)
-      : sessions;
+    return projectId ? sessions.filter((session) => session.projectId === projectId) : sessions;
   }
 
   async function get(sessionId: SessionId): Promise<Session | null> {
@@ -2492,8 +2505,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     try {
       await sendWithConfirmation(prepared);
     } catch (err) {
-      const shouldRetryWithRestore =
-        prepared.restoredAt === undefined && isRestorable(prepared);
+      const shouldRetryWithRestore = prepared.restoredAt === undefined && isRestorable(prepared);
 
       if (!shouldRetryWithRestore) {
         if (err instanceof Error) {
@@ -2550,7 +2562,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     );
 
     for (const { sessionName, raw: otherRaw } of activeRecords) {
-      if (!otherRaw || isOrchestratorSessionRecord(sessionName, otherRaw, project.sessionPrefix)) continue;
+      if (!otherRaw || isOrchestratorSessionRecord(sessionName, otherRaw, project.sessionPrefix))
+        continue;
 
       const samePr = otherRaw["pr"] === pr.url;
       const sameBranch =
@@ -2604,9 +2617,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       updateMetadata(sessionsDir, previousSessionId, {
         pr: "",
         prAutoDetect: "off",
-        ...(PR_TRACKING_STATUSES.has(previousRaw["status"] ?? "")
-          ? { status: "working" }
-          : {}),
+        ...(PR_TRACKING_STATUSES.has(previousRaw["status"] ?? "") ? { status: "working" } : {}),
         ...lifecycleMetadataUpdates(previousRaw, previousLifecycle),
       });
       invalidateCache();

@@ -4,7 +4,15 @@ import * as fs from "node:fs";
 import { existsSync, lstatSync, symlinkSync, rmSync, mkdirSync, readdirSync } from "node:fs";
 import { join, resolve, basename, dirname, sep } from "node:path";
 import { homedir } from "node:os";
-import { getShell, isWindows, type PluginModule, type Workspace, type WorkspaceCreateConfig, type WorkspaceInfo, type ProjectConfig } from "@aoagents/ao-core";
+import {
+  getShell,
+  isWindows,
+  type PluginModule,
+  type Workspace,
+  type WorkspaceCreateConfig,
+  type WorkspaceInfo,
+  type ProjectConfig,
+} from "@aoagents/ao-core";
 
 /** Timeout for git commands (30 seconds) */
 const GIT_TIMEOUT = 30_000;
@@ -20,7 +28,7 @@ export const manifest = {
 
 /** Run a git command in a given directory */
 async function git(cwd: string, ...args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, { cwd });
+  const { stdout } = await execFileAsync("git", args, { cwd, windowsHide: true });
   return stdout.trimEnd();
 }
 
@@ -82,7 +90,11 @@ async function isRegisteredWorktree(repoPath: string, worktreePath: string): Pro
     const target = toComparablePath(worktreePath);
     return output
       .split("\n")
-      .some((line) => line.startsWith("worktree ") && toComparablePath(line.slice("worktree ".length)) === target);
+      .some(
+        (line) =>
+          line.startsWith("worktree ") &&
+          toComparablePath(line.slice("worktree ".length)) === target,
+      );
   } catch {
     return false;
   }
@@ -283,6 +295,7 @@ export function create(config?: Record<string, unknown>): Workspace {
         await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], {
           cwd: workspacePath,
           timeout: GIT_TIMEOUT,
+          windowsHide: true,
         });
         return true;
       } catch {
@@ -411,7 +424,10 @@ export function create(config?: Record<string, unknown>): Workspace {
       if (project.postCreate) {
         const shell = getShell();
         for (const command of project.postCreate) {
-          await execFileAsync(shell.cmd, shell.args(command), { cwd: info.path });
+          await execFileAsync(shell.cmd, shell.args(command), {
+            cwd: info.path,
+            windowsHide: true,
+          });
         }
       }
     },

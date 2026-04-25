@@ -18,6 +18,7 @@ export async function exec(
     cwd: options?.cwd,
     env: options?.env ? { ...process.env, ...options.env } : undefined,
     maxBuffer: 10 * 1024 * 1024,
+    windowsHide: true,
   });
   return { stdout: stdout.trimEnd(), stderr: stderr.trimEnd() };
 }
