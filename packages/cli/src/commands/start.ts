@@ -1657,23 +1657,25 @@ export function registerStop(program: Command): void {
             );
           }
 
-          // Lifecycle polling runs in-process inside the `ao start` process
-          // (registered via `running.json`). Sending SIGTERM to that PID below
-          // triggers the shared shutdown handler in `lifecycle-service`, which
-          // stops every per-project loop. No explicit stop call needed here —
-          // this CLI invocation is a separate process with an empty active map.
+          // ── Per-project vs full teardown ──
+          // When a specific project is named, only kill its orchestrator session.
+          // The lifecycle worker for that project becomes a harmless no-op (polls
+          // sessions, finds no orchestrator, does nothing). When no project is named,
+          // tear down the entire shared host (parent process + dashboard).
+          const targetedStop = projectArg !== undefined;
 
-          // Stop dashboard — kill parent PID from running.json, then also stop
-          // any dashboard child process via lsof (parent SIGTERM may not propagate)
-          if (running) {
-            try {
-              process.kill(running.pid, "SIGTERM");
-            } catch {
-              // Already dead
+          if (!targetedStop) {
+            // Full teardown: kill parent PID from running.json, stop dashboard
+            if (running) {
+              try {
+                process.kill(running.pid, "SIGTERM");
+              } catch {
+                // Already dead
+              }
+              await unregister();
             }
-            await unregister();
+            await stopDashboard(running?.port ?? port);
           }
-          await stopDashboard(running?.port ?? port);
 
           console.log(chalk.bold.green("\n✓ Orchestrator stopped\n"));
           console.log(
