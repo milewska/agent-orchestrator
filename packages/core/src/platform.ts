@@ -31,7 +31,7 @@ let cachedShell: ShellInfo | null = null;
 function resolveWindowsShell(): ShellInfo {
   // Prefer pwsh (PowerShell Core, cross-platform)
   try {
-    execFileSync("pwsh", ["-Version"], { timeout: 5000, stdio: "ignore" });
+    execFileSync("pwsh", ["-Version"], { timeout: 5000, stdio: "ignore", windowsHide: true });
     return { cmd: "pwsh", args: (c) => ["-Command", c] };
   } catch {
     // not installed
@@ -39,7 +39,11 @@ function resolveWindowsShell(): ShellInfo {
 
   // Fall back to powershell.exe (Windows PowerShell, always on Win 10+)
   try {
-    execFileSync("powershell.exe", ["-Command", "echo ok"], { timeout: 5000, stdio: "ignore" });
+    execFileSync("powershell.exe", ["-Command", "echo ok"], {
+      timeout: 5000,
+      stdio: "ignore",
+      windowsHide: true,
+    });
     return { cmd: "powershell.exe", args: (c) => ["-Command", c] };
   } catch {
     // not available (very unlikely on Win 10+)
@@ -88,7 +92,7 @@ export async function killProcessTree(
     // are unaffected: the SIGKILL step simply finds the process already dead.
     const args = ["/T", "/F", "/PID", String(pid)];
     try {
-      await execFileAsync("taskkill", args);
+      await execFileAsync("taskkill", args, { windowsHide: true });
     } catch {
       // Process may already be dead
     }
@@ -113,7 +117,7 @@ export async function findPidByPort(port: number): Promise<string | null> {
   try {
     if (isWindows()) {
       // netstat -ano shows all connections with PIDs
-      const { stdout } = await execFileAsync("netstat", ["-ano"]);
+      const { stdout } = await execFileAsync("netstat", ["-ano"], { windowsHide: true });
       const portPattern = new RegExp(`:${port}(?!\\d)`);
       for (const line of stdout.split("\n")) {
         // Match LISTENING state on the target local port exactly

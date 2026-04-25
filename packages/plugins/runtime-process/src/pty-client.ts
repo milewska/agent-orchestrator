@@ -90,39 +90,75 @@ export function connectPtyHost(pipePath: string, timeoutMs = 3000): Promise<Sock
 // ptyHostSendMessage
 // ---------------------------------------------------------------------------
 
+// Windows ConPTY silently drops bytes when a single pty.write() exceeds its
+// input buffer (observed truncation around 3–4 KB). Slicing the payload into
+// small chunks with a brief delay between each lets the host's pty.write()
+// drain into ConPTY before the next chunk arrives. Unix PTYs don't have this
+// limitation, but chunking is harmless there — the small added latency
+// (~15 ms × ceil(chars/512)) is imperceptible for typical prompts.
+const PTY_INPUT_CHUNK_CHARS = 512;
+const PTY_INPUT_CHUNK_DELAY_MS = 15;
+const PTY_INPUT_ENTER_DELAY_MS = 300;
+
+function writeFrame(sock: Socket, frame: Buffer): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    sock.write(frame, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Send a message (text command) to the PTY via a short-lived connection.
- * Appends a newline so the shell processes the command immediately.
+ * Chunks large payloads to avoid ConPTY buffer truncation on Windows, then
+ * sends Enter as a separate frame after a short pause.
+ *
+ * Sliced by JS string length (UTF-16 code units), not bytes, so multi-byte
+ * codepoints aren't split mid-encoding. Surrogate pairs at chunk boundaries
+ * are still possible but extraordinarily rare in agent prompts; the cost of
+ * a defensive boundary check isn't worth it for our content.
  */
 export async function ptyHostSendMessage(pipePath: string, message: string): Promise<void> {
   const sock = await connectPtyHost(pipePath);
-  // Send message text first, then Enter as a separate write after a small delay.
-  // Mirrors tmux behavior: `send-keys -l <text>` then `send-keys Enter`.
-  // Sending \r concatenated with the text can cause the Enter to be consumed
-  // as part of a paste rather than triggering input submission.
-  await new Promise<void>((resolve, reject) => {
-    sock.once("error", reject);
-    const textFrame = encodeMessage(MSG_TERMINAL_INPUT, message);
-    sock.write(textFrame, (err) => {
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (err?: Error): void => {
+      if (settled) return;
+      settled = true;
       if (err) {
         sock.destroy();
         reject(err);
-        return;
+      } else {
+        sock.end();
+        resolve();
       }
-      // Small delay to let the terminal process the pasted text before Enter
-      setTimeout(() => {
-        const enterFrame = encodeMessage(MSG_TERMINAL_INPUT, "\r");
-        sock.write(enterFrame, (err2) => {
-          if (err2) {
-            sock.destroy();
-            reject(err2);
-            return;
+    };
+    sock.once("error", finish);
+
+    void (async () => {
+      try {
+        for (let offset = 0; offset < message.length; offset += PTY_INPUT_CHUNK_CHARS) {
+          const slice = message.slice(offset, offset + PTY_INPUT_CHUNK_CHARS);
+          await writeFrame(sock, encodeMessage(MSG_TERMINAL_INPUT, slice));
+          if (offset + PTY_INPUT_CHUNK_CHARS < message.length) {
+            await delay(PTY_INPUT_CHUNK_DELAY_MS);
           }
-          sock.end();
-          resolve();
-        });
-      }, 300);
-    });
+        }
+        // Brief pause before Enter so the terminal processes the pasted text
+        // as input rather than consuming \r as part of the paste itself.
+        await delay(PTY_INPUT_ENTER_DELAY_MS);
+        await writeFrame(sock, encodeMessage(MSG_TERMINAL_INPUT, "\r"));
+        finish();
+      } catch (err) {
+        finish(err as Error);
+      }
+    })();
   });
 }
 

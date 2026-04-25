@@ -32,18 +32,26 @@ const originalPlatform = process.platform;
 // object { stdout, stderr } as that value so destructuring in platform.ts works.
 type ExecCb = (err: Error | null, result: { stdout: string; stderr: string }) => void;
 
+// promisify(execFile) calls execFile with (cmd, args, callback) when no options
+// are passed, or (cmd, args, options, callback) when options like windowsHide are
+// supplied. Pick whichever trailing arg is a function so tests work either way.
+function pickCallback(args: unknown[]): ExecCb {
+  for (let i = args.length - 1; i >= 0; i--) {
+    if (typeof args[i] === "function") return args[i] as ExecCb;
+  }
+  throw new Error("execFile mock: no callback arg found");
+}
+
 function resolveExecFile(stdout: string): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mockExecFile.mockImplementationOnce((_cmd: any, _args: any, callback: unknown) => {
-    (callback as ExecCb)(null, { stdout, stderr: "" });
+  mockExecFile.mockImplementationOnce((...args: unknown[]) => {
+    pickCallback(args)(null, { stdout, stderr: "" });
     return {} as ReturnType<typeof childProcess.execFile>;
   });
 }
 
 function rejectExecFile(err: Error): void {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  mockExecFile.mockImplementationOnce((_cmd: any, _args: any, callback: unknown) => {
-    (callback as ExecCb)(err, { stdout: "", stderr: "" });
+  mockExecFile.mockImplementationOnce((...args: unknown[]) => {
+    pickCallback(args)(err, { stdout: "", stderr: "" });
     return {} as ReturnType<typeof childProcess.execFile>;
   });
 }
@@ -141,6 +149,7 @@ describe("killProcessTree", () => {
     expect(mockExecFile).toHaveBeenCalledWith(
       "taskkill",
       ["/T", "/F", "/PID", "1234"],
+      expect.objectContaining({ windowsHide: true }),
       expect.any(Function),
     );
   });
@@ -155,6 +164,7 @@ describe("killProcessTree", () => {
     expect(mockExecFile).toHaveBeenCalledWith(
       "taskkill",
       ["/T", "/F", "/PID", "1234"],
+      expect.objectContaining({ windowsHide: true }),
       expect.any(Function),
     );
   });
