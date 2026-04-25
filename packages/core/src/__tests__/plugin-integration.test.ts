@@ -60,6 +60,8 @@ let mockAgent: Agent;
 let mockWorkspace: Workspace;
 let config: OrchestratorConfig;
 let project: OrchestratorConfig["projects"][string];
+let previousHome: string | undefined;
+let previousUserProfile: string | undefined;
 
 function mockGh(result: unknown): void {
   ghMock.mockResolvedValueOnce({ stdout: JSON.stringify(result) });
@@ -104,6 +106,10 @@ beforeEach(() => {
   };
 
   mkdirSync(env.tmpDir, { recursive: true });
+  previousHome = process.env["HOME"];
+  previousUserProfile = process.env["USERPROFILE"];
+  process.env["HOME"] = env.tmpDir;
+  process.env["USERPROFILE"] = env.tmpDir;
   env.configPath = join(env.tmpDir, "agent-orchestrator.yaml");
   writeFileSync(env.configPath, "projects: {}\n");
 
@@ -155,9 +161,13 @@ beforeEach(() => {
   env.cleanup = () => {
     const projectBaseDir = getProjectBaseDir(project.storageKey);
     if (existsSync(projectBaseDir)) {
-      rmSync(projectBaseDir, { recursive: true, force: true });
+      rmSync(projectBaseDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
-    rmSync(env.tmpDir, { recursive: true, force: true });
+    rmSync(env.tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    if (previousHome === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = previousHome;
+    if (previousUserProfile === undefined) delete process.env["USERPROFILE"];
+    else process.env["USERPROFILE"] = previousUserProfile;
   };
 });
 
