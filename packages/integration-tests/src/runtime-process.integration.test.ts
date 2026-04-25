@@ -44,7 +44,10 @@ describe("runtime-process (integration)", () => {
 
   it("sendMessage writes to stdin and output is captured", async () => {
     await runtime.sendMessage(handle, "hello from test");
-    await sleep(200); // give time for stdout to be captured
+    // Windows ConPTY round-trip (named pipe → PTY host → child stdin → child stdout
+    // → ring buffer → named pipe → reader) needs more headroom than the Unix
+    // direct-stdin path. 200ms was unreliable on slow Windows runners.
+    await sleep(process.platform === "win32" ? 1500 : 200);
     const output = await runtime.getOutput(handle);
     expect(output).toContain("hello from test");
   });
