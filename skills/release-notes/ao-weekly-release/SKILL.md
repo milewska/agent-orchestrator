@@ -88,7 +88,7 @@ Before finalizing highlights, check what the previous release already announced.
 gh release view --json tagName,body --jq '.body' | head -50
 ```
 
-If a feature was already highlighted in the last release (e.g. "External plugin system" in v0.4.0), either omit it or frame it as an evolution ("Plugin system now supports...") rather than a new announcement.
+If a feature was already highlighted in the last release (e.g. "External plugin system" in v0.2.5), either omit it or frame it as an evolution ("Plugin system now supports...") rather than a new announcement.
 
 ## Highlight Ordering is Editorial
 
@@ -119,7 +119,7 @@ Embed in the HTML as:
 </div>
 ```
 
-Current mascot: pixel-art Space Invader style character in sky blue, holding a glowing pointer wand. Stored locally at `/home/aoagent/.hermes/image_cache/img_051a4e024b76.webp`.
+Current mascot: pixel-art Space Invader style character in sky blue, holding a glowing pointer wand. Verify the local path exists before embedding — the file location varies per environment. If missing, ask the user for the current mascot image.
 
 ## Output format
 
@@ -194,6 +194,12 @@ For the HTML version (matching the reference style at surajmarkup.in), use the f
     .footer-rule{margin-top:28px;color:#454545;letter-spacing:.12em;font-size:14px}
   </style>
 </head>
+<body>
+  <div class="wrap">
+    <!-- body content per Content Structure section below -->
+  </div>
+</body>
+</html>
 ```
 
 ### Content Structure (exact order)
