@@ -21,10 +21,10 @@ import { getEnvDefaults } from "@aoagents/ao-core";
 type ClientMessage =
   | { ch: "terminal"; id: string; type: "data"; data: string }
   | { ch: "terminal"; id: string; type: "resize"; cols: number; rows: number }
-  | { ch: "terminal"; id: string; type: "open" }
+  | { ch: "terminal"; id: string; type: "open"; tmuxName?: string }
   | { ch: "terminal"; id: string; type: "close" }
   | { ch: "system"; type: "ping" }
-  | { ch: "subscribe"; topics: ("sessions")[] };
+  | { ch: "subscribe"; topics: "sessions"[] };
 
 // ── Server → Client ──
 type ServerMessage =
@@ -37,14 +37,7 @@ type ServerMessage =
   | { ch: "system"; type: "error"; message: string };
 
 // Mirrors AttentionLevel in src/lib/types.ts — keep in sync.
-type AttentionLevel =
-  | "merge"
-  | "action"
-  | "respond"
-  | "review"
-  | "pending"
-  | "working"
-  | "done";
+type AttentionLevel = "merge" | "action" | "respond" | "review" | "pending" | "working" | "done";
 
 interface SessionPatch {
   id: string;
@@ -251,13 +244,15 @@ class TerminalManager {
    * Open/attach to a terminal. If already open, just return.
    * If has subscribers but PTY crashed, re-attach.
    */
-  open(id: string): string {
+  open(id: string, tmuxName?: string): string {
     // Validate and resolve
     if (!validateSessionId(id)) {
       throw new Error(`Invalid session ID: ${id}`);
     }
 
-    const tmuxSessionId = resolveTmuxSession(id, this.TMUX);
+    // Use provided tmuxName, or reuse from existing terminal entry, or resolve
+    const existing = this.terminals.get(id);
+    const tmuxSessionId = tmuxName ?? existing?.tmuxSessionId ?? resolveTmuxSession(id, this.TMUX);
     if (!tmuxSessionId) {
       throw new Error(`Session not found: ${id}`);
     }
@@ -356,7 +351,9 @@ class TerminalManager {
       // after every attach (e.g. resource exhaustion or a broken tmux session).
       if (terminal.subscribers.size > 0 && terminal.reattachAttempts < MAX_REATTACH_ATTEMPTS) {
         terminal.reattachAttempts += 1;
-        console.log(`[MuxServer] Re-attaching to ${id} (attempt ${terminal.reattachAttempts}/${MAX_REATTACH_ATTEMPTS})`);
+        console.log(
+          `[MuxServer] Re-attaching to ${id} (attempt ${terminal.reattachAttempts}/${MAX_REATTACH_ATTEMPTS})`,
+        );
         try {
           this.open(id);
           terminal.reattachAttempts = 0; // reset on successful attach
@@ -403,7 +400,11 @@ class TerminalManager {
    * Automatically opens the terminal if needed.
    * @param onExit - called when the PTY exits and cannot be re-attached
    */
-  subscribe(id: string, callback: (data: string) => void, onExit?: (exitCode: number) => void): () => void {
+  subscribe(
+    id: string,
+    callback: (data: string) => void,
+    onExit?: (exitCode: number) => void,
+  ): () => void {
     // Ensure terminal is open
     this.open(id);
     const terminal = this.terminals.get(id);
@@ -438,7 +439,6 @@ class TerminalManager {
     if (!terminal) return "";
     return terminal.buffer.join("");
   }
-
 }
 
 // ── Windows Pipe Relay (extracted for testability) ──
@@ -485,10 +485,14 @@ export function handleWindowsPipeMessage(
         winPipes.delete(id);
         winPipeBuffers.delete(id);
         if (ws.readyState === WS_OPEN) {
-          ws.send(JSON.stringify({
-            ch: "terminal", id, type: "error",
-            message: `PTY host not available: ${err.message}`,
-          }));
+          ws.send(
+            JSON.stringify({
+              ch: "terminal",
+              id,
+              type: "error",
+              message: `PTY host not available: ${err.message}`,
+            }),
+          );
         }
       });
 
@@ -511,7 +515,14 @@ export function handleWindowsPipeMessage(
             winPipeBuffers.set(id, buf);
 
             if (msgType === 0x01 && ws.readyState === WS_OPEN) {
-              ws.send(JSON.stringify({ ch: "terminal", id, type: "data", data: payload.toString("utf-8") }));
+              ws.send(
+                JSON.stringify({
+                  ch: "terminal",
+                  id,
+                  type: "data",
+                  data: payload.toString("utf-8"),
+                }),
+              );
             }
             if (msgType === 0x07) {
               try {
@@ -519,7 +530,9 @@ export function handleWindowsPipeMessage(
                 if (!status.alive && ws.readyState === WS_OPEN) {
                   ws.send(JSON.stringify({ ch: "terminal", id, type: "exited", code: 0 }));
                 }
-              } catch { /* ignore parse errors */ }
+              } catch {
+                /* ignore parse errors */
+              }
             }
           }
         });
@@ -575,9 +588,7 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
 
   // On Windows, terminal I/O goes through named pipe relay — no TerminalManager needed.
   const terminalManager =
-    ptySpawn && process.platform !== "win32"
-      ? new TerminalManager(tmuxPath ?? undefined)
-      : null;
+    ptySpawn && process.platform !== "win32" ? new TerminalManager(tmuxPath ?? undefined) : null;
 
   const nextPort = process.env.PORT || "3000";
   const broadcaster = new SessionBroadcaster(nextPort);
@@ -620,7 +631,6 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
      * Handle incoming messages
      */
     ws.on("message", (data) => {
-
       try {
         const msg = JSON.parse(data.toString("utf8")) as ClientMessage;
 
@@ -637,14 +647,16 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
               if (process.platform === "win32") {
                 handleWindowsPipeMessage(
                   msg as { id: string; type: string },
-                  ws, winPipes, winPipeBuffers,
+                  ws,
+                  winPipes,
+                  winPipeBuffers,
                   { connect: netConnect, resolvePipePath },
                 );
               } else {
                 // --- Unix: existing tmux path (unchanged) ---
                 // Validate session exists
                 if (!terminalManager) throw new Error("Terminal manager not available");
-                terminalManager.open(id);
+                terminalManager.open(id, "tmuxName" in msg ? msg.tmuxName : undefined);
 
                 // Send opened confirmation (idempotent — safe to send on re-open)
                 const openedMsg: ServerMessage = { ch: "terminal", id, type: "opened" };
@@ -679,7 +691,12 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
                       }
                     },
                     (exitCode) => {
-                      const exitedMsg: ServerMessage = { ch: "terminal", id, type: "exited", code: exitCode };
+                      const exitedMsg: ServerMessage = {
+                        ch: "terminal",
+                        id,
+                        type: "exited",
+                        code: exitCode,
+                      };
                       if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify(exitedMsg));
                       }
@@ -692,7 +709,9 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
               if (process.platform === "win32") {
                 handleWindowsPipeMessage(
                   msg as { id: string; type: string; data: string },
-                  ws, winPipes, winPipeBuffers,
+                  ws,
+                  winPipes,
+                  winPipeBuffers,
                   { connect: netConnect, resolvePipePath },
                 );
               } else {
@@ -702,7 +721,9 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
               if (process.platform === "win32") {
                 handleWindowsPipeMessage(
                   msg as { id: string; type: string; cols: number; rows: number },
-                  ws, winPipes, winPipeBuffers,
+                  ws,
+                  winPipes,
+                  winPipeBuffers,
                   { connect: netConnect, resolvePipePath },
                 );
               } else {
@@ -712,7 +733,9 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
               if (process.platform === "win32") {
                 handleWindowsPipeMessage(
                   msg as { id: string; type: string },
-                  ws, winPipes, winPipeBuffers,
+                  ws,
+                  winPipes,
+                  winPipeBuffers,
                   { connect: netConnect, resolvePipePath },
                 );
               } else {

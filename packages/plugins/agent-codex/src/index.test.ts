@@ -420,50 +420,9 @@ describe("getEnvironment", () => {
     expect(env["AO_ISSUE_ID"]).toBeUndefined();
   });
 
-  it("prepends ~/.ao/bin to PATH for shell wrappers", () => {
+  it("does not set PATH (injected by session-manager)", () => {
     const env = agent.getEnvironment(makeLaunchConfig());
-    expect(env["PATH"]).toMatch(/^.*[/\\]\.ao[/\\]bin[;:]/);
-  });
-
-  it("PATH starts with the ao bin dir specifically", () => {
-    const env = agent.getEnvironment(makeLaunchConfig());
-    const delimiter = process.platform === "win32" ? ";" : ":";
-    // On Windows, path.join uses backslashes; on Unix it uses forward slashes
-    const expectedSuffix = `${delimiter}`;
-    const aoBinPattern = /[/\\]mock[/\\]home[/\\]\.ao[/\\]bin/;
-    expect(env["PATH"]).toMatch(aoBinPattern);
-    // Verify it's at the start (before the delimiter)
-    const pathVal = env["PATH"] ?? "";
-    const firstDelim = pathVal.indexOf(delimiter);
-    const firstSegment = firstDelim >= 0 ? pathVal.slice(0, firstDelim) : pathVal;
-    expect(firstSegment).toMatch(aoBinPattern);
-    // Suppress unused variable warning
-    void expectedSuffix;
-  });
-
-  it("puts /usr/local/bin before linuxbrew paths (Unix) / excludes it on Windows", () => {
-    const originalPath = process.env["PATH"];
-    if (process.platform === "win32") {
-      // On Windows delimiter is ;. Use a Windows-style PATH for this test.
-      // /usr/local/bin must not appear in the result — buildAgentPath excludes it.
-      process.env["PATH"] = "C:\\Program Files\\Git\\bin;C:\\Windows\\System32";
-      try {
-        const env = agent.getEnvironment(makeLaunchConfig());
-        expect(env["PATH"]).not.toContain("/usr/local/bin");
-      } finally {
-        process.env["PATH"] = originalPath;
-      }
-    } else {
-      process.env["PATH"] = "/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin";
-      try {
-        const env = agent.getEnvironment(makeLaunchConfig());
-        expect(env["PATH"]).toBe(
-          "/mock/home/.ao/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin",
-        );
-      } finally {
-        process.env["PATH"] = originalPath;
-      }
-    }
+    expect(env["PATH"]).toBeUndefined();
   });
 
   it("sets CODEX_DISABLE_UPDATE_CHECK=1 to suppress interactive update prompts", () => {
@@ -471,59 +430,9 @@ describe("getEnvironment", () => {
     expect(env["CODEX_DISABLE_UPDATE_CHECK"]).toBe("1");
   });
 
-  it("sets GH_PATH to preferred wrapper target", () => {
+  it("does not set GH_PATH (injected by session-manager)", () => {
     const env = agent.getEnvironment(makeLaunchConfig());
-    expect(env["GH_PATH"]).toBe("/usr/local/bin/gh");
-  });
-
-  it("deduplicates ao and /usr/local/bin entries", () => {
-    const originalPath = process.env["PATH"];
-    if (process.platform === "win32") {
-      // On Windows: delimiter is ;, /usr/local/bin is never added
-      // Mock homedir returns "/mock/home", so ao bin dir uses forward slash via join
-      // Use a path with duplicate C:\Windows\System32 entries to test dedup
-      process.env["PATH"] = "C:\\Windows\\System32;C:\\Program Files\\Git\\bin;C:\\Windows\\System32";
-      try {
-        const env = agent.getEnvironment(makeLaunchConfig());
-        // ~/.ao/bin appears exactly once (path from mockHomedir "/mock/home")
-        const parts = (env["PATH"] ?? "").split(";");
-        const aoBinEntries = parts.filter((p) => /\.ao[/\\]bin/.test(p));
-        expect(aoBinEntries).toHaveLength(1);
-        // duplicate C:\Windows\System32 is deduped
-        const sys32Entries = parts.filter((p) => p === "C:\\Windows\\System32");
-        expect(sys32Entries).toHaveLength(1);
-        // /usr/local/bin is absent
-        expect(env["PATH"]).not.toContain("/usr/local/bin");
-      } finally {
-        process.env["PATH"] = originalPath;
-      }
-    } else {
-      process.env["PATH"] = "/mock/home/.ao/bin:/usr/local/bin:/usr/bin:/usr/local/bin";
-      try {
-        const env = agent.getEnvironment(makeLaunchConfig());
-        expect(env["PATH"]).toBe("/mock/home/.ao/bin:/usr/local/bin:/usr/bin");
-      } finally {
-        process.env["PATH"] = originalPath;
-      }
-    }
-  });
-
-  it("falls back to /usr/bin:/bin (Unix) or just ~/.ao/bin (Windows) when process.env.PATH is undefined", () => {
-    const originalPath = process.env["PATH"];
-    delete process.env["PATH"];
-    try {
-      const env = agent.getEnvironment(makeLaunchConfig());
-      if (process.platform === "win32") {
-        // On Windows: no fallback path, result is just ~/.ao/bin
-        const parts = (env["PATH"] ?? "").split(";").filter(Boolean);
-        expect(parts).toHaveLength(1);
-        expect(parts[0]).toMatch(/[/\\]mock[/\\]home[/\\]\.ao[/\\]bin/);
-      } else {
-        expect(env["PATH"]).toBe("/mock/home/.ao/bin:/usr/local/bin:/usr/bin:/bin");
-      }
-    } finally {
-      process.env["PATH"] = originalPath;
-    }
+    expect(env["GH_PATH"]).toBeUndefined();
   });
 });
 
@@ -1787,8 +1696,10 @@ describe("postLaunchSetup", () => {
     mockExecFileAsync.mockRejectedValue(new Error("not found"));
     mockStat.mockRejectedValue(new Error("ENOENT"));
     mockReadFile.mockRejectedValue(new Error("ENOENT"));
-    await agent.postLaunchSetup!(makeSession({ workspacePath: "/workspace/test" }));
-    expect(mockMkdir).toHaveBeenCalled();
+    // Should not throw — binary resolution runs even if it falls back to "codex"
+    await expect(
+      agent.postLaunchSetup!(makeSession({ workspacePath: "/workspace/test" })),
+    ).resolves.toBeUndefined();
   });
 
   it("returns early when session has no workspacePath", async () => {
@@ -1829,266 +1740,44 @@ describe("setupWorkspaceHooks", () => {
     expect(typeof agent.setupWorkspaceHooks).toBe("function");
   });
 
-  it("creates ~/.ao/bin directory", async () => {
-    mockIsWindows.mockReturnValue(process.platform === "win32");
-    // Version marker doesn't exist — triggers full install
+  it("is a no-op (PATH wrappers are installed by session-manager)", async () => {
     mockReadFile.mockRejectedValue(new Error("ENOENT"));
-
     await agent.setupWorkspaceHooks!("/workspace/test", {
       dataDir: "/data",
       sessionId: "sess-1",
     });
-
-    // The mkdir call should be for the ~/.ao/bin path (path separators vary by platform)
-    const mkdirCall = mockMkdir.mock.calls.find(
-      (call: [string, object]) =>
-        typeof call[0] === "string" && /[/\\]mock[/\\]home[/\\]\.ao[/\\]bin$/.test(call[0]),
-    );
-    expect(mkdirCall).toBeDefined();
-    expect(mkdirCall![1]).toEqual({ recursive: true });
-  });
-
-  it("writes ao-metadata-helper.sh on Unix / does NOT write it on Windows", async () => {
-    mockIsWindows.mockReturnValue(process.platform === "win32");
-    mockReadFile.mockRejectedValue(new Error("ENOENT"));
-
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
-
-    const helperWriteCall = mockWriteFile.mock.calls.find(
-      (call: [string, string, object]) =>
-        typeof call[0] === "string" && call[0].includes("ao-metadata-helper.sh"),
-    );
-
-    if (process.platform === "win32") {
-      // On Windows, ao-metadata-helper.sh is never written
-      expect(helperWriteCall).toBeUndefined();
-    } else {
-      // On Unix: atomic write to .tmp file first, then renamed
-      const helperTmpWriteCall = mockWriteFile.mock.calls.find(
-        (call: [string, string, object]) =>
-          typeof call[0] === "string" && call[0].includes("ao-metadata-helper.sh.tmp."),
-      );
-      expect(helperTmpWriteCall).toBeDefined();
-      expect(helperTmpWriteCall![1]).toContain("update_ao_metadata()");
-      expect(helperTmpWriteCall![2]).toEqual({ encoding: "utf-8", mode: 0o755 });
-
-      // Then renamed to final path
-      const helperRenameCall = mockRename.mock.calls.find(
-        (call: string[]) => typeof call[1] === "string" && call[1].endsWith("ao-metadata-helper.sh"),
-      );
-      expect(helperRenameCall).toBeDefined();
-    }
-  });
-
-  it.skipIf(process.platform === "win32")("writes gh and git wrappers atomically when version marker is missing", async () => {
-    mockReadFile.mockRejectedValue(new Error("ENOENT"));
-
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
-
-    // gh wrapper: written to temp, then renamed
-    const ghWriteCall = mockWriteFile.mock.calls.find(
-      (call: [string, string, object]) =>
-        typeof call[0] === "string" && call[0].includes("/gh.tmp."),
-    );
-    expect(ghWriteCall).toBeDefined();
-    expect(ghWriteCall![1]).toContain("ao gh wrapper");
-
-    const ghRenameCall = mockRename.mock.calls.find(
-      (call: string[]) => typeof call[1] === "string" && call[1].endsWith("/gh"),
-    );
-    expect(ghRenameCall).toBeDefined();
-
-    // git wrapper: written to temp, then renamed
-    const gitWriteCall = mockWriteFile.mock.calls.find(
-      (call: [string, string, object]) =>
-        typeof call[0] === "string" && call[0].includes("/git.tmp."),
-    );
-    expect(gitWriteCall).toBeDefined();
-    expect(gitWriteCall![1]).toContain("ao git wrapper");
-
-    const gitRenameCall = mockRename.mock.calls.find(
-      (call: string[]) => typeof call[1] === "string" && call[1].endsWith("/git"),
-    );
-    expect(gitRenameCall).toBeDefined();
-  });
-
-  it.skipIf(process.platform === "win32")("sets executable permissions on gh and git wrappers via writeFile mode", async () => {
-    mockReadFile.mockRejectedValue(new Error("ENOENT"));
-
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
-
-    const ghWriteCall = mockWriteFile.mock.calls.find(
-      (call: [string, string, object]) =>
-        typeof call[0] === "string" && call[0].includes("/gh.tmp."),
-    );
-    expect(ghWriteCall![2]).toEqual({ encoding: "utf-8", mode: 0o755 });
-
-    const gitWriteCall = mockWriteFile.mock.calls.find(
-      (call: [string, string, object]) =>
-        typeof call[0] === "string" && call[0].includes("/git.tmp."),
-    );
-    expect(gitWriteCall![2]).toEqual({ encoding: "utf-8", mode: 0o755 });
-  });
-
-  it.skipIf(process.platform === "win32")("skips wrapper writes when version marker matches", async () => {
-    // First call for version marker — matches current version
-    // Second call for AGENTS.md — file doesn't exist
-    mockReadFile.mockImplementation((path: string) => {
-      if (typeof path === "string" && path.endsWith(".ao-version")) {
-        return Promise.resolve("0.5.0");
-      }
-      // AGENTS.md read attempt
-      return Promise.reject(new Error("ENOENT"));
-    });
-
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
-
-    // Should NOT write any wrappers when version matches (helper, gh, git all skipped)
-    const wrapperWrites = mockWriteFile.mock.calls.filter(
-      (call: [string, string, object]) =>
-        typeof call[0] === "string" &&
-        (call[0].includes("ao-metadata-helper.sh.tmp.") ||
-          call[0].includes("/gh.tmp.") ||
-          call[0].includes("/git.tmp.")),
-    );
-    expect(wrapperWrites).toHaveLength(0);
-  });
-
-  it.skipIf(process.platform === "win32")("writes version marker after installing wrappers", async () => {
-    mockReadFile.mockRejectedValue(new Error("ENOENT"));
-
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
-
-    // Version marker is also atomically written
-    const versionWriteCall = mockWriteFile.mock.calls.find(
-      (call: [string, string, object]) =>
-        typeof call[0] === "string" && call[0].includes(".ao-version.tmp."),
-    );
-    expect(versionWriteCall).toBeDefined();
-    expect(versionWriteCall![1]).toBe("0.5.0");
-
-    const versionRenameCall = mockRename.mock.calls.find(
-      (call: string[]) => typeof call[1] === "string" && call[1].endsWith(".ao-version"),
-    );
-    expect(versionRenameCall).toBeDefined();
-  });
-
-  it("writes ao session context to .ao/AGENTS.md", async () => {
-    mockIsWindows.mockReturnValue(process.platform === "win32");
-    // Version marker matches (skip wrapper install)
-    mockReadFile.mockImplementation((path: string) => {
-      if (typeof path === "string" && path.endsWith(".ao-version")) {
-        return Promise.resolve("0.5.0");
-      }
-      return Promise.reject(new Error("ENOENT"));
-    });
-
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
-
-    // Match .ao/AGENTS.md regardless of platform path separator
-    const agentsMdCall = mockWriteFile.mock.calls.find(
-      (call: string[]) => typeof call[0] === "string" && /[/\\]\.ao[/\\]AGENTS\.md$/.test(call[0]),
-    );
-    expect(agentsMdCall).toBeDefined();
-    // Both platforms write an AGENTS.md section containing "Agent Orchestrator"
-    expect(agentsMdCall![1]).toContain("Agent Orchestrator");
-  });
-
-  it("uses atomic write (temp + rename) to prevent partial reads from concurrent sessions", async () => {
-    mockIsWindows.mockReturnValue(process.platform === "win32");
-    mockReadFile.mockRejectedValue(new Error("ENOENT"));
-
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
-
-    // Every wrapper file should be written to a .tmp file first, then renamed
-    // This ensures concurrent readers never see a partially written file
-    const tmpWrites = mockWriteFile.mock.calls.filter(
-      (call: [string, string, object]) => typeof call[0] === "string" && call[0].includes(".tmp."),
-    );
-    const renames = mockRename.mock.calls;
-
-    if (process.platform === "win32") {
-      // On Windows: gh.cjs, gh.cmd, git.cjs, git.cmd, .ao-version = 5 atomic writes
-      expect(tmpWrites.length).toBe(5);
-      expect(renames.length).toBe(5);
-    } else {
-      // On Unix: ao-metadata-helper.sh, gh, git, .ao-version = 4 atomic writes
-      expect(tmpWrites.length).toBe(4);
-      expect(renames.length).toBe(4);
-    }
-
-    // Each rename should move a .tmp file to the final path
-    for (const [src, dst] of renames) {
-      expect(src).toContain(".tmp.");
-      expect(dst).not.toContain(".tmp.");
-    }
-  });
-
-  it("writes .ao/AGENTS.md without modifying repo-tracked AGENTS.md", async () => {
-    mockIsWindows.mockReturnValue(process.platform === "win32");
-    mockReadFile.mockImplementation((path: string) => {
-      if (typeof path === "string" && path.endsWith(".ao-version")) {
-        return Promise.resolve("0.5.0");
-      }
-      return Promise.reject(new Error("ENOENT"));
-    });
-
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
-
-    // Should write to .ao/AGENTS.md, NOT to workspace root AGENTS.md
-    const allWrites = mockWriteFile.mock.calls.filter(
-      (call: string[]) => typeof call[0] === "string" && call[0].endsWith("AGENTS.md"),
-    );
-    expect(allWrites).toHaveLength(1);
-    // Match .ao/AGENTS.md regardless of platform path separator
-    expect(allWrites[0]![0]).toMatch(/[/\\]\.ao[/\\]AGENTS\.md$/);
+    // Plugin no longer writes wrappers — session-manager handles it.
+    // mkdir/writeFile/rename should not be called by the plugin.
+    expect(mockMkdir).not.toHaveBeenCalled();
+    expect(mockWriteFile).not.toHaveBeenCalled();
+    expect(mockRename).not.toHaveBeenCalled();
   });
 });
+
+// (Legacy wrapper-write tests removed: the plugin no longer installs wrappers
+// or writes ao-metadata-helper.sh / gh / git / .ao-version — session-manager
+// owns that path now. See main's test refresh in #1487.)
 
 // =========================================================================
 // Shell wrapper content verification
 // =========================================================================
+// Skip on Windows: these tests verify Unix shell-script wrapper contents
+// (ao-metadata-helper.sh / gh / git wrappers) which don't apply to PowerShell.
 describe.skipIf(process.platform === "win32")("shell wrapper content", () => {
-  const agent = create();
-
   beforeEach(() => {
     // Force wrapper installation by making version marker miss
     mockReadFile.mockRejectedValue(new Error("ENOENT"));
   });
 
   async function getWrapperContent(name: string): Promise<string> {
-    await agent.setupWorkspaceHooks!("/workspace/test", {
-      dataDir: "/data",
-      sessionId: "sess-1",
-    });
+    // Wrappers are now installed by session-manager via setupPathWrapperWorkspace.
+    // Import and call it directly to test wrapper content.
+    const { setupPathWrapperWorkspace } = await import("@aoagents/ao-core");
+    await setupPathWrapperWorkspace("/workspace/test");
 
     // With atomic writes, content is written to a .tmp. file
     const call = mockWriteFile.mock.calls.find(
-      (c: [string, string, object]) => typeof c[0] === "string" && c[0].includes(`/${name}.tmp.`),
+      (c: unknown[]) => typeof c[0] === "string" && (c[0] as string).includes(`/${name}.tmp.`),
     );
     return call ? (call[1] as string) : "";
   }
@@ -2154,9 +1843,9 @@ describe.skipIf(process.platform === "win32")("shell wrapper content", () => {
       expect(content).toContain("pr/create)");
     });
 
-    it("uses exec for non-PR commands (transparent passthrough)", async () => {
+    it("passes through non-PR commands to real gh", async () => {
       const content = await getWrapperContent("gh");
-      expect(content).toContain('exec "$real_gh"');
+      expect(content).toContain('"$real_gh" "$@"');
     });
 
     it("prefers GH_PATH when provided and executable", async () => {
@@ -2173,9 +1862,7 @@ describe.skipIf(process.platform === "win32")("shell wrapper content", () => {
 
     it("extracts PR URL from gh pr create output", async () => {
       const content = await getWrapperContent("gh");
-      expect(content).toContain(
-        "grep -Eo 'https?://[^/]+/[^/]+/[^/]+/pull/[0-9]+'",
-      );
+      expect(content).toContain("grep -Eo 'https?://[^/]+/[^/]+/[^/]+/pull/[0-9]+'");
       expect(content).toContain("update_ao_metadata pr");
     });
 
