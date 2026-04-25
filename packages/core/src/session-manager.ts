@@ -2876,11 +2876,23 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       },
     });
 
-    // 9. Update metadata — merge updates, preserving existing fields
+    // 9. Update metadata — merge updates, preserving existing fields.
+    //
+    // We must update both the top-level `runtimeHandle` AND the nested
+    // `runtime.handle` inside `statePayload`. The lifecycle parser prefers
+    // the statePayload over top-level keys, so writing only the top-level
+    // key gets silently clobbered by the next lifecycle tick (which reads
+    // statePayload and rewrites the top-level field from it). Rebuilding
+    // the canonical lifecycle with the fresh handle keeps both in sync.
     const now = new Date().toISOString();
+    const updatedLifecycle = buildUpdatedLifecycle(sessionId, raw, (lifecycle) => {
+      lifecycle.runtime.handle = handle;
+      lifecycle.runtime.tmuxName = tmuxName ?? lifecycle.runtime.tmuxName;
+      lifecycle.runtime.lastObservedAt = now;
+    });
     updateMetadata(sessionsDir, sessionId, {
+      ...lifecycleMetadataUpdates(raw, updatedLifecycle),
       status: "spawning",
-      runtimeHandle: JSON.stringify(handle),
       restoredAt: now,
     });
     invalidateCache();
