@@ -253,6 +253,7 @@ export function SessionDetailHeader({
                 <SessionDetailPRCard
                   pr={pr as DashboardPR}
                   metadata={session.metadata}
+                  lifecyclePrReason={session.lifecycle?.prReason ?? undefined}
                   onAskAgentToFix={(comment, onSuccess, onError) =>
                     askAgentToFix(session.id, comment, onSuccess, onError)
                   }
