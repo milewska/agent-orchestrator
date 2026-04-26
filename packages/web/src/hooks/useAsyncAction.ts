@@ -163,12 +163,13 @@ export function useAsyncActionMap<TArgs extends unknown[]>(
   const reset = useCallback(
     (key?: string) => {
       if (key === undefined) {
-        gensRef.current.forEach((_, k) => bumpGen(k));
+        gensRef.current.clear();
         timersRef.current.forEach((t) => clearTimeout(t));
         timersRef.current.clear();
         if (mountedRef.current) setStates({});
         return;
       }
+      gensRef.current.delete(key);
       bumpGen(key);
       clearPending(key);
       if (mountedRef.current) writeState(key, IDLE_STATE);
@@ -189,6 +190,7 @@ export function useAsyncActionMap<TArgs extends unknown[]>(
         const timer = setTimeout(() => {
           if (gensRef.current.get(key) !== gen) return;
           timersRef.current.delete(key);
+          gensRef.current.delete(key);
           if (mountedRef.current) writeState(key, IDLE_STATE);
         }, sentMs);
         timersRef.current.set(key, timer);
@@ -199,6 +201,7 @@ export function useAsyncActionMap<TArgs extends unknown[]>(
         const timer = setTimeout(() => {
           if (gensRef.current.get(key) !== gen) return;
           timersRef.current.delete(key);
+          gensRef.current.delete(key);
           if (mountedRef.current) writeState(key, IDLE_STATE);
         }, errorMs);
         timersRef.current.set(key, timer);

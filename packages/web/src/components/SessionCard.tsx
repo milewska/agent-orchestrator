@@ -179,7 +179,8 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
   };
 
   const handleAction = (action: string, message: string) => {
-    if (actionFlash.anySending) return;
+    const flash = actionFlash.getState(action);
+    if (flash.sending || flash.sent) return;
     void actionFlash.run(action, message);
   };
 
@@ -695,7 +696,7 @@ function SessionCardView({ session, onSend, onKill, onMerge, onRestore }: Sessio
                         e.stopPropagation();
                         handleAction(alert.key, alert.actionMessage ?? "");
                       }}
-                      disabled={flash.sending}
+                      disabled={flash.sending || flash.sent}
                       className="alert-row__action"
                     >
                       {flash.sending || flash.sent
