@@ -1,3 +1,4 @@
+import process from "node:process";
 import { createMDX } from "fumadocs-mdx/next";
 
 /**
