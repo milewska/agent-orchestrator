@@ -60,7 +60,16 @@ export async function generateMetadata({
 }: PageProps): Promise<Metadata> {
   const { slug } = await params;
   const page = source.getPage(slug);
-  if (!page) notFound();
+  if (!page) {
+    return {
+      title: "Docs page not found",
+      description: "This docs page moved or does not exist.",
+      robots: {
+        index: false,
+        follow: true,
+      },
+    };
+  }
 
   return {
     title: page.data.title,

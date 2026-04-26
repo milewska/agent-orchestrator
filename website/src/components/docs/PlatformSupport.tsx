@@ -16,7 +16,7 @@ export interface PlatformSupportProps {
 
 const LABEL: Record<Status, string> = {
   full: "Supported",
-  partial: "Partial",
+  partial: "In progress",
   none: "Not supported",
 };
 
