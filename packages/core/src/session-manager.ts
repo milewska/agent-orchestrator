@@ -1807,7 +1807,15 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         orchestratorSessionStrategy === "ignore"
       ) {
         await kill(sessionId, { purgeOpenCode: orchestratorSessionStrategy === "delete" });
-        deleteMetadata(getProjectSessionsDir(orchestratorConfig.projectId), sessionId);
+        // Explicitly archive the terminated session so reserveSessionId() can
+        // claim the same name for the replacement. kill() intentionally keeps
+        // terminated sessions in the active dir for kanban visibility, but the
+        // delete/ignore strategies need the slot to be free immediately.
+        try {
+          deleteMetadata(getProjectSessionsDir(orchestratorConfig.projectId), sessionId, true);
+        } catch {
+          // Already archived (e.g. by the idempotency path on a concurrent call).
+        }
         return spawnOrchestrator(orchestratorConfig);
       }
       if (existing.lifecycle.session.state === "done") {
@@ -2052,6 +2060,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     // (which could double-purge opencode or race with concurrent kills).
     const existingLifecycle = parseCanonicalLifecycle(raw);
     if (existingLifecycle?.session.state === "terminated") {
+      // Session was already terminated (kill() keeps it in the active dir so the
+      // kanban can show it in the Terminated column). Archive it now that a second
+      // caller is asking to kill it — this is how cleanup() eventually removes it.
+      try {
+        deleteMetadata(sessionsDir, sessionId, true);
+      } catch {
+        // Already archived by a racing caller.
+      }
       return { cleaned: false, alreadyTerminated: true };
     }
 
@@ -2127,6 +2143,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     });
     updateMetadata(sessionsDir, sessionId, {
       ...lifecycleMetadataUpdates(raw, terminatedLifecycle),
+      // Mark OpenCode cleanup in active metadata so the flag survives into the
+      // eventual archive (written by cleanup() via the idempotency path above).
+      // Also clear opencodeSessionId so findOpenCodeSessionIds() won't return
+      // the deleted session ID for future reuse.
       ...(didPurgeOpenCodeSession && {
         opencodeSessionId: "",
         opencodeCleanedAt: new Date().toISOString(),
