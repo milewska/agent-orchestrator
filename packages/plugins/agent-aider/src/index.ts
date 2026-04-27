@@ -317,7 +317,11 @@ export function create(): Agent {
 
 export function detect(): boolean {
   try {
-    execFileSync("aider", ["--version"], { stdio: "ignore" });
+    execFileSync("aider", ["--version"], {
+      stdio: "ignore",
+      shell: isWindows(),
+      windowsHide: true,
+    });
     return true;
   } catch {
     return false;

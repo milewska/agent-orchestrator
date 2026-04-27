@@ -864,7 +864,11 @@ export type {
 
 export function detect(): boolean {
   try {
-    execFileSync("codex", ["--version"], { stdio: "ignore" });
+    execFileSync("codex", ["--version"], {
+      stdio: "ignore",
+      shell: isWindows(),
+      windowsHide: true,
+    });
     return true;
   } catch {
     return false;

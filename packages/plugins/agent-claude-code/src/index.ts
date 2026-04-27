@@ -1076,8 +1076,13 @@ export function create(): Agent {
 
 export function detect(): boolean {
   try {
-    // Use --version instead of `which` for cross-platform compatibility (Windows has no `which`)
-    execFileSync("claude", ["--version"], { stdio: "ignore" });
+    // Use --version instead of `which` for cross-platform compatibility (Windows has no `which`).
+    // shell:true on Windows so cmd.exe consults PATHEXT and finds .cmd shims (npm-installed CLIs).
+    execFileSync("claude", ["--version"], {
+      stdio: "ignore",
+      shell: isWindows(),
+      windowsHide: true,
+    });
     return true;
   } catch {
     return false;

@@ -455,7 +455,11 @@ export function create(): Agent {
 
 export function detect(): boolean {
   try {
-    execFileSync("opencode", ["version"], { stdio: "ignore" });
+    execFileSync("opencode", ["version"], {
+      stdio: "ignore",
+      shell: isWindows(),
+      windowsHide: true,
+    });
     return true;
   } catch {
     return false;
