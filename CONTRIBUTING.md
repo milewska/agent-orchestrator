@@ -67,6 +67,14 @@ ao update
 
 `ao update` fast-forwards the local install repo, reinstalls dependencies, clean-rebuilds `@aoagents/ao-core`, `@aoagents/ao-cli`, and `@aoagents/ao-web`, refreshes the global launcher with `npm link`, and finishes with CLI smoke tests. Use `ao update --skip-smoke` when you only need the rebuild step, or `ao update --smoke-only` when validating an existing install.
 
+## Release Setup (maintainers only)
+
+The canary and stable release workflows require one secret configured in GitHub repo settings:
+
+- `NPM_TOKEN` — an npm automation token with publish access to the `@aoagents` org. Add it at **Settings → Secrets and variables → Actions → New repository secret**.
+
+Without this secret, both `release.yml` and `canary.yml` will fail at the publish step.
+
 ## Testing your changes
 
 ### After your PR merges (~15 min)
