@@ -321,8 +321,8 @@ export interface Session {
   /** Metadata key-value pairs */
   metadata: Record<string, string>;
 
-  /** ID of the parent session that spawned this one (null for top-level sessions) */
-  parentSessionId: SessionId | null | undefined;
+  /** ID of the parent session that spawned this one (undefined for legacy/top-level sessions) */
+  parentSessionId?: SessionId | null;
 }
 
 export function isOrchestratorSession(
