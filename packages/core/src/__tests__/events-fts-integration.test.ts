@@ -6,10 +6,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // We need a real better-sqlite3 instance for this test.
 // If it's not available, skip.
-let Database: (new (path: string) => import("better-sqlite3").Database) | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Database: (new (path: string) => any) | null = null;
 try {
   const mod = await import("better-sqlite3");
-  Database = mod.default as unknown as new (path: string) => import("better-sqlite3").Database;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  Database = mod.default as unknown as new (path: string) => any;
 } catch {
   // better-sqlite3 unavailable — integration tests will be skipped
 }
