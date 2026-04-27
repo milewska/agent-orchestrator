@@ -84,7 +84,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Comment on merged PR
-        if: steps.check_sha.outputs.skip == 'false'
+        if: steps.check_sha.outputs.skip == 'false' && steps.publish.outcome == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CANARY_SHA: ${{ github.event.workflow_run.head_sha }}
