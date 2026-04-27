@@ -1541,9 +1541,10 @@ describe("spawn", () => {
       mkdirSync(worktreePath, { recursive: true });
       lifecycle.runtime.handle = makeHandle("old-rt");
       writeMetadata(sessionsDir, "app-orchestrator", {
-        project: "my-app",
-        branch: "orchestrator/app-orchestrator",
         worktree: worktreePath,
+        branch: "orchestrator/app-orchestrator",
+        status: "terminated",
+        project: "my-app",
         ...buildLifecycleMetadataPatch(lifecycle, "terminated"),
       });
       const sm = createSessionManager({ config, registry: mockRegistry });
