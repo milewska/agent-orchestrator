@@ -66,7 +66,7 @@ jobs:
         if: steps.check_sha.outputs.skip == 'false'
         run: |
           # If no changesets exist, create a minimal one so snapshot has something to work with.
-          if [ -z "$(ls .changeset/*.md 2>/dev/null | grep -v 'README')" ]; then
+          if [ -z "$(ls .changeset/*.md 2>/dev/null | grep -vi 'README')" ]; then
             printf -- '---\n"@aoagents/ao": patch\n---\n\nchore: canary build\n' > .changeset/canary-temp.md
           fi
           pnpm changeset version --snapshot nightly
@@ -78,10 +78,8 @@ jobs:
         id: publish
         run: |
           pnpm changeset publish --tag nightly --no-git-tag
-          SHORT_SHA=$(git rev-parse --short=7 HEAD)
           CANARY_VERSION=$(node -p "require('./packages/ao/package.json').version")
           echo "version=$CANARY_VERSION" >> "$GITHUB_OUTPUT"
-          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -96,9 +94,12 @@ jobs:
             --jq '.[0].number // empty')
           if [ -n "$PR_NUMBER" ]; then
             gh api repos/${{ github.repository }}/issues/${PR_NUMBER}/comments \
-              -f body="**Canary published!** Test your changes:
-          \`\`\`bash
-          npm install -g @aoagents/ao@${CANARY_VERSION}
-          # or: npm install -g @aoagents/ao@nightly
-          \`\`\`"
+              -f body="$(cat <<COMMENT
+**Canary published!** Test your changes:
+\`\`\`bash
+npm install -g @aoagents/ao@${CANARY_VERSION}
+# or: npm install -g @aoagents/ao@nightly
+\`\`\`
+COMMENT
+)"
           fi

@@ -34,5 +34,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@aoagents/ao-integration-tests", "@aoagents/ao-web"]
+  "ignore": ["@aoagents/ao-integration-tests"]
 }
