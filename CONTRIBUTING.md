@@ -67,6 +67,19 @@ ao update
 
 `ao update` fast-forwards the local install repo, reinstalls dependencies, clean-rebuilds `@aoagents/ao-core`, `@aoagents/ao-cli`, and `@aoagents/ao-web`, refreshes the global launcher with `npm link`, and finishes with CLI smoke tests. Use `ao update --skip-smoke` when you only need the rebuild step, or `ao update --smoke-only` when validating an existing install.
 
+## Testing your changes
+
+### After your PR merges (~15 min)
+The canary bot comments on your merged PR with the exact install command:
+```bash
+npm install -g @aoagents/ao@0.2.5-nightly-abc1234
+```
+
+### Latest main at any time
+```bash
+npm install -g @aoagents/ao@nightly
+```
+
 ---
 
 ## Building a Plugin
