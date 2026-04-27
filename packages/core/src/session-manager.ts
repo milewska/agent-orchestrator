@@ -2917,6 +2917,20 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           : {}),
       },
     };
+    // Orchestrator launches need the original systemPromptFile so the agent
+    // boots as the orchestrator (not a bare TUI). spawnOrchestrator wrote it to
+    // {baseDir}/orchestrator-prompt-{sessionId}.md and references it via
+    // agentLaunchConfig.systemPromptFile. On restore we must re-attach it,
+    // otherwise getLaunchCommand() (the fallback when getRestoreCommand returns
+    // null — e.g. Codex with no resumable thread for the worktree) starts a
+    // plain agent without orchestrator instructions.
+    const orchestratorSystemPromptFile = ((): string | undefined => {
+      if (selection.role !== "orchestrator") return undefined;
+      const baseDir = getProjectBaseDir(project.storageKey);
+      const file = join(baseDir, `orchestrator-prompt-${sessionId}.md`);
+      return existsSync(file) ? file : undefined;
+    })();
+
     const agentLaunchConfig = {
       sessionId,
       projectConfig: projectConfigForLaunch,
@@ -2924,6 +2938,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       permissions: selection.role === "orchestrator" ? "permissionless" : selection.permissions,
       model: selection.model,
       subagent: selection.subagent,
+      ...(orchestratorSystemPromptFile && { systemPromptFile: orchestratorSystemPromptFile }),
     };
 
     if (plugins.agent.getRestoreCommand) {
