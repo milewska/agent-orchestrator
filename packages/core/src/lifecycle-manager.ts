@@ -92,6 +92,11 @@ function parseDuration(str: string): number {
   }
 }
 
+/** Reaction keys for conditions that can oscillate (e.g. CI failing→pending→failing).
+ *  Their trackers survive status exit so the escalation budget accumulates
+ *  across oscillations instead of resetting to zero each time. */
+const PERSISTENT_REACTION_KEYS = new Set(["ci-failed", "merge-conflicts"]);
+
 type WorkspaceBranchProbe =
   | { kind: "branch"; branch: string }
   | { kind: "detached" }
@@ -394,11 +399,6 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
   const states = new Map<SessionId, SessionStatus>();
   const reactionTrackers = new Map<string, ReactionTracker>(); // "sessionId:reactionKey"
-
-  /** Reaction keys for conditions that can oscillate (e.g. CI failing→pending→failing).
-   *  Their trackers survive status exit so the escalation budget accumulates
-   *  across oscillations instead of resetting to zero each time. */
-  const PERSISTENT_REACTION_KEYS = new Set(["ci-failed", "merge-conflicts"]);
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let polling = false; // re-entrancy guard
   let allCompleteEmitted = false; // guard against repeated all_complete
@@ -1657,7 +1657,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         (reactionConfig.auto !== false || reactionConfig.action === "notify")
       ) {
         try {
-          // Build enriched config with dynamic base branch message
+          // Build enriched config with dynamic base branch message.
+          // Note: executeReaction's notify path defaults to "info" priority (was "warning"
+          // in the old direct-dispatch code). Users who set action:"notify" for merge-conflicts
+          // should set priority:"warning" explicitly in their config if needed.
           const enrichedConfig = { ...reactionConfig };
           if (reactionConfig.action === "send-to-agent" && !reactionConfig.message) {
             const baseBranch = session.pr.baseBranch ?? "the default branch";
