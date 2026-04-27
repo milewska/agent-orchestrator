@@ -2066,6 +2066,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       } catch {
         // Already archived by a racing caller.
       }
+      invalidateCache();
       return { cleaned: false, alreadyTerminated: true };
     }
 
@@ -2474,7 +2475,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     };
 
     const restoreForDelivery = async (reason: string, session: Session): Promise<Session> => {
-      if (session.lifecycle.session.state === "done") {
+      if (
+        session.lifecycle.session.state === "done" ||
+        session.lifecycle.session.state === "terminated"
+      ) {
         throw new Error(`Cannot send to session ${sessionId}: ${reason}`);
       }
 
