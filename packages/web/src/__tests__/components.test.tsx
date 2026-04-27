@@ -204,18 +204,71 @@ describe("SessionCard", () => {
     expect(screen.getByText("feat/cool-thing")).toBeInTheDocument();
   });
 
+  it("does not render lifecycle guidance as a pill on kanban cards", () => {
+    const session = makeSession({
+      lifecycle: {
+        sessionState: "detecting",
+        sessionReason: "runtime_lost",
+        prState: "none",
+        prReason: "not_created",
+        runtimeState: "missing",
+        runtimeReason: "tmux_missing",
+        session: {
+          state: "detecting",
+          reason: "runtime_lost",
+          label: "detecting",
+          reasonLabel: "runtime lost",
+          startedAt: new Date().toISOString(),
+          completedAt: null,
+          terminatedAt: null,
+          lastTransitionAt: new Date().toISOString(),
+        },
+        pr: {
+          state: "none",
+          reason: "not_created",
+          label: "not created",
+          reasonLabel: "not created",
+          number: null,
+          url: null,
+          lastObservedAt: null,
+        },
+        runtime: {
+          state: "missing",
+          reason: "tmux_missing",
+          label: "missing",
+          reasonLabel: "tmux missing",
+          lastObservedAt: new Date().toISOString(),
+        },
+        legacyStatus: "detecting",
+        evidence: null,
+        detectingAttempts: 1,
+        detectingEscalatedAt: null,
+        summary: "Detecting runtime truth (runtime lost)",
+        guidance: "Checking runtime and process evidence now.",
+      },
+    });
+
+    render(<SessionCard session={session} />);
+    expect(
+      screen.queryByText("Checking runtime and process evidence now."),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders terminal link", () => {
     const session = makeSession({ id: "backend-5" });
     render(<SessionCard session={session} />);
     const link = screen.getByText("terminal");
-    expect(link).toHaveAttribute("href", "/sessions/backend-5");
+    expect(link).toHaveAttribute(
+      "href",
+      "/projects/my-app/sessions/backend-5#session-terminal-section",
+    );
   });
 
   it("shows restore button when agent has exited", () => {
     const session = makeSession({ activity: "exited" });
     render(<SessionCard session={session} />);
     // Header shows compact "restore"; expanded panel shows "restore session"
-    expect(screen.getByText("restore")).toBeInTheDocument();
+    expect(screen.getByText("restore")).toHaveClass("session-card__restore-control");
   });
 
   it("does not show restore button when agent is active", () => {
@@ -267,6 +320,72 @@ describe("SessionCard", () => {
     render(<SessionCard session={session} onMerge={onMerge} />);
     fireEvent.click(screen.getByRole("button", { name: /merge/i }));
     expect(onMerge).toHaveBeenCalledWith(42);
+  });
+
+  it("renders passing CI check chips as hyperlinks when url is present", () => {
+    const pr = makePR({
+      state: "open",
+      ciStatus: "passing",
+      ciChecks: [
+        {
+          name: "lint-and-type-checks",
+          status: "passed",
+          url: "https://github.com/owner/repo/runs/111",
+        },
+        { name: "tests", status: "passed", url: "https://github.com/owner/repo/runs/222" },
+        { name: "no-url-check", status: "passed" },
+      ],
+      reviewDecision: "approved",
+      mergeability: {
+        mergeable: true,
+        ciPassing: true,
+        approved: true,
+        noConflicts: true,
+        blockers: [],
+      },
+    });
+    const session = makeSession({ status: "mergeable", activity: "idle", pr });
+    render(<SessionCard session={session} />);
+
+    const lintLink = screen.getByRole("link", { name: /lint-and-type-checks/ });
+    expect(lintLink).toHaveAttribute("href", "https://github.com/owner/repo/runs/111");
+    expect(lintLink).toHaveAttribute("target", "_blank");
+    expect(lintLink).toHaveAttribute("rel", "noopener noreferrer");
+
+    const testsLink = screen.getByRole("link", { name: /^tests$/ });
+    expect(testsLink).toHaveAttribute("href", "https://github.com/owner/repo/runs/222");
+
+    // Check without url should still render as plain text, not a link
+    expect(screen.queryByRole("link", { name: /no-url-check/ })).not.toBeInTheDocument();
+    expect(screen.getByText("no-url-check")).toBeInTheDocument();
+  });
+
+  it("stops propagation when clicking a passing CI chip link", () => {
+    const onClick = vi.fn();
+    const pr = makePR({
+      state: "open",
+      ciStatus: "passing",
+      ciChecks: [
+        { name: "build", status: "passed", url: "https://github.com/owner/repo/runs/333" },
+      ],
+      reviewDecision: "approved",
+      mergeability: {
+        mergeable: true,
+        ciPassing: true,
+        approved: true,
+        noConflicts: true,
+        blockers: [],
+      },
+    });
+    const session = makeSession({ status: "mergeable", activity: "idle", pr });
+    render(
+      <div onClick={onClick}>
+        <SessionCard session={session} />
+      </div>,
+    );
+    const link = screen.getByRole("link", { name: /build/ });
+    fireEvent.click(link);
+    expect(onClick).not.toHaveBeenCalled();
   });
 
   it("shows CI failing alert", () => {
@@ -462,6 +581,29 @@ describe("SessionCard", () => {
     });
   });
 
+  it("hides quick reply presets for terminal sessions", () => {
+    const session = makeSession({
+      id: "respond-ended",
+      status: "terminated",
+      activity: "exited",
+      summary: "Need approval to proceed",
+    });
+
+    render(<SessionCard session={session} />);
+
+    expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Abort" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Skip" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("textbox", { name: /type a reply to the agent/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view current context/i })).toHaveAttribute(
+      "href",
+      "/projects/my-app/sessions/respond-ended",
+    );
+    expect(screen.getByText("restore")).toBeInTheDocument();
+  });
+
   it("prevents duplicate enter submits and only clears the textarea after send settles", async () => {
     let resolveSend: (() => void) | null = null;
     const onSend = vi.fn(
@@ -525,7 +667,9 @@ describe("SessionCard", () => {
       expect(screen.getByRole("textbox", { name: /type a reply to the agent/i })).toHaveValue(
         "please continue",
       );
-      expect(screen.getByRole("textbox", { name: /type a reply to the agent/i })).not.toBeDisabled();
+      expect(
+        screen.getByRole("textbox", { name: /type a reply to the agent/i }),
+      ).not.toBeDisabled();
     });
   });
 
