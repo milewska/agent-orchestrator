@@ -28,8 +28,8 @@ export type ActivityEventLevel = "debug" | "info" | "warn" | "error";
 export interface ActivityEventInput {
   projectId?: string;
   sessionId?: string;
-  source: ActivityEventSource;
-  kind: ActivityEventKind;
+  source: ActivityEventSource | string;
+  kind: ActivityEventKind | string;
   level?: ActivityEventLevel;
   summary: string;
   data?: Record<string, unknown>;
