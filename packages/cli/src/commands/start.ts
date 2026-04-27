@@ -2427,15 +2427,43 @@ export function registerStop(program: Command): void {
           );
         }
 
+        if (orchestratorToKill) {
+          const spinner = ora("Stopping orchestrator session and descendants").start();
+          const purgeOpenCode = opts?.purgeSession === true;
+          const treeResult = await sm.killTree(orchestratorToKill.id, { purgeOpenCode });
+          const totalKilled = 1 + treeResult.descendants.length;
+          if (treeResult.errors.length > 0) {
+            spinner.warn(`Stopped ${totalKilled} session(s), ${treeResult.errors.length} error(s)`);
+            for (const e of treeResult.errors) {
+              console.warn(chalk.yellow(`  ${e.id}: ${e.error}`));
+            }
+          } else {
+            spinner.succeed(`Stopped orchestrator + ${treeResult.descendants.length} worker(s) (${orchestratorToKill.id})`);
+          }
+          // Also log to console.log so the killed id is visible in non-TTY callers
+          console.log(chalk.green(`  Stopped orchestrator session: ${orchestratorToKill.id}`));
+          if (treeResult.descendants.length > 0) {
+            console.log(chalk.dim(`  Cascade killed: ${treeResult.descendants.map(d => d.id).join(", ")}`));
+          }
+        } else if (!lookupFailed) {
+          // Suppress the "no orchestrator found" message when sm.list threw —
+          // the catch above already explained the real reason and adding a
+          // second message would falsely imply the lookup succeeded.
+          console.log(chalk.yellow(`No running orchestrator session found for "${project.name}"`));
+        }
+
+        // Lifecycle polling runs in-process inside the `ao start` process
+        // (registered via `running.json`). Sending SIGTERM to that PID below
+        // triggers the shared shutdown handler in `lifecycle-service`, which
+        // stops every per-project loop. No explicit stop call needed here —
+        // this CLI invocation is a separate process with an empty active map.
+
         // Only kill the parent `ao start` process and dashboard when stopping
         // everything (no project arg). When targeting a specific project, the
         // parent process and dashboard serve all projects and must stay alive.
         if (!projectArg) {
-          // Lifecycle polling runs in-process inside the `ao start` process
-          // (registered via `running.json`). Sending SIGTERM to that PID below
-          // triggers the shared shutdown handler in `lifecycle-service`, which
-          // stops every per-project loop. No explicit stop call needed here —
-          // this CLI invocation is a separate process with an empty active map.
+          // Stop dashboard — kill parent PID from running.json, then also stop
+          // any dashboard child process via lsof (parent SIGTERM may not propagate)
           if (running) {
             try {
               process.kill(running.pid, "SIGTERM");
