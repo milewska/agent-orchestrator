@@ -60,9 +60,6 @@ export function droppedEventCount(): number {
 const SENSITIVE_KEY_RE = /token|password|secret|authorization|cookie|api[-_]?key/i;
 
 function redactValue(value: unknown): unknown {
-  if (typeof value === "string") {
-    return SENSITIVE_KEY_RE.test(value) ? "[redacted]" : value;
-  }
   return value;
 }
 
@@ -83,9 +80,9 @@ function sanitizeData(data: Record<string, unknown>): string | undefined {
     return undefined;
   }
 
-  // Reject if over 16 KB after sanitization
+  // Reject if over 16 KB after sanitization (slicing would produce malformed JSON)
   if (json.length > 16 * 1024) {
-    return json.slice(0, 16 * 1024);
+    return undefined;
   }
   return json;
 }

@@ -59,7 +59,14 @@ export function registerEvents(program: Command): void {
     .action(async (opts: Record<string, string | undefined>) => {
       await loadCfg(); // warm up config (optional, events DB is global)
 
-      const since = opts["since"] ? parseSinceDuration(opts["since"]) : undefined;
+      const sinceRaw = opts["since"];
+      let since: Date | undefined;
+      if (sinceRaw) {
+        since = parseSinceDuration(sinceRaw);
+        if (!since) {
+          console.error(chalk.yellow(`Warning: unrecognised --since format "${sinceRaw}" (use e.g. 30m, 2h, 1d). No time filter applied.`));
+        }
+      }
       const limit = parseInt(opts["limit"] ?? "50", 10);
 
       const results = queryActivityEvents({
@@ -97,17 +104,14 @@ export function registerEvents(program: Command): void {
     .option("-p, --project <id>", "Filter by project ID")
     .option("--json", "Output as JSON")
     .action(async (query: string, opts: Record<string, string | undefined>) => {
-      const results = searchActivityEvents(query);
-      const filtered = opts["project"]
-        ? results.filter((e) => e.projectId === opts["project"])
-        : results;
+      const results = searchActivityEvents(query, opts["project"]);
 
       if (opts["json"]) {
-        console.log(JSON.stringify(filtered, null, 2));
+        console.log(JSON.stringify(results, null, 2));
         return;
       }
 
-      if (filtered.length === 0) {
+      if (results.length === 0) {
         console.log(chalk.dim("No events found."));
         return;
       }
@@ -117,10 +121,10 @@ export function registerEvents(program: Command): void {
           `${"TIME".padEnd(10)}  ${"KIND".padEnd(22)}  ${"LEVEL".padEnd(9)}  ${"SESSION".padEnd(12)}  SUMMARY`,
         ),
       );
-      for (const ev of filtered) {
+      for (const ev of results) {
         console.log(formatRow(ev));
       }
-      console.log(chalk.dim(`\n${filtered.length} event(s)`));
+      console.log(chalk.dim(`\n${results.length} event(s)`));
     });
 
   events

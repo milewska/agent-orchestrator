@@ -105,8 +105,9 @@ export function queryActivityEvents(filter: ActivityEventFilter = {}): ActivityE
 /**
  * FTS5 natural-language search. Sanitizes the query to prevent injection.
  * Returns [] if DB is unavailable or search fails.
+ * projectId filter is pushed into SQL so it applies before the LIMIT.
  */
-export function searchActivityEvents(rawQuery: string): ActivityEvent[] {
+export function searchActivityEvents(rawQuery: string, projectId?: string): ActivityEvent[] {
   const db = getDb();
   if (!db) return [];
 
@@ -115,16 +116,20 @@ export function searchActivityEvents(rawQuery: string): ActivityEvent[] {
   if (!tokens || tokens.length === 0) return [];
   const ftsQuery = tokens.join(" AND ");
 
+  const projectFilter = projectId ? "AND ae.project_id = ?" : "";
+  const params: unknown[] = [ftsQuery];
+  if (projectId) params.push(projectId);
+
   try {
     const rows = db
       .prepare(
         `SELECT ae.* FROM activity_events ae
          JOIN activity_events_fts fts ON fts.rowid = ae.id
-         WHERE fts MATCH ?
+         WHERE fts MATCH ? ${projectFilter}
          ORDER BY ae.ts_epoch DESC
          LIMIT 100`,
       )
-      .all(ftsQuery) as Record<string, unknown>[];
+      .all(...params) as Record<string, unknown>[];
     return rows.map(rowToEvent);
   } catch {
     return [];

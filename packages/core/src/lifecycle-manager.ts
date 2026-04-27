@@ -2189,6 +2189,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           states.delete(trackedId);
         }
       }
+      for (const trackedId of activityStateCache.keys()) {
+        if (!currentSessionIds.has(trackedId)) {
+          activityStateCache.delete(trackedId);
+        }
+      }
       for (const trackerKey of reactionTrackers.keys()) {
         const sessionId = trackerKey.split(":")[0];
         if (sessionId && !currentSessionIds.has(sessionId)) {
