@@ -80,7 +80,7 @@ Without this secret, both `release.yml` and `canary.yml` will fail at the publis
 ### After your PR merges (~15 min)
 The canary bot comments on your merged PR with the exact install command:
 ```bash
-npm install -g @aoagents/ao@0.2.5-nightly-abc1234
+npm install -g @aoagents/ao@x.y.z-nightly-<sha>
 ```
 
 ### Latest main at any time

@@ -11,7 +11,6 @@ concurrency:
 permissions:
   contents: write
   pull-requests: write
-  id-token: write
 
 jobs:
   release:
@@ -27,8 +26,8 @@ jobs:
           node-version: 20
           cache: pnpm
           registry-url: https://registry.npmjs.org
-      - run: pnpm install --frozen-lockfile
       - run: echo "HUSKY=0" >> $GITHUB_ENV
+      - run: pnpm install --frozen-lockfile
       - run: pnpm -r --filter '!@aoagents/ao-web' build
       - uses: changesets/action@v1
         with:

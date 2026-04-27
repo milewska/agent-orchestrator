@@ -13,7 +13,6 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
-  id-token: write
 
 jobs:
   canary:
@@ -53,10 +52,10 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org
 
-      - run: pnpm install --frozen-lockfile
+      - run: echo "HUSKY=0" >> $GITHUB_ENV
         if: steps.check_sha.outputs.skip == 'false'
 
-      - run: echo "HUSKY=0" >> $GITHUB_ENV
+      - run: pnpm install --frozen-lockfile
         if: steps.check_sha.outputs.skip == 'false'
 
       - run: pnpm -r --filter '!@aoagents/ao-web' build
@@ -65,7 +64,8 @@ jobs:
       - name: Create snapshot versions
         if: steps.check_sha.outputs.skip == 'false'
         run: |
-          # If no changesets exist, create a minimal one so snapshot has something to work with.
+          # If no changesets exist (e.g. after a Version Packages merge), create a minimal one.
+          # changeset version --snapshot consumes and deletes it — no cleanup needed.
           if [ -z "$(ls .changeset/*.md 2>/dev/null | grep -vi 'README')" ]; then
             printf -- '---\n"@aoagents/ao": patch\n---\n\nchore: canary build\n' > .changeset/canary-temp.md
           fi
@@ -78,6 +78,7 @@ jobs:
         id: publish
         run: |
           pnpm changeset publish --tag nightly --no-git-tag
+          # packages/ao is the user-facing CLI package; update this path if the package is renamed.
           CANARY_VERSION=$(node -p "require('./packages/ao/package.json').version")
           echo "version=$CANARY_VERSION" >> "$GITHUB_OUTPUT"
         env:
