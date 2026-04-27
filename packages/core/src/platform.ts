@@ -1,6 +1,7 @@
 import { execFile as execFileCb, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir, userInfo } from "node:os";
+import { existsSync } from "node:fs";
 
 const execFileAsync = promisify(execFileCb);
 
@@ -29,15 +30,34 @@ interface ShellInfo {
 let cachedShell: ShellInfo | null = null;
 
 function resolveWindowsShell(): ShellInfo {
+  // Explicit override — set AO_SHELL to an absolute path or shell name
+  // (e.g. "powershell.exe", "pwsh", "C:\\Path\\To\\pwsh.exe") to bypass auto-detection.
+  const override = process.env["AO_SHELL"];
+  if (override) {
+    return { cmd: override, args: (c) => ["-Command", c] };
+  }
+
   // Prefer pwsh (PowerShell Core, cross-platform)
   try {
     execFileSync("pwsh", ["-Version"], { timeout: 5000, stdio: "ignore", windowsHide: true });
     return { cmd: "pwsh", args: (c) => ["-Command", c] };
   } catch {
-    // not installed
+    // not installed or not on PATH
   }
 
-  // Fall back to powershell.exe (Windows PowerShell, always on Win 10+)
+  // Fall back to powershell.exe (Windows PowerShell, always on Win 10+).
+  // Use the absolute path because the spawning process may have a degraded
+  // PATH that doesn't include C:\Windows\System32 (e.g. Next.js dashboard
+  // children spawned without full system PATH inheritance). Without this,
+  // both probes fail and we'd fall through to cmd.exe — which breaks any
+  // launch command that uses PowerShell syntax (e.g. Codex's `& 'codex' ...`).
+  const systemRoot = process.env["SystemRoot"] || "C:\\Windows";
+  const psAbsolute = `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
+  if (existsSync(psAbsolute)) {
+    return { cmd: psAbsolute, args: (c) => ["-Command", c] };
+  }
+
+  // Try the bare name as a final PowerShell attempt (in case of unusual installs)
   try {
     execFileSync("powershell.exe", ["-Command", "echo ok"], {
       timeout: 5000,
@@ -49,7 +69,9 @@ function resolveWindowsShell(): ShellInfo {
     // not available (very unlikely on Win 10+)
   }
 
-  // Last resort: cmd.exe
+  // Last resort: cmd.exe. Note that agent launch commands often use PowerShell
+  // syntax (e.g. the `&` call operator) and will fail under cmd.exe. Setting
+  // AO_SHELL is the supported escape hatch.
   const comspec = process.env["ComSpec"] || "cmd.exe";
   return { cmd: comspec, args: (c) => ["/c", c] };
 }

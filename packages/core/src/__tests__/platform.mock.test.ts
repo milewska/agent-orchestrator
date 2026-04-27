@@ -19,11 +19,17 @@ vi.mock("node:os", () => ({
   userInfo: vi.fn(() => ({ username: "mockuser" })),
 }));
 
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(() => false),
+}));
+
 // Stable mock references — safe across the module cache lifetime.
 const mockExecFile = vi.mocked(childProcess.execFile);
 const mockExecFileSync = vi.mocked(childProcess.execFileSync);
 const mockHomedir = vi.mocked(os.homedir);
 const mockUserInfo = vi.mocked(os.userInfo);
+const fs = await import("node:fs");
+const mockExistsSync = vi.mocked(fs.existsSync);
 
 const originalPlatform = process.platform;
 
@@ -63,6 +69,11 @@ function setPlatform(p: string): void {
 beforeEach(() => {
   vi.clearAllMocks();
   setPlatform(originalPlatform);
+  // Default: absolute powershell path doesn't exist (let probe-based tests run).
+  // Specific tests override this when exercising the absolute-path branch.
+  mockExistsSync.mockReturnValue(false);
+  // AO_SHELL short-circuits auto-detection; clear unless a test sets it.
+  delete process.env["AO_SHELL"];
 });
 
 afterEach(async () => {
@@ -81,13 +92,15 @@ describe("resolveWindowsShell", () => {
     mod._resetShellCache();
   });
 
-  it("falls back to powershell.exe when pwsh is not available", async () => {
+  it("falls back to powershell.exe via PATH probe when pwsh missing and absolute path missing", async () => {
     setPlatform("win32");
-    // pwsh throws, powershell.exe succeeds
+    // pwsh throws, powershell.exe (PATH probe) succeeds
     mockExecFileSync.mockImplementationOnce(() => {
       throw new Error("pwsh not found");
     });
     mockExecFileSync.mockImplementationOnce(() => "");
+    // Absolute path doesn't exist, forcing the bare-name probe
+    mockExistsSync.mockReturnValue(false);
 
     const mod = await import("../platform.js");
     mod._resetShellCache();
@@ -95,6 +108,49 @@ describe("resolveWindowsShell", () => {
 
     expect(shell.cmd).toBe("powershell.exe");
     expect(shell.args("echo hi")).toEqual(["-Command", "echo hi"]);
+  });
+
+  it("uses absolute powershell.exe path when pwsh fails (PATH-degraded process)", async () => {
+    setPlatform("win32");
+    // pwsh throws, then absolute path exists — never reaches the bare-name probe
+    mockExecFileSync.mockImplementationOnce(() => {
+      throw new Error("pwsh not found");
+    });
+    mockExistsSync.mockReturnValue(true);
+
+    const savedRoot = process.env["SystemRoot"];
+    process.env["SystemRoot"] = "C:\\Windows";
+
+    try {
+      const mod = await import("../platform.js");
+      mod._resetShellCache();
+      const shell = mod.getShell();
+
+      expect(shell.cmd).toBe("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+      expect(shell.args("echo hi")).toEqual(["-Command", "echo hi"]);
+    } finally {
+      if (savedRoot !== undefined) process.env["SystemRoot"] = savedRoot;
+      else delete process.env["SystemRoot"];
+    }
+  });
+
+  it("honors AO_SHELL override before any auto-detection", async () => {
+    setPlatform("win32");
+    const saved = process.env["AO_SHELL"];
+    process.env["AO_SHELL"] = "C:\\custom\\pwsh.exe";
+
+    try {
+      const mod = await import("../platform.js");
+      mod._resetShellCache();
+      const shell = mod.getShell();
+      expect(shell.cmd).toBe("C:\\custom\\pwsh.exe");
+      expect(shell.args("echo hi")).toEqual(["-Command", "echo hi"]);
+      // Auto-detection probes are skipped entirely
+      expect(mockExecFileSync).not.toHaveBeenCalled();
+    } finally {
+      if (saved !== undefined) process.env["AO_SHELL"] = saved;
+      else delete process.env["AO_SHELL"];
+    }
   });
 
   it("falls back to cmd.exe when both pwsh and powershell.exe are unavailable", async () => {
