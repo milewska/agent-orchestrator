@@ -2004,7 +2004,10 @@ describe("start command — platform-aware runtime fallback", () => {
 
     await program.parseAsync(["node", "test", "stop"]);
 
-    expect(killSpy).toHaveBeenCalledWith(99999, "SIGTERM");
+    // killProcessTree on Unix targets the process group first via NEGATIVE pid;
+    // only falls back to positive pid if that throws. The mock returns true,
+    // so only the negative-pid call fires.
+    expect(killSpy).toHaveBeenCalledWith(-99999, "SIGTERM");
     expect(mockUnregister).toHaveBeenCalled();
     expect(mockRemoveProjectFromRunning).not.toHaveBeenCalled();
 
