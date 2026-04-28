@@ -82,9 +82,39 @@ const LEVEL_LABELS: Record<AttentionLevel, string> = {
 
 export function ProjectSidebar(props: ProjectSidebarProps) {
   if (props.projects.length === 0) {
-    return null;
+    return <ProjectSidebarEmpty />;
   }
   return <ProjectSidebarInner {...props} />;
+}
+
+function ProjectSidebarEmpty() {
+  const [addProjectOpen, setAddProjectOpen] = useState(false);
+  return (
+    <aside className="project-sidebar flex h-full flex-col">
+      <div className="project-sidebar__compact-hdr">
+        <span className="project-sidebar__sect-label">Projects</span>
+        <button
+          type="button"
+          className="project-sidebar__add-btn"
+          aria-label="New project"
+          onClick={() => setAddProjectOpen(true)}
+        >
+          <svg fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+      </div>
+      <div className="project-sidebar__empty flex-1 text-[var(--color-text-tertiary)]">
+        No projects yet. Click + to add one.
+      </div>
+      <div className="project-sidebar__footer">
+        <div className="flex items-center justify-end gap-1 border-t border-[var(--color-border-subtle)] px-2 py-2">
+          <ThemeToggle className="project-sidebar__theme-toggle" />
+        </div>
+      </div>
+      <AddProjectModal open={addProjectOpen} onClose={() => setAddProjectOpen(false)} />
+    </aside>
+  );
 }
 
 function ProjectSidebarInner({

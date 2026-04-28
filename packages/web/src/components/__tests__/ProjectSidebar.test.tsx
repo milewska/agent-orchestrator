@@ -32,8 +32,8 @@ describe("ProjectSidebar", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders nothing when there are no projects", () => {
-    const { container } = render(
+  it("renders the empty-state header with the + button when no projects are configured", () => {
+    render(
       <ProjectSidebar
         projects={[]}
         sessions={[]}
@@ -42,7 +42,45 @@ describe("ProjectSidebar", () => {
       />,
     );
 
-    expect(container.firstChild).toBeNull();
+    expect(screen.getByText("Projects")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new project/i })).toBeInTheDocument();
+    expect(screen.getByText(/no projects yet/i)).toBeInTheDocument();
+  });
+
+  it("opens AddProjectModal from the empty-state + button", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ entries: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <ProjectSidebar
+        projects={[]}
+        sessions={[]}
+        activeProjectId={undefined}
+        activeSessionId={undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /new project/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: /add project/i })).toBeInTheDocument();
+    });
+  });
+
+  it("renders the theme toggle in the empty-state footer", () => {
+    render(
+      <ProjectSidebar
+        projects={[]}
+        sessions={[]}
+        activeProjectId={undefined}
+        activeSessionId={undefined}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /switch to (dark|light) mode/i })).toBeInTheDocument();
   });
 
   it("renders the compact sidebar header and project rows", () => {
