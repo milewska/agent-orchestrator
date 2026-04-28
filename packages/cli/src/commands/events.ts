@@ -10,6 +10,13 @@ import {
   type ActivityEventKind,
 } from "@aoagents/ao-core";
 
+interface JsonEnvelope {
+  version: number;
+  query: Record<string, unknown>;
+  meta: { count: number; ts: string };
+  events: Record<string, unknown>[];
+}
+
 function toJsonOutput(ev: ActivityEvent): Record<string, unknown> {
   let data: unknown = ev.data;
   if (typeof ev.data === "string") {
@@ -92,7 +99,19 @@ export function registerEvents(program: Command): void {
       });
 
       if (opts["json"]) {
-        console.log(JSON.stringify(results.map(toJsonOutput), null, 2));
+        const envelope: JsonEnvelope = {
+          version: 1,
+          query: {
+            projectId: opts["project"] ?? null,
+            sessionId: opts["session"] ?? null,
+            kind: opts["type"] ?? null,
+            since: sinceRaw ?? null,
+            limit,
+          },
+          meta: { count: results.length, ts: new Date().toISOString() },
+          events: results.map(toJsonOutput),
+        };
+        console.log(JSON.stringify(envelope, null, 2));
         return;
       }
 
@@ -123,7 +142,13 @@ export function registerEvents(program: Command): void {
       const results = searchActivityEvents(query, opts["project"], limit);
 
       if (opts["json"]) {
-        console.log(JSON.stringify(results.map(toJsonOutput), null, 2));
+        const envelope: JsonEnvelope = {
+          version: 1,
+          query: { q: query, projectId: opts["project"] ?? null, limit },
+          meta: { count: results.length, ts: new Date().toISOString() },
+          events: results.map(toJsonOutput),
+        };
+        console.log(JSON.stringify(envelope, null, 2));
         return;
       }
 
