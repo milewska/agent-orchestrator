@@ -13,6 +13,7 @@
 
 import { statSync, existsSync, readdirSync, writeFileSync, mkdirSync, utimesSync, unlinkSync } from "node:fs";
 import { execFile } from "node:child_process";
+import { randomInt } from "node:crypto";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { promisify } from "node:util";
@@ -96,6 +97,7 @@ const execFileAsync = promisify(execFile);
 const OPENCODE_DISCOVERY_TIMEOUT_MS = 10_000;
 const OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS = 10_000;
 const SESSION_BRANCH_RANDOM_SUFFIX_LENGTH = 5;
+const SESSION_BRANCH_SUFFIX_ALPHABET = "0123456789abcdefghijklmnopqrstuvwxyz";
 
 function errorIncludesSessionNotFound(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
@@ -130,10 +132,10 @@ async function deleteOpenCodeSession(sessionId: string): Promise<void> {
 
 function createSessionBranchSuffix(length = SESSION_BRANCH_RANDOM_SUFFIX_LENGTH): string {
   let suffix = "";
-  while (suffix.length < length) {
-    suffix += Math.random().toString(36).slice(2);
+  for (let i = 0; i < length; i += 1) {
+    suffix += SESSION_BRANCH_SUFFIX_ALPHABET[randomInt(SESSION_BRANCH_SUFFIX_ALPHABET.length)];
   }
-  return suffix.slice(0, length);
+  return suffix;
 }
 
 interface OpenCodeSessionListEntry {
