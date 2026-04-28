@@ -1303,6 +1303,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       const launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
       const environment = plugins.agent.getEnvironment(agentLaunchConfig);
 
+      if (plugins.agent.preLaunchSetup) {
+        await plugins.agent.preLaunchSetup(workspacePath);
+      }
+
       handle = await plugins.runtime.create({
         sessionId: tmuxName ?? sessionId, // Use tmux name for runtime if available
         workspacePath,
@@ -1651,6 +1655,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     const launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
     const environment = plugins.agent.getEnvironment(agentLaunchConfig);
+
+    if (plugins.agent.preLaunchSetup) {
+      await plugins.agent.preLaunchSetup(workspacePath);
+    }
 
     // Create runtime — clean up worktree and metadata on failure
     let handle: RuntimeHandle;
@@ -2781,6 +2789,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     }
 
     const environment = plugins.agent.getEnvironment(agentLaunchConfig);
+
+    if (plugins.agent.preLaunchSetup) {
+      await plugins.agent.preLaunchSetup(workspacePath);
+    }
 
     // 8. Create runtime (reuse tmuxName from metadata)
     const tmuxName = raw["tmuxName"];

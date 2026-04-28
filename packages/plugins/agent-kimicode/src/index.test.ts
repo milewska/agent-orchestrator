@@ -762,15 +762,15 @@ describe("getActivityState", () => {
     expect(result).toBeNull();
   });
 
-  it("postLaunchSetup writes a baseline that excludes pre-existing UUIDs from later discovery", async () => {
+  it("preLaunchSetup writes a baseline that excludes pre-existing UUIDs from later discovery", async () => {
     const realWorkspace = join(fakeHome, "workspace-baseline-3");
     mkdirSync(realWorkspace, { recursive: true });
 
     // Pre-existing UUID before AO ever ran.
     writeKimiSession(realWorkspace, "pre-existing");
 
-    // postLaunchSetup snapshots the bucket — captures "pre-existing" in baseline.
-    await agent.postLaunchSetup!(makeSession({ workspacePath: realWorkspace }));
+    // preLaunchSetup snapshots the bucket — captures "pre-existing" in baseline.
+    await agent.preLaunchSetup!(realWorkspace);
 
     // Later, AO's kimi spawn creates a new UUID dir.
     writeKimiSession(realWorkspace, "ao-spawned");
@@ -782,7 +782,34 @@ describe("getActivityState", () => {
     expect(info?.agentSessionId).toBe("ao-spawned");
   });
 
-  it("postLaunchSetup is write-once — restore preserves the original baseline", async () => {
+  // Regression: captureKimiBaseline used to run in postLaunchSetup, which
+  // races against kimi's own startup — kimi may create its UUID dir before
+  // postLaunchSetup runs, in which case the new UUID lands in
+  // preExistingUuids and gets filtered out forever, so discovery returns
+  // null permanently. Pre-launch capture closes that window.
+  it("preLaunchSetup runs before kimi creates UUIDs — new UUID is attached, not partitioned out", async () => {
+    const realWorkspace = join(fakeHome, "workspace-baseline-race");
+    mkdirSync(realWorkspace, { recursive: true });
+
+    // Pre-existing UUID (created by a prior run, manual kimi, etc.).
+    writeKimiSession(realWorkspace, "pre-existing-uuid");
+
+    // Step 1: preLaunchSetup runs FIRST, snapshots only the pre-existing UUID.
+    await agent.preLaunchSetup!(realWorkspace);
+
+    // Step 2: simulate kimi launching and creating a new UUID dir.
+    writeKimiSession(realWorkspace, "kimi-just-created-this");
+
+    mockTmuxWithProcess("kimi");
+    const info = await agent.getSessionInfo(
+      makeSession({ workspacePath: realWorkspace }),
+    );
+    // The newly-created UUID must NOT have been treated as pre-existing —
+    // pre-launch baseline didn't see it. Discovery must attach to it.
+    expect(info?.agentSessionId).toBe("kimi-just-created-this");
+  });
+
+  it("preLaunchSetup is write-once — restore preserves the original baseline", async () => {
     const realWorkspace = join(fakeHome, "workspace-baseline-4");
     mkdirSync(join(realWorkspace, ".ao"), { recursive: true });
 
@@ -796,11 +823,11 @@ describe("getActivityState", () => {
     );
 
     // Add a UUID that would be in the bucket on restore (the one AO created
-    // during the original launch). If postLaunchSetup overwrote the baseline
+    // during the original launch). If preLaunchSetup overwrote the baseline
     // here, this UUID would be partitioned out as "pre-existing" — wrong.
     writeKimiSession(realWorkspace, "ao-created-on-first-launch");
 
-    await agent.postLaunchSetup!(makeSession({ workspacePath: realWorkspace }));
+    await agent.preLaunchSetup!(realWorkspace);
 
     const { readFileSync } = await import("node:fs");
     const baselineNow = JSON.parse(

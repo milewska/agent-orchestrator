@@ -753,13 +753,22 @@ function createKimicodeAgent(): Agent {
       await setupPathWrapperWorkspace(workspacePath);
     },
 
+    // Snapshot pre-existing UUIDs BEFORE kimi launches. Capturing in
+    // postLaunchSetup races against kimi's own startup writes — kimi may
+    // create its UUID directory before postLaunchSetup runs, in which case
+    // the freshly-created UUID lands in `preExistingUuids` and gets filtered
+    // out forever. Discovery would then return null permanently.
+    //
+    // No-op on restore — captureKimiBaseline only writes the file when it
+    // doesn't already exist, so the original "what was here before AO
+    // started" partition stays stable across the session lifetime.
+    async preLaunchSetup(workspacePath: string): Promise<void> {
+      await captureKimiBaseline(workspacePath);
+    },
+
     async postLaunchSetup(session: Session): Promise<void> {
       if (!session.workspacePath) return;
       await setupPathWrapperWorkspace(session.workspacePath);
-      // Snapshot pre-existing UUIDs so a manual `kimi` run in the same dir
-      // (or a sibling AO session sharing the workspace) can't be mistaken
-      // for this AO session. No-op on restore — baseline is write-once.
-      await captureKimiBaseline(session.workspacePath);
     },
   };
 }
