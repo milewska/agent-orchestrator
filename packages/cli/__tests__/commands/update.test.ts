@@ -295,7 +295,7 @@ describe("update command", () => {
       mockSpawn
         .mockReturnValueOnce(createMockChild(0))
         .mockReturnValueOnce(createMockChild(0, undefined, "/usr/local/bin/ao\n"))
-        .mockReturnValueOnce(createMockChild(0, undefined, "0.3.0\n"));
+        .mockReturnValueOnce(createMockChild(0, undefined, "@aoagents/ao 0.3.0\n"));
 
       await program.parseAsync(["node", "test", "update"]);
 
@@ -305,7 +305,7 @@ describe("update command", () => {
         expect.anything(),
       );
       expect(mockSpawn).toHaveBeenCalledWith("sh", ["-lc", "command -v ao"], expect.anything());
-      expect(mockSpawn).toHaveBeenCalledWith("ao", ["--version"], expect.anything());
+      expect(mockSpawn).toHaveBeenCalledWith("sh", ["-lc", "ao --version"], expect.anything());
       expect(mockInvalidateCache).toHaveBeenCalled();
     });
 

@@ -177,6 +177,10 @@ function runNpmInstall(command: string): Promise<number> {
   });
 }
 
+function parseVersionOutput(output: string | null): string | null {
+  return output?.match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/)?.[0] ?? null;
+}
+
 interface RunnableAo {
   version: string | null;
   path: string | null;
@@ -184,16 +188,20 @@ interface RunnableAo {
 
 async function getRunnableAo(): Promise<RunnableAo> {
   const [path, version] = await Promise.all([
-    runCommand("command", ["-v", "ao"]),
-    runCommand("ao", ["--version"]),
+    runCommand("command", ["-v", "ao"], { shell: true }),
+    runCommand("ao", ["--version"], { shell: true }),
   ]);
-  return { path, version: version?.split(/\s+/)[0] ?? null };
+  return { path, version: parseVersionOutput(version) };
 }
 
-function runCommand(command: string, args: string[]): Promise<string | null> {
+function runCommand(
+  command: string,
+  args: string[],
+  opts?: { shell?: boolean },
+): Promise<string | null> {
   return new Promise<string | null>((resolveOutput) => {
-    const spawnCommand = command === "command" ? "sh" : command;
-    const spawnArgs = command === "command" ? ["-lc", [command, ...args].join(" ")] : args;
+    const spawnCommand = opts?.shell ? "sh" : command;
+    const spawnArgs = opts?.shell ? ["-lc", [command, ...args].join(" ")] : args;
     const child = spawn(spawnCommand, spawnArgs, {
       stdio: ["ignore", "pipe", "ignore"],
     });

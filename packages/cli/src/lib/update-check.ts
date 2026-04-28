@@ -297,12 +297,11 @@ export async function fetchLatestGitVersion(): Promise<string | null> {
   const branch = getGitUpdateBranch();
   const ref = `${remote}/${branch}`;
 
-  const fetched = await git(["fetch", "--quiet", remote, branch], repoRoot);
+  const fetchSucceeded = (await git(["fetch", "--quiet", remote, branch], repoRoot)) !== null;
 
   const packageJson =
-    (fetched !== null
-      ? await git(["show", `FETCH_HEAD:${SOURCE_PACKAGE_JSON}`], repoRoot)
-      : null) ?? (await git(["show", `${ref}:${SOURCE_PACKAGE_JSON}`], repoRoot));
+    (fetchSucceeded ? await git(["show", `FETCH_HEAD:${SOURCE_PACKAGE_JSON}`], repoRoot) : null) ??
+    (await git(["show", `${ref}:${SOURCE_PACKAGE_JSON}`], repoRoot));
   if (!packageJson) return null;
 
   try {
