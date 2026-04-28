@@ -115,7 +115,7 @@ export function searchActivityEvents(rawQuery: string, projectId?: string, limit
   // Only allow word characters; join with AND to prevent FTS syntax injection
   const tokens = rawQuery.match(/\w+/g);
   if (!tokens || tokens.length === 0) return [];
-  const ftsQuery = tokens.join(" AND ");
+  const ftsQuery = tokens.map((t) => `"${t}"`).join(" AND ");
 
   const projectFilter = projectId ? "AND ae.project_id = ?" : "";
   const clampedLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 1000)) : 100;
