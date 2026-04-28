@@ -11,6 +11,7 @@ import {
   mkdirSync,
   rmSync,
   writeFileSync,
+  readFileSync,
   utimesSync,
   symlinkSync,
   realpathSync,
@@ -678,21 +679,67 @@ describe("getActivityState", () => {
     expect(result).toBeNull();
   });
 
-  it("pinned session.metadata.kimiSessionId wins over recency", async () => {
-    mockTmuxWithProcess("kimi");
-    writeKimiSession(workspace, "sess-newer"); // newer, but not pinned
-    writeKimiSession(workspace, "pinned-uuid", {
+  it("pin file (.ao/kimi-session-id.json) wins over recency", async () => {
+    const realWorkspace = join(fakeHome, "workspace-pin-1");
+    mkdirSync(join(realWorkspace, ".ao"), { recursive: true });
+    writeKimiSession(realWorkspace, "sess-newer"); // newer, but not pinned
+    writeKimiSession(realWorkspace, "pinned-uuid", {
       contextAgeMs: 2 * 60 * 1000,
       wireAgeMs: 2 * 60 * 1000,
     });
+    writeFileSync(
+      join(realWorkspace, ".ao", "kimi-session-id.json"),
+      JSON.stringify({ sessionId: "pinned-uuid", pinnedAt: "2026-04-01T00:00:00.000Z" }),
+    );
 
+    mockTmuxWithProcess("kimi");
     const info = await agent.getSessionInfo(
-      makeSession({
-        workspacePath: workspace,
-        metadata: { kimiSessionId: "pinned-uuid" } as Session["metadata"],
-      }),
+      makeSession({ workspacePath: realWorkspace }),
     );
     expect(info?.agentSessionId).toBe("pinned-uuid");
+  });
+
+  it("first successful match writes the pin file (locks in the recency winner)", async () => {
+    const realWorkspace = join(fakeHome, "workspace-pin-write");
+    mkdirSync(realWorkspace, { recursive: true });
+    writeKimiSession(realWorkspace, "ao-spawned");
+
+    mockTmuxWithProcess("kimi");
+    const info = await agent.getSessionInfo(
+      makeSession({ workspacePath: realWorkspace }),
+    );
+    expect(info?.agentSessionId).toBe("ao-spawned");
+
+    const pin = JSON.parse(
+      readFileSync(join(realWorkspace, ".ao", "kimi-session-id.json"), "utf-8"),
+    );
+    expect(pin.sessionId).toBe("ao-spawned");
+    expect(typeof pin.pinnedAt).toBe("string");
+  });
+
+  // Regression: even if a different (e.g. manual `kimi`) UUID becomes the
+  // freshest in the bucket later, the pinned UUID stays put.
+  it("pin file holds even when a newer non-pinned UUID appears later", async () => {
+    const realWorkspace = join(fakeHome, "workspace-pin-stable");
+    mkdirSync(join(realWorkspace, ".ao"), { recursive: true });
+    writeKimiSession(realWorkspace, "ao-original", {
+      contextAgeMs: 2 * 60 * 1000,
+      wireAgeMs: 2 * 60 * 1000,
+    });
+    writeFileSync(
+      join(realWorkspace, ".ao", "kimi-session-id.json"),
+      JSON.stringify({ sessionId: "ao-original", pinnedAt: "2026-04-01T00:00:00.000Z" }),
+    );
+
+    // A manual kimi run lands a newer UUID in the same bucket.
+    writeKimiSession(realWorkspace, "manual-newer");
+
+    mockTmuxWithProcess("kimi");
+    _resetSessionMatchCache();
+    const info = await agent.getSessionInfo(
+      makeSession({ workspacePath: realWorkspace }),
+    );
+    expect(info?.agentSessionId).toBe("ao-original");
   });
 
   it("negative cache window is short (~2s) — picks up a session that appears mid-poll", async () => {
@@ -829,7 +876,6 @@ describe("getActivityState", () => {
 
     await agent.preLaunchSetup!(realWorkspace);
 
-    const { readFileSync } = await import("node:fs");
     const baselineNow = JSON.parse(
       readFileSync(join(realWorkspace, ".ao", "kimi-baseline.json"), "utf-8"),
     );
@@ -838,14 +884,17 @@ describe("getActivityState", () => {
   });
 
   it("pinned UUID that no longer exists returns null (no fallback to recency)", async () => {
-    mockTmuxWithProcess("kimi");
-    writeKimiSession(workspace, "some-other-uuid"); // exists but not pinned
+    const realWorkspace = join(fakeHome, "workspace-pin-missing");
+    mkdirSync(join(realWorkspace, ".ao"), { recursive: true });
+    writeKimiSession(realWorkspace, "some-other-uuid"); // exists but not pinned
+    writeFileSync(
+      join(realWorkspace, ".ao", "kimi-session-id.json"),
+      JSON.stringify({ sessionId: "pinned-missing", pinnedAt: "2026-04-01T00:00:00.000Z" }),
+    );
 
+    mockTmuxWithProcess("kimi");
     const info = await agent.getSessionInfo(
-      makeSession({
-        workspacePath: workspace,
-        metadata: { kimiSessionId: "pinned-missing" } as Session["metadata"],
-      }),
+      makeSession({ workspacePath: realWorkspace }),
     );
     expect(info).toBeNull();
   });

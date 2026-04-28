@@ -152,10 +152,58 @@ const sessionMatchCache = new Map<string, { match: KimiSessionMatch | null; expi
  * to this AO session — even if they happen to be the most recently
  * modified entry in the bucket.
  *
- * Captured once by postLaunchSetup; never overwritten on restore so the
+ * Captured once by preLaunchSetup; never overwritten on restore so the
  * "ours vs theirs" partition stays stable across the session lifetime.
  */
 const KIMI_BASELINE_FILE = ".ao/kimi-baseline.json";
+
+/**
+ * Workspace-local file holding the kimi session UUID pinned to this AO
+ * session. Written opportunistically by findKimiSessionMatchUncached the
+ * first time it identifies a winner via the recency heuristic — that
+ * decision is then locked in so subsequent calls don't re-evaluate.
+ *
+ * This is the load-bearing fix for the "wrong session" class of bugs:
+ * a manual `kimi` run in the same workspace, a sibling AO session
+ * sharing a bucket, or any future change to kimi's directory layout
+ * could otherwise let discovery drift to a different UUID mid-session.
+ *
+ * Survives process restarts (we read from disk on every match call) and
+ * worktree moves (the file lives inside the workspace, not under ~/.kimi).
+ */
+const KIMI_PIN_FILE = ".ao/kimi-session-id.json";
+
+interface KimiSessionPin {
+  /** Session UUID — accepted by `kimi --resume <id>`. */
+  sessionId: string;
+  /** ISO timestamp the pin was captured. */
+  pinnedAt: string;
+}
+
+async function readKimiSessionPin(workspacePath: string): Promise<string | null> {
+  try {
+    const raw = await readFile(join(workspacePath, KIMI_PIN_FILE), "utf-8");
+    const parsed = JSON.parse(raw) as KimiSessionPin;
+    if (typeof parsed.sessionId !== "string" || parsed.sessionId.length === 0) return null;
+    return parsed.sessionId;
+  } catch {
+    return null;
+  }
+}
+
+async function writeKimiSessionPin(workspacePath: string, sessionId: string): Promise<void> {
+  const pin: KimiSessionPin = {
+    sessionId,
+    pinnedAt: new Date().toISOString(),
+  };
+  try {
+    await mkdir(join(workspacePath, ".ao"), { recursive: true });
+    await writeFile(join(workspacePath, KIMI_PIN_FILE), JSON.stringify(pin), "utf-8");
+  } catch {
+    // Workspace not writable — best-effort. Discovery falls back to the
+    // recency heuristic on every call until the pin can be persisted.
+  }
+}
 
 interface KimiBaseline {
   /** Pre-existing UUIDs in ~/.kimi/sessions/<md5(workspace)>/ at AO launch. */
@@ -265,17 +313,24 @@ async function getKimiLiveSignalMtime(sessionDir: string): Promise<Date | null> 
  *     context.jsonl   — conversation history
  *     wire.jsonl      — turn events
  *
- * Stability rules:
- *   1. A UUID is preferred when \`session.metadata.kimiSessionId\` pins it —
- *      that binding is captured at launch and survives kimi cwd-normalization
- *      changes, worktree moves, and manual \`kimi\` invocations in the same
- *      repo (two AO sessions sharing a bucket would otherwise step on each
- *      other's summaries / --resume targets).
- *   2. If no UUID is pinned, only UUIDs whose live files exist AND whose mtime
- *      is no older than the AO session's \`createdAt - 60s\` are considered —
- *      stray temp dirs or crash leftovers never get picked up.
- *   3. Every candidate dir is sandbox-checked to stay inside
- *      ~/.kimi/sessions/; symlinks pointing outside are rejected.
+ * Precedence (highest priority first):
+ *   1. Pin file (.ao/kimi-session-id.json) — written by this function the
+ *      first time it picks a winner, then re-read on every subsequent call.
+ *      Locks in the AO↔kimi UUID binding for the rest of the session, so
+ *      a manual `kimi` run in the same workspace, a sibling AO session
+ *      sharing a bucket, or a future change in kimi's directory layout
+ *      cannot drift us onto a different UUID mid-session.
+ *   2. kimi.json soft-pin — `work_dirs[].last_session_id` written by kimi
+ *      itself. When populated this is more authoritative than recency,
+ *      but kimi v1.37 leaves it null for unfinished sessions, so it's a
+ *      fallback rather than a primary source.
+ *   3. Recency heuristic — among UUIDs whose live files exist, were not
+ *      present in the pre-launch baseline, and whose mtime is no older
+ *      than (session.createdAt - 60s), pick the freshest. Once chosen,
+ *      this winner is written to the pin file (rule 1) so it sticks.
+ *
+ * Every candidate dir is sandbox-checked to stay inside
+ * ~/.kimi/sessions/; symlinks pointing outside are rejected.
  */
 async function findKimiSessionMatchUncached(
   session: Session,
@@ -293,18 +348,15 @@ async function findKimiSessionMatchUncached(
     return null;
   }
 
-  // Pinned UUID takes highest priority — set at launch and stable across
-  // the session lifetime.
-  const pinnedId =
-    typeof session.metadata?.["kimiSessionId"] === "string"
-      ? (session.metadata["kimiSessionId"] as string)
-      : null;
+  // Pin file takes highest priority. Once we've identified a UUID for this
+  // AO session (this function writes the pin on first successful match),
+  // we always return it — never re-evaluate the recency heuristic.
+  const pinnedId = await readKimiSessionPin(session.workspacePath);
 
-  // Fast path: kimi.json stores the most-recent session UUID for each
-  // workspace in `work_dirs[].last_session_id`. When populated, this is
-  // more authoritative than a directory-mtime heuristic — kimi itself
-  // wrote it. We use it as a "soft pin": if the UUID exists on disk and
-  // passes the live-signal check, prefer it over recency scanning.
+  // kimi.json soft-pin: kimi-cli stores `work_dirs[].last_session_id` for
+  // each workspace. When populated it's more authoritative than directory
+  // mtime — kimi itself wrote it. Used as a tiebreaker when no AO pin yet
+  // exists.
   let kimiJsonSessionId: string | null = null;
   if (!pinnedId) {
     const workDirEntry = await findKimiWorkDirEntry(session.workspacePath);
@@ -327,6 +379,7 @@ async function findKimiSessionMatchUncached(
   const minAgeMs = session.createdAt.getTime() - 60_000;
 
   let best: { dir: string; sessionId: string; mtime: Date; mtimeMs: number } | null = null;
+  let kimiJsonMatch: KimiSessionMatch | null = null;
 
   for (const entry of entries) {
     const dir = join(bucket, entry);
@@ -340,11 +393,12 @@ async function findKimiSessionMatchUncached(
       return { dir, sessionId: entry, mtime: liveMtime };
     }
 
-    // kimi.json soft-pin: if kimi.json names this UUID as last_session_id
-    // for our workspace, prefer it immediately (same logic as pinnedId but
-    // sourced from kimi's own bookkeeping rather than AO metadata).
+    // kimi.json soft-pin candidate — record it but keep scanning so we
+    // can still return a recency winner if the soft-pin UUID has no live
+    // files (rare but possible if kimi.json points at a stale entry).
     if (kimiJsonSessionId && entry === kimiJsonSessionId) {
-      return { dir, sessionId: entry, mtime: liveMtime };
+      kimiJsonMatch = { dir, sessionId: entry, mtime: liveMtime };
+      continue;
     }
 
     // Baseline filter — UUIDs present at launch never count as "ours".
@@ -358,13 +412,25 @@ async function findKimiSessionMatchUncached(
     }
   }
 
-  if (pinnedId && !best) {
-    // Pinned UUID didn't match anything — don't silently fall back to a
-    // "closest guess"; that reintroduces the wrong-session bug.
+  if (pinnedId) {
+    // Pin existed but didn't match anything in the bucket — don't silently
+    // fall back to a recency guess; that reintroduces the wrong-session bug.
     return null;
   }
 
-  return best ? { dir: best.dir, sessionId: best.sessionId, mtime: best.mtime } : null;
+  if (kimiJsonMatch) {
+    await writeKimiSessionPin(session.workspacePath, kimiJsonMatch.sessionId);
+    return kimiJsonMatch;
+  }
+
+  if (best) {
+    // Persist the recency-heuristic winner. Subsequent calls will read the
+    // pin file and bypass the heuristic — even if the bucket gains another
+    // recently-active UUID later (manual kimi run, sibling AO session).
+    await writeKimiSessionPin(session.workspacePath, best.sessionId);
+    return { dir: best.dir, sessionId: best.sessionId, mtime: best.mtime };
+  }
+  return null;
 }
 
 /** Prune expired entries; if still over the cap, drop the oldest. */
@@ -386,13 +452,10 @@ async function findKimiSessionMatch(session: Session): Promise<KimiSessionMatch 
   const workspacePath = session.workspacePath;
   if (!workspacePath) return null;
 
-  // Key on (workspace, pinnedUuid) so two AO sessions in the same bucket
-  // don't poison each other's cache entries via the pinned-id lookup.
-  const pinnedId =
-    typeof session.metadata?.["kimiSessionId"] === "string"
-      ? (session.metadata["kimiSessionId"] as string)
-      : "";
-  const key = `${workspacePath} ${pinnedId}`;
+  // Key on workspace path. The pin is now file-based and persistent, so
+  // it cannot drift between calls — workspace path uniquely identifies
+  // the session for caching purposes.
+  const key = workspacePath;
 
   const now = Date.now();
   const cached = sessionMatchCache.get(key);
