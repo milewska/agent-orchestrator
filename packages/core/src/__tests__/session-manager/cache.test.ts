@@ -132,7 +132,7 @@ describe("listCached", () => {
     // listCached must hit disk and see the updated state
     const after = await sm.listCached();
     expect(after).toHaveLength(1);
-    expect(after[0]?.status).toBe("terminated");
+    expect(after[0]?.status).toBe("killed");
   });
 
   it("explicit invalidateCache() forces the next listCached to re-read disk", async () => {
