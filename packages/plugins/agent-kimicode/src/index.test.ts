@@ -309,6 +309,25 @@ describe("getLaunchCommand", () => {
       "kimi --work-dir '/workspace/repo' --yolo --model 'kimi-k2' --agent 'default' --agent-file '/tmp/sp.md' --prompt 'Go'",
     );
   });
+
+  // Worktree-mode parity: when AO runs in worktree workspace mode,
+  // workspacePath (per-session checkout) differs from projectConfig.path
+  // (the original repo root). --work-dir must take the workspacePath so
+  // kimi's md5(cwd) bucket matches the one session-discovery scans.
+  it("--work-dir prefers workspacePath over projectConfig.path", () => {
+    const cmd = agent.getLaunchCommand(
+      makeLaunchConfig({
+        workspacePath: "/worktrees/sess-1",
+      }),
+    );
+    expect(cmd).toContain("--work-dir '/worktrees/sess-1'");
+    expect(cmd).not.toContain("/workspace/repo");
+  });
+
+  it("--work-dir falls back to projectConfig.path when workspacePath is undefined", () => {
+    const cmd = agent.getLaunchCommand(makeLaunchConfig({ workspacePath: undefined }));
+    expect(cmd).toContain("--work-dir '/workspace/repo'");
+  });
 });
 
 // =============================================================================

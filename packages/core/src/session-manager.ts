@@ -1290,6 +1290,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           ...(reusedOpenCodeSessionId ? { opencodeSessionId: reusedOpenCodeSessionId } : {}),
         },
       },
+      workspacePath,
       issueId: spawnConfig.issueId,
       prompt: composedPrompt,
       permissions: selection.permissions,
@@ -1641,6 +1642,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           ...(reusableOpenCodeSessionId ? { opencodeSessionId: reusableOpenCodeSessionId } : {}),
         },
       },
+      workspacePath,
       permissions: "permissionless" as const,
       model: selection.model,
       systemPromptFile,
@@ -2764,6 +2766,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const agentLaunchConfig = {
       sessionId,
       projectConfig: projectConfigForLaunch,
+      workspacePath,
       issueId: session.issueId ?? undefined,
       permissions: selection.role === "orchestrator" ? "permissionless" : selection.permissions,
       model: selection.model,

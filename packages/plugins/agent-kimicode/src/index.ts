@@ -500,10 +500,19 @@ function createKimicodeAgent(): Agent {
       const parts: string[] = ["kimi"];
 
       // Explicit --work-dir prevents shell-rc / tmux-hook cwd drift from
-      // making our md5(cwd) hash diverge from kimi's. projectConfig.path
-      // is the project root — the canonical workspace directory.
-      if (config.projectConfig.path) {
-        parts.push("--work-dir", shellEscape(config.projectConfig.path));
+      // making our md5(cwd) hash diverge from kimi's.
+      //
+      // Prefer config.workspacePath (per-session worktree) over
+      // projectConfig.path (the original repo root). When the workspace
+      // plugin is "worktree", these differ — passing projectConfig.path
+      // would either (a) make kimi write to the project root, breaking
+      // worktree isolation, or (b) cause md5(cwd) to diverge from
+      // session.workspacePath, so getActivityState/getSessionInfo never
+      // find this session's bucket. Falls back to projectConfig.path
+      // for clone-mode workspaces or older callers that don't plumb it.
+      const workDir = config.workspacePath ?? config.projectConfig.path;
+      if (workDir) {
+        parts.push("--work-dir", shellEscape(workDir));
       }
 
       appendApprovalFlags(parts, config.permissions);

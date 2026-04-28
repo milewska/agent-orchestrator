@@ -541,6 +541,15 @@ export interface Agent {
 export interface AgentLaunchConfig {
   sessionId: SessionId;
   projectConfig: ProjectConfig;
+  /**
+   * Per-session workspace path. Differs from `projectConfig.path` when the
+   * workspace plugin (e.g. worktree mode) creates an isolated checkout per
+   * session. Plugins that need the agent's actual cwd — for cwd-derived
+   * lookups, --work-dir flags, file-based discovery — must use this when
+   * present. Falls back to `projectConfig.path` when undefined (clone-mode
+   * workspaces, or plugins not yet plumbing it through).
+   */
+  workspacePath?: string;
   issueId?: string;
   prompt?: string;
   permissions?: AgentPermissionInput;
