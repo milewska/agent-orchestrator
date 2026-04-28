@@ -1983,10 +1983,7 @@ describe("start command — platform-aware runtime fallback", () => {
     expect(killCalls).not.toContain("p1-1");
   });
 
-  // Skipped on Windows: full stop now goes through killProcessTree(), which
-  // calls `taskkill /T /F` on win32 instead of process.kill — the assertion
-  // below targets the POSIX path. Windows behaviour is exercised at runtime.
-  it.skipIf(process.platform === "win32")("full stop (no arg) still kills parent and dashboard", async () => {
+  it("full stop (no arg) still kills parent and dashboard", async () => {
     mockConfigRef.current = makeConfig({
       "project-1": makeProject({ name: "Project 1", sessionPrefix: "p1" }),
     });
@@ -2000,18 +1997,14 @@ describe("start command — platform-aware runtime fallback", () => {
     mockSessionManager.list.mockResolvedValue([]);
     mockExec.mockRejectedValue(new Error("no process"));
 
-    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
-
     await program.parseAsync(["node", "test", "stop"]);
 
-    // killProcessTree on Unix targets the process group first via NEGATIVE pid;
-    // only falls back to positive pid if that throws. The mock returns true,
-    // so only the negative-pid call fires.
-    expect(killSpy).toHaveBeenCalledWith(-99999, "SIGTERM");
+    // Stop now goes through killProcessTree (which is module-mocked above),
+    // not a direct process.kill — that's how it gets `taskkill /T /F` on
+    // Windows and process-group kill on Unix. Assert on the mock.
+    expect(mockKillProcessTree).toHaveBeenCalledWith(99999, "SIGTERM");
     expect(mockUnregister).toHaveBeenCalled();
     expect(mockRemoveProjectFromRunning).not.toHaveBeenCalled();
-
-    killSpy.mockRestore();
   });
 
   it("targeted stop records last-stop with correct project scope", async () => {
