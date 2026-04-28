@@ -94,8 +94,11 @@ function parseDuration(str: string): number {
 
 /** Reaction keys for conditions that can oscillate (e.g. CI failing→pending→failing).
  *  Their trackers survive status exit so the escalation budget accumulates
- *  across oscillations instead of resetting to zero each time. */
-const PERSISTENT_REACTION_KEYS = new Set(["ci-failed", "merge-conflicts"]);
+ *  across oscillations instead of resetting to zero each time.
+ *  Note: "merge-conflicts" is NOT here — statusToEventType never emits
+ *  "merge.conflicts", so the transition handler at line ~1892 can't reach it.
+ *  Merge-conflict tracker lifecycle is managed in maybeDispatchMergeConflicts. */
+const PERSISTENT_REACTION_KEYS = new Set(["ci-failed"]);
 
 type WorkspaceBranchProbe =
   | { kind: "branch"; branch: string }
@@ -1201,6 +1204,12 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         data: { reactionKey, attempts: tracker.attempts },
       });
       await notifyHuman(event, reactionConfig.priority ?? "urgent");
+
+      // Clear the tracker so future incidents get a fresh budget.
+      // Without this, long-lived sessions that escalated once would
+      // immediately escalate on every future occurrence of the condition.
+      reactionTrackers.delete(trackerKey);
+
       return {
         reactionType: reactionKey,
         success: true,
@@ -1658,10 +1667,12 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       ) {
         try {
           // Build enriched config with dynamic base branch message.
-          // Note: executeReaction's notify path defaults to "info" priority (was "warning"
-          // in the old direct-dispatch code). Users who set action:"notify" for merge-conflicts
-          // should set priority:"warning" explicitly in their config if needed.
-          const enrichedConfig = { ...reactionConfig };
+          // Preserve "warning" priority from old direct-dispatch code unless
+          // the user explicitly set a different priority in their config.
+          const enrichedConfig = {
+            ...reactionConfig,
+            priority: reactionConfig.priority ?? ("warning" as const),
+          };
           if (reactionConfig.action === "send-to-agent" && !reactionConfig.message) {
             const baseBranch = session.pr.baseBranch ?? "the default branch";
             const behindNote = cachedData.isBehind ? ` is behind ${baseBranch} and` : "";
@@ -1674,7 +1685,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             conflictReactionKey,
             enrichedConfig,
           );
-          if (result.success) {
+          // Only set dedup flag for non-escalated success — escalation hands off
+          // to the human, so we must NOT suppress future agent dispatches if the
+          // condition recurs after the tracker resets.
+          if (result.success && result.action !== "escalated") {
             updateSessionMetadata(session, {
               lastMergeConflictDispatched: "true",
             });
@@ -1684,11 +1698,12 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         }
       }
     } else if (lastDispatched === "true") {
-      // Conflicts resolved — clear dedup flag so we can re-dispatch if they recur,
-      // but preserve reaction tracker so escalation budget accumulates.
+      // Conflicts resolved — clear dedup flag and reaction tracker so future
+      // conflicts start a fresh incident with a fresh escalation budget.
       updateSessionMetadata(session, {
         lastMergeConflictDispatched: "",
       });
+      clearReactionTracker(session.id, conflictReactionKey);
     }
   }
 
@@ -1884,8 +1899,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       }
 
       // Clear reaction trackers for the old status so retries reset on state changes.
-      // Persistent keys (ci-failed, merge-conflicts) are excluded — their trackers
-      // survive oscillation so the escalation budget accumulates across cycles.
+      // Persistent keys (ci-failed) are excluded — their trackers survive oscillation
+      // so the escalation budget accumulates across cycles. On escalation, the tracker
+      // is cleared in executeReaction so future incidents get a fresh budget.
       const oldEventType = statusToEventType(undefined, oldStatus);
       if (oldEventType) {
         const oldReactionKey = eventToReactionKey(oldEventType);
