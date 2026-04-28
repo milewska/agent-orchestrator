@@ -58,7 +58,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
         if: steps.check_sha.outputs.skip == 'false'
 
-      - run: pnpm -r --filter '!@aoagents/ao-web' build
+      - run: pnpm -r build
         if: steps.check_sha.outputs.skip == 'false'
 
       - name: Create snapshot versions

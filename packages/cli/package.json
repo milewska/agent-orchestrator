@@ -12,6 +12,7 @@
     "dist",
     "templates"
   ],
+  "bundledDependencies": ["@aoagents/ao-web"],
   "repository": {
     "type": "git",
     "url": "https://github.com/ComposioHQ/agent-orchestrator.git",

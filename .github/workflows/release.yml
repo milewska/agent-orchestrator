@@ -28,7 +28,7 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: echo "HUSKY=0" >> $GITHUB_ENV
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r --filter '!@aoagents/ao-web' build
+      - run: pnpm -r build
       - uses: changesets/action@v1
         with:
           publish: pnpm changeset publish

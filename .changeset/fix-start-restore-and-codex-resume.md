@@ -1,3 +1,4 @@
+---
 "@aoagents/ao-cli": patch
 "@aoagents/ao-web": patch
 "@aoagents/ao-plugin-agent-codex": patch
