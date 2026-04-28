@@ -29,6 +29,7 @@ import {
   generateConfigFromUrl,
   configToYaml,
   isCanonicalGlobalConfigPath,
+  isOrchestratorSession,
   isTerminalSession,
   ConfigNotFoundError,
   loadLocalProjectConfigDetailed,
