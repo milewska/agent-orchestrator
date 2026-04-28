@@ -1,148 +1,170 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { EventEmitter } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
-vi.mock("node:child_process", () => ({
-  spawn: vi.fn(),
+const { mockSpawn } = vi.hoisted(() => ({
+  mockSpawn: vi.fn(),
 }));
 
-vi.mock("node:fs", () => ({
-  existsSync: vi.fn(() => true),
-}));
-
-vi.mock("node:path", async (importOriginal) => {
-  // eslint-disable-next-line @typescript-eslint/consistent-type-imports
-  const actual = await importOriginal<typeof import("node:path")>();
+vi.mock("node:child_process", async () => {
+  const actual = await vi.importActual("node:child_process");
   return {
     ...actual,
-    resolve: vi.fn((...args: string[]) => actual.resolve(...args)),
-    dirname: vi.fn((...args: [string]) => actual.dirname(...args)),
+    spawn: (...args: unknown[]) => mockSpawn(...args),
   };
 });
 
-vi.mock("node:url", () => ({
-  fileURLToPath: vi.fn(() => "/mock/cli/src/lib/script-runner.ts"),
-}));
+import {
+  resolveDefaultRepoRootFromPath,
+  resolveRepoRoot,
+  resolveScriptLayout,
+  resolveScriptLayoutFromPath,
+  resolveScriptPath,
+  runRepoScript,
+} from "../../src/lib/script-runner.js";
 
-vi.mock("@aoagents/ao-core", () => ({
-  isWindows: vi.fn(() => false),
-}));
+describe("script-runner", () => {
+  const originalAoRepoRoot = process.env["AO_REPO_ROOT"];
+  const originalAoScriptLayout = process.env["AO_SCRIPT_LAYOUT"];
+  const originalAoDev = process.env["AO_DEV"];
 
-import * as childProcess from "node:child_process";
-import * as fs from "node:fs";
-import * as core from "@aoagents/ao-core";
-import { runRepoScript } from "../../src/lib/script-runner.js";
+  beforeEach(() => {
+    delete process.env["AO_REPO_ROOT"];
+    delete process.env["AO_SCRIPT_LAYOUT"];
+    delete process.env["AO_DEV"];
+    mockSpawn.mockReset();
+  });
 
-const mockIsWindows = core.isWindows as ReturnType<typeof vi.fn>;
-const mockSpawn = childProcess.spawn as ReturnType<typeof vi.fn>;
-const mockExistsSync = fs.existsSync as ReturnType<typeof vi.fn>;
+  afterEach(() => {
+    if (originalAoRepoRoot === undefined) {
+      delete process.env["AO_REPO_ROOT"];
+    } else {
+      process.env["AO_REPO_ROOT"] = originalAoRepoRoot;
+    }
 
-function makeSpawnEventEmitter(exitCode = 0) {
-  const listeners: Record<string, ((...args: unknown[]) => void)[]> = {};
-  const child = {
-    on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
-      listeners[event] = listeners[event] ?? [];
-      listeners[event].push(cb);
-      return child;
-    }),
-    emit: (event: string, ...args: unknown[]) => {
-      (listeners[event] ?? []).forEach((cb) => cb(...args));
+    if (originalAoScriptLayout === undefined) {
+      delete process.env["AO_SCRIPT_LAYOUT"];
+    } else {
+      process.env["AO_SCRIPT_LAYOUT"] = originalAoScriptLayout;
+    }
+
+    if (originalAoDev === undefined) {
+      delete process.env["AO_DEV"];
+    } else {
+      process.env["AO_DEV"] = originalAoDev;
+    }
+  });
+
+  // POSIX-style fixture paths in these tests reach `path.resolve()` on
+  // Windows, which prepends the current drive letter and converts to
+  // backslashes. Skip on Windows; the same code paths are exercised by the
+  // other tests using `mkdtempSync` (which produces native paths).
+  it.skipIf(process.platform === "win32")(
+    "uses the package root for packaged installs inside node_modules",
+    () => {
+      const modulePath =
+        "/usr/local/lib/node_modules/@aoagents/ao-cli/dist/lib/script-runner.js";
+
+      expect(resolveScriptLayoutFromPath(modulePath)).toBe("package-install");
+      expect(resolveDefaultRepoRootFromPath(modulePath)).toBe(
+        "/usr/local/lib/node_modules/@aoagents/ao-cli",
+      );
     },
-  };
+  );
 
-  // Simulate async exit
-  setTimeout(() => child.emit("exit", exitCode, null), 0);
+  it.skipIf(process.platform === "win32")("uses the repository root for source checkouts", () => {
+    const modulePath =
+      "/Users/test/agent-orchestrator/packages/cli/src/lib/script-runner.ts";
 
-  return child;
-}
-
-beforeEach(() => {
-  vi.clearAllMocks();
-  delete process.env["AO_BASH_PATH"];
-  mockIsWindows.mockReturnValue(false);
-  mockExistsSync.mockReturnValue(true);
-});
-
-afterEach(() => {
-  delete process.env["AO_BASH_PATH"];
-});
-
-describe("runRepoScript", () => {
-  it("uses bash on Unix when AO_BASH_PATH not set (scripts have #!/bin/bash shebangs)", async () => {
-    mockIsWindows.mockReturnValue(false);
-    const child = makeSpawnEventEmitter(0);
-    mockSpawn.mockReturnValue(child);
-
-    await runRepoScript("test-script.sh", []);
-
-    expect(mockSpawn).toHaveBeenCalledWith("bash", expect.any(Array), expect.any(Object));
-  });
-
-  it("uses AO_BASH_PATH override when set on Unix", async () => {
-    process.env["AO_BASH_PATH"] = "/custom/bash";
-    const child = makeSpawnEventEmitter(0);
-    mockSpawn.mockReturnValue(child);
-
-    await runRepoScript("test-script.sh", []);
-
-    expect(mockSpawn).toHaveBeenCalledWith("/custom/bash", expect.any(Array), expect.any(Object));
-  });
-
-  it("passes extra args to script directly (not via -c)", async () => {
-    mockIsWindows.mockReturnValue(false);
-    const child = makeSpawnEventEmitter(0);
-    mockSpawn.mockReturnValue(child);
-
-    await runRepoScript("test-script.sh", ["--fix", "--verbose"]);
-
-    const spawnCall = mockSpawn.mock.calls[0];
-    expect(spawnCall[1]).not.toContain("-c");
-    expect(spawnCall[1]).toContain("--fix");
-    expect(spawnCall[1]).toContain("--verbose");
-    const scriptIdx = (spawnCall[1] as string[]).findIndex((a: string) =>
-      a.includes("test-script.sh"),
+    expect(resolveScriptLayoutFromPath(modulePath)).toBe("source-checkout");
+    expect(resolveDefaultRepoRootFromPath(modulePath)).toBe(
+      "/Users/test/agent-orchestrator",
     );
-    expect((spawnCall[1] as string[])[scriptIdx + 1]).toBe("--fix");
   });
 
-  it("throws a clear error on Windows when AO_BASH_PATH is not set and Git Bash is not installed", async () => {
-    mockIsWindows.mockReturnValue(true);
-    // No bash anywhere — auto-detect fails.
-    mockExistsSync.mockImplementation((p: string) => !p.endsWith("bash.exe"));
-
-    await expect(runRepoScript("test-script.sh", [])).rejects.toThrow(
-      /Cannot run repo scripts on Windows without bash.*Git for Windows.*AO_BASH_PATH/s,
+  it("includes the expected scripts path in missing-script errors", () => {
+    const expectedScriptsDir = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      "../../src/assets/scripts",
     );
-    expect(mockSpawn).not.toHaveBeenCalled();
+
+    // Escape every regex metachar (including '\' on Windows paths) for the
+    // scripts-directory portion so the assertion is path-separator-agnostic.
+    const escapedDir = expectedScriptsDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    expect(() => resolveScriptPath("does-not-exist.sh")).toThrowError(
+      new RegExp(
+        `Script not found: does-not-exist\\.sh\\. Expected at: .*does-not-exist\\.sh \\(scripts directory: ${escapedDir}\\)`,
+      ),
+    );
   });
 
-  it("auto-detects Git Bash on Windows when AO_BASH_PATH is not set", async () => {
-    mockIsWindows.mockReturnValue(true);
-    mockExistsSync.mockImplementation(
-      (p: string) => p === "C:\\Program Files\\Git\\bin\\bash.exe" || p.endsWith(".sh"),
+  it("rejects an invalid AO_REPO_ROOT override", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "script-runner-invalid-"));
+    process.env["AO_REPO_ROOT"] = tempRoot;
+
+    expect(() => resolveRepoRoot()).toThrowError(
+      `AO_REPO_ROOT=${tempRoot} does not look like an agent-orchestrator checkout`,
     );
-    const child = makeSpawnEventEmitter(0);
+
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it("accepts a valid AO_REPO_ROOT override for source checkouts", () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "script-runner-valid-"));
+    mkdirSync(join(tempRoot, ".git"), { recursive: true });
+    mkdirSync(join(tempRoot, "packages", "ao"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, "packages", "ao", "package.json"),
+      JSON.stringify({ name: "@aoagents/ao" }),
+    );
+
+    process.env["AO_REPO_ROOT"] = tempRoot;
+    expect(resolveRepoRoot()).toBe(tempRoot);
+
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it("ignores AO_SCRIPT_LAYOUT unless AO_DEV=1", () => {
+    process.env["AO_SCRIPT_LAYOUT"] = "package-install";
+    expect(resolveScriptLayout()).toBe("source-checkout");
+
+    process.env["AO_DEV"] = "1";
+    expect(resolveScriptLayout()).toBe("package-install");
+  });
+
+  it("pins script execution cwd to the resolved install root", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "script-runner-cwd-"));
+    mkdirSync(join(tempRoot, ".git"), { recursive: true });
+    mkdirSync(join(tempRoot, "packages", "ao"), { recursive: true });
+    writeFileSync(
+      join(tempRoot, "packages", "ao", "package.json"),
+      JSON.stringify({ name: "@aoagents/ao" }),
+    );
+
+    process.env["AO_REPO_ROOT"] = tempRoot;
+    const child = new EventEmitter();
     mockSpawn.mockReturnValue(child);
+    setTimeout(() => child.emit("exit", 0, null), 0);
 
-    await runRepoScript("test-script.sh", []);
+    await runRepoScript("ao-doctor.sh", []);
 
     expect(mockSpawn).toHaveBeenCalledWith(
-      "C:\\Program Files\\Git\\bin\\bash.exe",
-      expect.any(Array),
-      expect.any(Object),
+      // On Windows the resolved bash is an absolute path (e.g. Git Bash);
+      // on POSIX it is the literal "bash" passed through to the shell.
+      expect.stringMatching(/(^bash$|bash(\.exe)?$)/),
+      [expect.stringContaining("ao-doctor.sh")],
+      expect.objectContaining({
+        cwd: tempRoot,
+        env: expect.objectContaining({
+          AO_REPO_ROOT: tempRoot,
+          AO_SCRIPT_LAYOUT: "source-checkout",
+        }),
+      }),
     );
-  });
 
-  it("uses AO_BASH_PATH override on Windows and does not throw", async () => {
-    process.env["AO_BASH_PATH"] = "C:\\Program Files\\Git\\bin\\bash.exe";
-    mockIsWindows.mockReturnValue(true);
-    const child = makeSpawnEventEmitter(0);
-    mockSpawn.mockReturnValue(child);
-
-    await runRepoScript("test-script.sh", ["--fix"]);
-
-    expect(mockSpawn).toHaveBeenCalledWith(
-      "C:\\Program Files\\Git\\bin\\bash.exe",
-      expect.any(Array),
-      expect.any(Object),
-    );
+    rmSync(tempRoot, { recursive: true, force: true });
   });
 });

@@ -163,41 +163,31 @@ describe("update-check", () => {
       ).toBe("unknown");
     });
 
-    it("returns 'git' when repo root has scripts/ao-update.sh and .git", () => {
+    it("returns 'git' when repo root has .git", () => {
       mockExistsSync.mockImplementation((path: string) => {
-        if (path.replace(/\\/g, "/").endsWith("scripts/ao-update.sh")) return true;
         if (path.endsWith(".git")) return true;
         return false;
       });
+      mockReadFileSync.mockReturnValue(JSON.stringify({ name: "@aoagents/ao" }));
 
       expect(
         classifyInstallPath("/home/user/agent-orchestrator/packages/cli/src/lib/update-check.ts"),
       ).toBe("git");
     });
 
-    it("returns 'unknown' when .git exists but scripts/ao-update.sh does not", () => {
+    it("returns 'unknown' for a non-AO repo even when .git exists four levels up", () => {
       mockExistsSync.mockImplementation((path: string) => {
         if (path.endsWith(".git")) return true;
         return false;
       });
+      mockReadFileSync.mockReturnValue(JSON.stringify({ name: "not-ao" }));
 
       expect(
-        classifyInstallPath("/home/user/some-project/packages/cli/src/lib/update-check.ts"),
+        classifyInstallPath("/home/user/other-monorepo/packages/cli/src/lib/update-check.ts"),
       ).toBe("unknown");
     });
 
-    it("returns 'unknown' when scripts/ao-update.sh exists but .git does not", () => {
-      mockExistsSync.mockImplementation((path: string) => {
-        if (path.replace(/\\/g, "/").endsWith("scripts/ao-update.sh")) return true;
-        return false;
-      });
-
-      expect(
-        classifyInstallPath("/home/user/some-project/packages/cli/src/lib/update-check.ts"),
-      ).toBe("unknown");
-    });
-
-    it("returns 'unknown' when neither .git nor scripts/ao-update.sh exist", () => {
+    it("returns 'unknown' when .git does not exist at the resolved repo root", () => {
       mockExistsSync.mockReturnValue(false);
       expect(
         classifyInstallPath("/tmp/random/path/update-check.ts"),
@@ -212,10 +202,10 @@ describe("update-check", () => {
   describe("detectInstallMethod", () => {
     it("returns a valid InstallMethod", () => {
       mockExistsSync.mockImplementation((path: string) => {
-        if (path.replace(/\\/g, "/").endsWith("scripts/ao-update.sh")) return true;
         if (path.endsWith(".git")) return true;
         return false;
       });
+      mockReadFileSync.mockReturnValue(JSON.stringify({ name: "@aoagents/ao" }));
 
       const result = detectInstallMethod();
       expect(["git", "npm-global", "unknown"]).toContain(result);
@@ -265,8 +255,7 @@ describe("update-check", () => {
       process.env["XDG_CACHE_HOME"] = "/custom/cache";
 
       const dir = getCacheDir();
-      // path.join on Windows produces backslashes; normalize for cross-platform assertion.
-      expect(dir.replace(/\\/g, "/")).toBe("/custom/cache/ao");
+      expect(dir).toMatch(/^[\\/]custom[\\/]cache[\\/]ao$/);
 
       if (origXdg !== undefined) process.env["XDG_CACHE_HOME"] = origXdg;
       else delete process.env["XDG_CACHE_HOME"];

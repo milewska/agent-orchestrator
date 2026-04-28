@@ -620,7 +620,11 @@ describe("detect()", () => {
   it("returns true when agent --help contains 'Cursor Agent'", () => {
     mockExecFileSync.mockReturnValueOnce("Usage: agent [options]\n\nStart the Cursor Agent\n");
     expect(detect()).toBe(true);
-    expect(mockExecFileSync).toHaveBeenCalledWith("agent", ["--help"], { encoding: "utf-8" });
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      "agent",
+      ["--help"],
+      expect.objectContaining({ encoding: "utf-8" }),
+    );
   });
 
   it("returns true when agent --help contains Cursor-specific flags (fallback)", () => {

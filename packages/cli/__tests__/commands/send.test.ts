@@ -161,17 +161,15 @@ describe("send command", () => {
 
         await program.parseAsync(["node", "test", "send", "my-session", "fix", "the", "bug"]);
 
-        // Should have eventually sent the message
-        expect(mockExec).toHaveBeenCalledWith("tmux", [
-          "send-keys",
-          "-t",
-          "my-session",
-          "-l",
-          "fix the bug",
-        ]);
-      },
-      30_000,
-    );
+      // Should have eventually sent the message
+      expect(mockExec).toHaveBeenCalledWith("tmux", [
+        "send-keys",
+        "-t",
+        "my-session",
+        "-l",
+        "fix the bug",
+      ]);
+    }, 30_000);
 
     it("skips busy detection with --no-wait", async () => {
       mockTmux.mockImplementation(async (...args: string[]) => {

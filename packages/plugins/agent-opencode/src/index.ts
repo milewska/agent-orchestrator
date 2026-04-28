@@ -8,6 +8,10 @@ import {
   recordTerminalActivity,
   asValidOpenCodeSessionId,
   isWindows,
+  getCachedOpenCodeSessionList,
+  getOpenCodeChildEnv,
+  ensureOpenCodeTmpDir,
+  resetOpenCodeSessionListCache,
   type Agent,
   type AgentSessionInfo,
   type AgentLaunchConfig,
@@ -19,17 +23,12 @@ import {
   type Session,
   type WorkspaceHooksConfig,
   type OpenCodeAgentConfig,
+  type OpenCodeSessionListEntry,
 } from "@aoagents/ao-core";
 import { execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-
-interface OpenCodeSessionListEntry {
-  id: string;
-  title?: string;
-  updated?: string | number;
-}
 
 function parseUpdatedTimestamp(updated: string | number | undefined): Date | null {
   if (typeof updated === "number") {
@@ -55,20 +54,8 @@ function parseUpdatedTimestamp(updated: string | number | undefined): Date | nul
   return new Date(parsedMs);
 }
 
-function parseSessionList(raw: string): OpenCodeSessionListEntry[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(parsed)) return [];
-  return parsed.filter((item): item is OpenCodeSessionListEntry => {
-    if (!item || typeof item !== "object") return false;
-    const record = item as Record<string, unknown>;
-    return asValidOpenCodeSessionId(record["id"]) !== undefined;
-  });
-}
+// Re-export for backward compat — see @aoagents/ao-core/opencode-shared.
+export { resetOpenCodeSessionListCache };
 
 /**
  * Parse JSON stream lines from `opencode run --format json` output.
@@ -159,13 +146,7 @@ async function findOpenCodeSession(
   session: Session,
 ): Promise<OpenCodeSessionListEntry | null> {
   try {
-    const { stdout } = await execFileAsync(
-      "opencode",
-      ["session", "list", "--format", "json"],
-      { timeout: 30_000 },
-    );
-
-    const sessions = parseSessionList(stdout);
+    const sessions = await getCachedOpenCodeSessionList();
 
     // Prefer exact ID match from metadata
     if (session.metadata?.opencodeSessionId) {
@@ -273,6 +254,15 @@ function createOpenCodeAgent(): Agent {
       if (config.issueId) {
         env["AO_ISSUE_ID"] = config.issueId;
       }
+
+      // Point Bun's embedded shared-library extraction at an AO-owned temp
+      // dir so the cli-side janitor only needs to sweep our own files
+      // (issue #1046). Setting all three keys covers POSIX (TMPDIR) and
+      // Windows fallbacks; opencode itself ships POSIX-only today.
+      const tmpDir = ensureOpenCodeTmpDir();
+      env["TMPDIR"] = tmpDir;
+      env["TMP"] = tmpDir;
+      env["TEMP"] = tmpDir;
 
       // PATH and GH_PATH are injected by session-manager for all agents.
 
@@ -457,8 +447,11 @@ export function detect(): boolean {
   try {
     execFileSync("opencode", ["version"], {
       stdio: "ignore",
+      // On Windows, execFileSync cannot resolve .cmd shim extensions without
+      // invoking the shell; windowsHide:true suppresses the conhost popup.
       shell: isWindows(),
       windowsHide: true,
+      env: getOpenCodeChildEnv(),
     });
     return true;
   } catch {

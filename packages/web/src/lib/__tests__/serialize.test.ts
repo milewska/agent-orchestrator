@@ -19,6 +19,7 @@ import {
   enrichSessionPR,
   readPREnrichmentFromMetadata,
   enrichSessionAgentSummary,
+  enrichSessionIssue,
   enrichSessionIssueTitle,
   enrichSessionsMetadata,
   enrichSessionsMetadataFast,

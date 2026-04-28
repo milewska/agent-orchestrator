@@ -61,7 +61,6 @@ describe("portfolio-projects", () => {
         docs: {
           projectId: "docs",
           path: docsRepo,
-          storageKey: "storage-docs",
           displayName: "Docs",
           defaultBranch: "develop",
           sessionPrefix: "docs",
@@ -76,7 +75,6 @@ describe("portfolio-projects", () => {
       configPath: globalConfigPath,
       configProjectKey: "docs",
       repoPath: docsRepo,
-      storageKey: "storage-docs",
       defaultBranch: "develop",
       sessionPrefix: "docs",
       source: "config",

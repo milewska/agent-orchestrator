@@ -36,7 +36,7 @@ import { createPluginRegistry } from "../plugin-registry.js";
 import { createSessionManager } from "../session-manager.js";
 import { createLifecycleManager } from "../lifecycle-manager.js";
 import { writeMetadata } from "../metadata.js";
-import { getSessionsDir, getProjectBaseDir } from "../paths.js";
+import { getProjectSessionsDir, getProjectDir } from "../paths.js";
 import trackerGithub from "@aoagents/ao-plugin-tracker-github";
 import scmGithub from "@aoagents/ao-plugin-scm-github";
 import { createMockPlugins, makeHandle, makeSession as makeSessionBase, makePR, type TestEnvironment } from "./test-utils.js";
@@ -107,6 +107,9 @@ beforeEach(() => {
 
   mkdirSync(env.tmpDir, { recursive: true });
   previousHome = process.env["HOME"];
+  // On Windows, Node's homedir() reads USERPROFILE — overriding HOME alone is
+  // insufficient. We override both so AO base-dir resolution lands in tmpDir
+  // regardless of platform.
   previousUserProfile = process.env["USERPROFILE"];
   process.env["HOME"] = env.tmpDir;
   process.env["USERPROFILE"] = env.tmpDir;
@@ -124,7 +127,6 @@ beforeEach(() => {
     name: "Test App",
     repo: "acme/app",
     path: join(env.tmpDir, "test-app"),
-    storageKey: "222222222222",
     defaultBranch: "main",
     sessionPrefix: "app",
     tracker: { plugin: "github" },
@@ -155,13 +157,16 @@ beforeEach(() => {
   };
 
   env.config = config;
-  env.sessionsDir = getSessionsDir(project.storageKey);
+  env.sessionsDir = getProjectSessionsDir("my-app");
   mkdirSync(env.sessionsDir, { recursive: true });
 
   env.cleanup = () => {
-    const projectBaseDir = getProjectBaseDir(project.storageKey);
-    if (existsSync(projectBaseDir)) {
-      rmSync(projectBaseDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    // V2 storage: project files live under getProjectDir(projectId).
+    // maxRetries/retryDelay handle Windows EBUSY (antivirus / search indexer
+    // briefly holding files); they're no-ops on Unix.
+    const projectDir = getProjectDir("my-app");
+    if (existsSync(projectDir)) {
+      rmSync(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
     rmSync(env.tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     if (previousHome === undefined) delete process.env["HOME"];
@@ -173,6 +178,11 @@ beforeEach(() => {
 
 afterEach(() => {
   env.cleanup();
+  if (previousHome === undefined) {
+    delete process.env["HOME"];
+  } else {
+    process.env["HOME"] = previousHome;
+  }
 });
 
 // ---------------------------------------------------------------------------
