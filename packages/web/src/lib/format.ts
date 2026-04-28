@@ -32,10 +32,17 @@ export function humanizeBranch(branch: string, sessionId?: string): string {
     "",
   );
 
+  const sessionBranchBase =
+    sessionId &&
+    withoutPrefix.startsWith(`${sessionId}-`) &&
+    /^[a-z0-9]{5}$/.test(withoutPrefix.slice(sessionId.length + 1))
+      ? sessionId
+      : withoutPrefix;
+
   // If the remaining text is just the session ID (e.g. "ao-42" or
   // "ao-orchestrator-8"), there's no task signal here — return empty so the
   // caller can fall through to the next fallback (displayName, summary, …).
-  if (sessionId && withoutPrefix === sessionId) {
+  if (sessionId && sessionBranchBase === sessionId) {
     return "";
   }
 

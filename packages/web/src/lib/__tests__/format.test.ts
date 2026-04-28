@@ -77,6 +77,10 @@ describe("humanizeBranch", () => {
     expect(humanizeBranch("session/ao-42", "ao-42")).toBe("");
   });
 
+  it("returns empty when the branch is a suffixed session branch", () => {
+    expect(humanizeBranch("session/ao-42-k7f2m", "ao-42")).toBe("");
+  });
+
   it("returns empty when the branch is just the session ID (orchestrator/)", () => {
     expect(humanizeBranch("orchestrator/ao-orchestrator-8", "ao-orchestrator-8")).toBe("");
   });

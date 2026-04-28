@@ -95,6 +95,7 @@ import {
 const execFileAsync = promisify(execFile);
 const OPENCODE_DISCOVERY_TIMEOUT_MS = 10_000;
 const OPENCODE_INTERACTIVE_DISCOVERY_TIMEOUT_MS = 10_000;
+const SESSION_BRANCH_RANDOM_SUFFIX_LENGTH = 5;
 
 function errorIncludesSessionNotFound(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
@@ -125,6 +126,14 @@ async function deleteOpenCodeSession(sessionId: string): Promise<void> {
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function createSessionBranchSuffix(length = SESSION_BRANCH_RANDOM_SUFFIX_LENGTH): string {
+  let suffix = "";
+  while (suffix.length < length) {
+    suffix += Math.random().toString(36).slice(2);
+  }
+  return suffix.slice(0, length);
 }
 
 interface OpenCodeSessionListEntry {
@@ -810,7 +819,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
           const ref = trimmed.split(/\s+/)[1] ?? "";
           const match = ref.match(
-            new RegExp(`refs/heads/session/${escapeRegex(project.sessionPrefix)}-(\\d+)$`),
+            new RegExp(`refs/heads/session/${escapeRegex(project.sessionPrefix)}-(\\d+)(?:-.+)?$`),
           );
           if (!match) return [];
 
@@ -1182,7 +1191,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
             .replace(/^-+|-+$/g, "");
       branch = `feat/${slug || sessionId}`;
     } else {
-      branch = `session/${sessionId}`;
+      branch = `session/${sessionId}-${createSessionBranchSuffix()}`;
     }
 
     // Create workspace (if workspace plugin is available)
