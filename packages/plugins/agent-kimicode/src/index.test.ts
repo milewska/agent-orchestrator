@@ -1199,6 +1199,32 @@ describe("getRestoreCommand", () => {
     );
     expect(result).toBe("kimi --resume 'sess-new'");
   });
+
+  // Worktree-mode end-to-end: AO's workspace plugin gives the session a
+  // per-session checkout (workspacePath) different from the project root
+  // (projectConfig.path). kimi launched with --work-dir=<workspacePath>
+  // hashes that path for its bucket — so discovery must hash the
+  // workspacePath, NOT the project root, or it will look in the wrong
+  // bucket and find nothing.
+  it("worktree mode: discovery hashes workspacePath, not projectConfig.path", async () => {
+    const workspaceWorktree = join(fakeHome, "worktrees", "sess-wt");
+    mkdirSync(workspaceWorktree, { recursive: true });
+
+    // kimi launched with --work-dir=workspaceWorktree wrote its session
+    // under md5(workspaceWorktree).
+    writeKimiSession(workspaceWorktree, "wt-uuid");
+
+    // Project root is somewhere completely different — md5(projectRoot)
+    // must NOT be where discovery looks.
+    const projectRoot = join(fakeHome, "repos", "main-repo");
+    mkdirSync(projectRoot, { recursive: true });
+
+    const result = await agent.getRestoreCommand!(
+      makeSession({ workspacePath: workspaceWorktree }),
+      makeProject({ path: projectRoot }),
+    );
+    expect(result).toBe("kimi --resume 'wt-uuid'");
+  });
 });
 
 // =============================================================================
