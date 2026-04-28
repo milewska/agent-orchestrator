@@ -11,7 +11,6 @@ import {
   writeMetadata,
   readMetadataRaw,
   updateMetadata,
-  deleteMetadata,
 } from "../../metadata.js";
 import { getProjectSessionsDir, getProjectWorktreesDir } from "../../paths.js";
 import type {
@@ -68,7 +67,7 @@ describe("kill", () => {
     // cleanup() archives it on the next pass via the idempotency path.
     const remaining = readMetadataRaw(sessionsDir, "app-1");
     expect(remaining).not.toBeNull();
-    expect(remaining?.["statePayload"]).toContain('"state":"terminated"');
+    expect(remaining?.["lifecycle"]).toContain('"state":"terminated"');
   });
 
   it("does not destroy workspace paths outside managed roots", async () => {
