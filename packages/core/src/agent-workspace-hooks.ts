@@ -35,7 +35,7 @@ function getAoBinDir(): string {
 }
 
 /** Current version of wrapper scripts — bump when scripts change */
-const WRAPPER_VERSION = "0.6.0";
+const WRAPPER_VERSION = "0.7.0";
 
 // =============================================================================
 // PATH Builder
@@ -666,7 +666,11 @@ function updateAoMetadata(key, value) {
   const allowed = [path.join(home, ".ao"), path.join(home, ".agent-orchestrator"), os.tmpdir()];
   if (!allowed.some(a => resolvedDir === a || resolvedDir.startsWith(a + sep))) return;
 
-  const metadataFile = path.join(resolvedDir, aoSession);
+  // Try V2 (.json) first, then fall back to V1 (bare) — mirrors bash ao-metadata-helper.sh
+  let metadataFile = path.join(resolvedDir, aoSession + ".json");
+  if (!fs.existsSync(metadataFile)) {
+    metadataFile = path.join(resolvedDir, aoSession);
+  }
   if (!fs.existsSync(metadataFile)) return;
 
   // Strip newlines from value
@@ -675,18 +679,26 @@ function updateAoMetadata(key, value) {
   let content;
   try { content = fs.readFileSync(metadataFile, "utf8"); } catch { return; }
 
-  const lines = content.split("\\n");
-  const keyPrefix = key + "=";
-  const idx = lines.findIndex(l => l.startsWith(keyPrefix));
-  if (idx >= 0) {
-    lines[idx] = key + "=" + cleanValue;
-  } else {
-    lines.push(key + "=" + cleanValue);
-  }
-
   const tmpFile = metadataFile + ".tmp." + process.pid;
   try {
-    fs.writeFileSync(tmpFile, lines.join("\\n"), "utf8");
+    if (metadataFile.endsWith(".json")) {
+      // V2 JSON format
+      let d;
+      try { d = JSON.parse(content); } catch { return; }
+      d[key] = cleanValue;
+      fs.writeFileSync(tmpFile, JSON.stringify(d, null, 2), "utf8");
+    } else {
+      // V1 key=value format
+      const lines = content.split("\\n");
+      const keyPrefix = key + "=";
+      const idx = lines.findIndex(l => l.startsWith(keyPrefix));
+      if (idx >= 0) {
+        lines[idx] = key + "=" + cleanValue;
+      } else {
+        lines.push(key + "=" + cleanValue);
+      }
+      fs.writeFileSync(tmpFile, lines.join("\\n"), "utf8");
+    }
     fs.renameSync(tmpFile, metadataFile);
   } catch {
     try { fs.unlinkSync(tmpFile); } catch {}

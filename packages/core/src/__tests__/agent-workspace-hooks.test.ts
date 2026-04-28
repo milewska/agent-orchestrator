@@ -97,7 +97,7 @@ describe("setupPathWrapperWorkspace (Unix)", () => {
 
   it("skips wrapper rewrite when version matches", async () => {
     mockReadFile
-      .mockResolvedValueOnce("0.6.0") // version marker matches
+      .mockResolvedValueOnce("0.7.0") // version marker matches
       .mockRejectedValueOnce(new Error("ENOENT")); // AGENTS.md doesn't exist
 
     await setupPathWrapperWorkspace("/workspace");
@@ -269,6 +269,27 @@ describe("buildNodeWrapper", () => {
     expect(script).toContain("fs.existsSync");
     expect(script).toContain("findRealGh()");
   });
+
+  it("updateAoMetadata in node wrappers handles V2 .json metadata format", () => {
+    const ghScript = buildNodeWrapper("gh", "");
+    // Must try the .json extension first (V2 storage format)
+    expect(ghScript).toContain('aoSession + ".json"');
+    // Must fall back to bare name (V1 legacy format)
+    expect(ghScript).toContain("path.join(resolvedDir, aoSession)");
+    // Must handle JSON.parse/stringify for V2 format
+    expect(ghScript).toContain("JSON.parse");
+    expect(ghScript).toContain("JSON.stringify");
+    // Must handle key=value lines for V1 format
+    expect(ghScript).toContain('split("\\n")');
+  });
+
+  it("updateAoMetadata is shared between gh and git wrappers", () => {
+    const ghScript = buildNodeWrapper("gh", "");
+    const gitScript = buildNodeWrapper("git", "");
+    // Both wrappers should contain the V2 JSON format support
+    expect(ghScript).toContain('aoSession + ".json"');
+    expect(gitScript).toContain('aoSession + ".json"');
+  });
 });
 
 describe("AO_METADATA_HELPER", () => {
@@ -400,7 +421,7 @@ describe("GH_WRAPPER", () => {
   });
 
   it("uses current wrapper version in trace logging", () => {
-    expect(GH_WRAPPER).toContain("0.6.0");
+    expect(GH_WRAPPER).toContain("0.7.0");
   });
 
   it("logs cache outcomes (hit/miss-stored/miss-negative/miss-error) to trace", () => {
