@@ -2,7 +2,7 @@ name: Canary
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, Integration Tests]
     types: [completed]
     branches: [main]
 
@@ -78,8 +78,7 @@ jobs:
         id: publish
         run: |
           pnpm changeset publish --tag nightly --no-git-tag
-          # packages/ao is the user-facing CLI package; update this path if the package is renamed.
-          CANARY_VERSION=$(node -p "require('./packages/ao/package.json').version")
+          CANARY_VERSION=$(node -p "require('@aoagents/ao/package.json').version")
           echo "version=$CANARY_VERSION" >> "$GITHUB_OUTPUT"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

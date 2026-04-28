@@ -1,7 +1,9 @@
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 concurrency:
@@ -16,9 +18,14 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -33,6 +40,8 @@ jobs:
         with:
           publish: pnpm changeset publish
           version: pnpm changeset version
+          # Creates/updates a PR titled "chore: version packages" when changesets are pending.
+          # Publishes to npm when that PR is merged.
           title: "chore: version packages"
           commit: "chore: version packages"
         env:
