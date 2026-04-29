@@ -82,6 +82,47 @@ describe("useSessionEvents - mux", () => {
     });
   });
 
+  it("keeps server attention from a fresh refresh", async () => {
+    const refreshed = { ...s1, attentionLevel: "merge" } as unknown as DashboardSession;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ sessions: [refreshed] }),
+      } as unknown as Response),
+    );
+
+    const initialSessions = [s1];
+    const muxSessions = [
+      {
+        id: "s1",
+        status: "working",
+        activity: "active",
+        attentionLevel: "working" as const,
+        lastActivityAt: now,
+      },
+      {
+        id: "s2",
+        status: "working",
+        activity: "active",
+        attentionLevel: "working" as const,
+        lastActivityAt: now,
+      },
+    ];
+    const { result } = renderHook(() =>
+      useSessionEvents({
+        initialSessions,
+        project: "proj",
+        muxSessions,
+        attentionZones: "simple",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.sseAttentionLevels.s1).toBe("merge");
+    });
+  });
+
   it("does not warn when an in-flight refresh is aborted on unmount", async () => {
     vi.useFakeTimers();
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
