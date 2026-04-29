@@ -13,6 +13,8 @@ import { registerDoctor } from "./commands/doctor.js";
 import { registerUpdate } from "./commands/update.js";
 import { registerSetup } from "./commands/setup.js";
 import { registerPlugin } from "./commands/plugin.js";
+import { registerMigrateStorage } from "./commands/migrate-storage.js";
+import { registerCompletion } from "./commands/completion.js";
 import { getConfigInstruction } from "./lib/config-instruction.js";
 import { getCliVersion } from "./options/version.js";
 
@@ -41,6 +43,8 @@ export function createProgram(): Command {
   registerUpdate(program);
   registerSetup(program);
   registerPlugin(program);
+  registerMigrateStorage(program);
+  registerCompletion(program);
 
   program
     .command("config-help")
