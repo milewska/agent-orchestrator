@@ -670,6 +670,49 @@ describe("workspace.destroy()", () => {
 
     expect(mockRmSync).not.toHaveBeenCalled();
   });
+
+  it("retries rmSync on Windows when first attempts fail (file-handle drain)", async () => {
+    mockIsWindows.mockReturnValue(true);
+    const ws = create();
+
+    mockGitError("not a git repository"); // force fallback
+    // existsSync sequence: top guard (true), then between-retries checks
+    mockExistsSync.mockReturnValueOnce(true); // destroy() top guard
+    mockExistsSync.mockReturnValueOnce(true); // after attempt #1 — still there
+    mockExistsSync.mockReturnValueOnce(true); // after attempt #2 — still there
+    mockExistsSync.mockReturnValueOnce(false); // after attempt #3 — gone
+
+    let calls = 0;
+    mockRmSync.mockImplementation(() => {
+      calls++;
+      if (calls < 3) throw Object.assign(new Error("EBUSY"), { code: "EBUSY" });
+    });
+
+    await ws.destroy("/mock-home/.worktrees/myproject/session-1");
+
+    expect(mockRmSync.mock.calls.length).toBeGreaterThanOrEqual(3);
+    mockIsWindows.mockReturnValue(false);
+    mockRmSync.mockReset();
+  });
+
+  it("throws on Windows after exhausting retries (handles never released)", async () => {
+    mockIsWindows.mockReturnValue(true);
+    const ws = create();
+
+    mockGitError("not a git repository");
+    mockExistsSync.mockReturnValue(true); // always exists — never drains
+    mockRmSync.mockImplementation(() => {
+      throw Object.assign(new Error("EBUSY"), { code: "EBUSY" });
+    });
+
+    await expect(ws.destroy("/mock-home/.worktrees/myproject/session-1")).rejects.toThrow(
+      /Windows file-handle drain/,
+    );
+    expect(mockRmSync.mock.calls.length).toBe(6);
+    mockIsWindows.mockReturnValue(false);
+    mockExistsSync.mockReset();
+    mockRmSync.mockReset();
+  });
 });
 
 describe("workspace.list()", () => {

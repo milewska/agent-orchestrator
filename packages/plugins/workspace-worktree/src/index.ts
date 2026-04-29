@@ -52,6 +52,41 @@ function toComparablePath(p: string): string {
   return slash.replace(/^([a-zA-Z]):/, (_, d: string) => d.toLowerCase() + ":");
 }
 
+/**
+ * Remove a directory, retrying on Windows when file handles haven't drained yet.
+ *
+ * On Windows, killing a pty-host with node-pty leaves a small window where
+ * child processes (conpty_console_list_agent.exe, the agent's spawned shell,
+ * .git/index.lock) still hold handles inside the worktree. rmSync(force: true)
+ * deletes individual files but the directory rmdir blocks with EBUSY/ENOTEMPTY/EPERM
+ * until the kernel drains those handles — typically 100 ms–2 min. Without retry,
+ * AO leaves an empty orphan directory that confuses the next git worktree
+ * operation and shows up as residue under the project's worktrees directory.
+ */
+async function removeDirWithRetry(target: string): Promise<void> {
+  if (!isWindows()) {
+    rmSync(target, { recursive: true, force: true });
+    return;
+  }
+  const backoffsMs = [0, 100, 250, 500, 1000, 2000];
+  let lastErr: unknown;
+  for (const delay of backoffsMs) {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    try {
+      rmSync(target, { recursive: true, force: true });
+      if (!existsSync(target)) return;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (existsSync(target)) {
+    throw new Error(
+      `Failed to remove "${target}" after ${backoffsMs.length} attempts (Windows file-handle drain). ` +
+        `Last error: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+    );
+  }
+}
+
 async function hasOriginRemote(cwd: string): Promise<boolean> {
   try {
     await git(cwd, "remote", "get-url", "origin");
@@ -235,9 +270,11 @@ export function create(config?: Record<string, unknown>): Workspace {
         // containing "/" would have been deleted). Stale branches can be
         // cleaned up separately via `git branch --merged` or similar.
       } catch {
-        // If git commands fail, try to clean up the directory
+        // If git commands fail, try to clean up the directory.
+        // On Windows, retry with backoff for the file-handle drain race
+        // (just-killed pty-host children still hold handles inside the worktree).
         if (existsSync(workspacePath)) {
-          rmSync(workspacePath, { recursive: true, force: true });
+          await removeDirWithRetry(workspacePath);
         }
       }
     },
