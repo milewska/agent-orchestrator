@@ -233,6 +233,42 @@ describe("list", () => {
     expect(sessions[0].activitySignal.state).toBe("unavailable");
   });
 
+  it("persists detecting (not terminated) to disk after single dead probe (#1454)", async () => {
+    // Regression: the persistence block that follows enrichSessionWithRuntimeState
+    // was writing `session.state = "terminated"` to disk, immediately overwriting
+    // the in-memory "detecting" fix. Verify the on-disk lifecycle is "detecting".
+    const deadRuntime: Runtime = {
+      ...mockRuntime,
+      isAlive: vi.fn().mockResolvedValue(false),
+    };
+    const registryWithDead: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return deadRuntime;
+        if (slot === "agent") return mockAgent;
+        return null;
+      }),
+    };
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "a",
+      status: "working",
+      project: "my-app",
+      runtimeHandle: makeHandle("rt-1"),
+    });
+
+    const sm = createSessionManager({ config, registry: registryWithDead });
+    await sm.list();
+
+    const raw = readMetadataRaw(sessionsDir, "app-1");
+    const lifecycle = JSON.parse(raw!["lifecycle"]);
+    expect(lifecycle.session.state).toBe("detecting");
+    expect(lifecycle.session.reason).toBe("runtime_lost");
+    expect(lifecycle.session.terminatedAt).toBeNull();
+    expect(lifecycle.runtime.state).toBe("missing");
+  });
+
   it("detects activity using agent-native mechanism", async () => {
     const agentWithState: Agent = {
       ...mockAgent,
