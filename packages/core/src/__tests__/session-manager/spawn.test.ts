@@ -68,8 +68,13 @@ describe("spawn", () => {
     expect(session.projectId).toBe("my-app");
     expect(session.runtimeHandle).toEqual(makeHandle("rt-1"));
 
-    // Verify workspace was created
-    expect(mockWorkspace.create).toHaveBeenCalled();
+    // Verify workspace was created with V2 worktreeDir
+    expect(mockWorkspace.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: "my-app",
+        worktreeDir: expect.stringContaining("projects/my-app/worktrees"),
+      }),
+    );
     // Verify agent launch command was requested
     expect(mockAgent.getLaunchCommand).toHaveBeenCalled();
     // Verify runtime was created
@@ -1484,7 +1489,7 @@ describe("spawn", () => {
         status: "working",
         branch: "orchestrator/app-orchestrator",
         worktree: join(tmpDir, "old-orchestrator"),
-        runtimeHandle: JSON.stringify(makeHandle("old-rt")),
+        runtimeHandle: makeHandle("old-rt"),
       });
       const sm = createSessionManager({ config: configWithDelete, registry: mockRegistry });
 
@@ -1536,7 +1541,7 @@ describe("spawn", () => {
         status: "done",
         branch: "orchestrator/app-orchestrator",
         worktree: doneWorktree,
-        ...buildLifecycleMetadataPatch(lifecycle, "done"),
+        ...buildLifecycleMetadataPatch(lifecycle),
       });
       const sm = createSessionManager({ config, registry: mockRegistry });
 
