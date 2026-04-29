@@ -2054,9 +2054,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       next.session.reason = killReason;
       next.session.terminatedAt = new Date().toISOString();
       next.session.lastTransitionAt = next.session.terminatedAt;
-      next.runtime.state = raw["runtimeHandle"] || raw["tmuxName"] ? "missing" : "exited";
-      next.runtime.reason = runtimeReason;
-      next.runtime.lastObservedAt = new Date().toISOString();
     });
 
     // Persist the user/business terminal reason before tearing down the runtime.
@@ -2116,6 +2113,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         }
       }
     }
+
+    const postTeardownLifecycle = buildUpdatedLifecycle(sessionId, raw, (next) => {
+      next.session = { ...terminatedLifecycle.session };
+      next.runtime.state = raw["runtimeHandle"] || raw["tmuxName"] ? "missing" : "exited";
+      next.runtime.reason = runtimeReason;
+      next.runtime.lastObservedAt = new Date().toISOString();
+    });
+    updateMetadata(sessionsDir, sessionId, lifecycleMetadataUpdates(raw, postTeardownLifecycle));
 
     if (didPurgeOpenCodeSession) {
       updateMetadata(sessionsDir, sessionId, {
