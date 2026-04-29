@@ -66,6 +66,7 @@ export function useXtermTerminal(
   const followOutputRef = useRef(true);
   const [followOutput, setFollowOutput] = useState(true);
   const previousMuxStatusRef = useRef(muxStatus);
+  const hasRequestedInitialOpenRef = useRef(false);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -235,6 +236,7 @@ export function useXtermTerminal(
         // hazard if subscribeTerminal ever fires synchronously.
         let programmaticScroll = false;
 
+        hasRequestedInitialOpenRef.current = true;
         openTerminal(sessionId, tmuxName);
 
         unsubscribe = subscribeTerminal(sessionId, (data) => {
@@ -343,7 +345,7 @@ export function useXtermTerminal(
     const terminal = terminalInstance.current;
     if (!fit || !terminal) return;
 
-    if (previousStatus !== "connected") {
+    if (previousStatus !== "connected" && hasRequestedInitialOpenRef.current) {
       openTerminal(sessionId, tmuxName);
     }
 

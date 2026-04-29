@@ -158,7 +158,7 @@ describe("DirectTerminal render", () => {
   it("renders the shared accent chrome for orchestrator terminals", async () => {
     render(<DirectTerminal sessionId="ao-orchestrator" variant="orchestrator" />);
 
-    await waitFor(() => expect(screen.getByText("Connected")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Connected")).toBeInTheDocument());
 
     expect(screen.getByText("ao-orchestrator")).toHaveStyle({ color: "var(--color-accent)" });
     expect(screen.getByText("XDA")).toHaveStyle({ color: "var(--color-accent)" });
@@ -173,16 +173,18 @@ describe("DirectTerminal render", () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "Restart OpenCode session" })).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Restart OpenCode session" })).toBeInTheDocument(),
+    );
 
-    expect(screen.getByRole("button", { name: "fullscreen" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "fullscreen" })).toBeInTheDocument();
     expect(screen.queryByText("XDA")).toBeNull();
   });
 
   it("switches the terminal shell between inline and fullscreen positioning", async () => {
     const { container } = render(<DirectTerminal sessionId="ao-orchestrator" variant="orchestrator" />);
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "fullscreen" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "fullscreen" })).toBeInTheDocument());
 
     const terminalShell = container.firstElementChild;
     expect(terminalShell).not.toBeNull();
@@ -191,15 +193,25 @@ describe("DirectTerminal render", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "fullscreen" }));
 
-    expect(screen.getByRole("button", { name: "exit fullscreen" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "exit fullscreen" })).toBeInTheDocument();
     expect(terminalShell).toHaveClass("fixed", "inset-0");
     expect(terminalShell).not.toHaveClass("relative");
 
     fireEvent.click(screen.getByRole("button", { name: "exit fullscreen" }));
 
-    expect(screen.getByRole("button", { name: "fullscreen" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "fullscreen" })).toBeInTheDocument();
     expect(terminalShell).toHaveClass("relative");
     expect(terminalShell).not.toHaveClass("fixed");
+  });
+
+  it("does not double-open on the initial connecting-to-connected transition", async () => {
+    muxStatus = "connecting";
+    const { rerender } = render(<DirectTerminal sessionId="ao-orchestrator" variant="orchestrator" />);
+
+    muxStatus = "connected";
+    rerender(<DirectTerminal sessionId="ao-orchestrator" variant="orchestrator" />);
+
+    await waitFor(() => expect(openTerminalMock).toHaveBeenCalledTimes(1));
   });
 
   it("re-opens the terminal when mux reconnects", async () => {
