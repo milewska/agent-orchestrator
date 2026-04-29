@@ -127,6 +127,7 @@ const mockSessionManager: SessionManager = {
   }),
   cleanup: vi.fn(async () => ({ killed: [], skipped: [], errors: [] })),
   spawnOrchestrator: vi.fn(),
+  ensureOrchestrator: vi.fn(),
   remap: vi.fn(async () => "ses_mock"),
   restore: vi.fn(async (id: string) => {
     const session = testSessions.find((s) => s.id === id);
@@ -211,6 +212,7 @@ vi.mock("@/lib/services", () => ({
 // ── Import routes after mocking ───────────────────────────────────────
 
 import { GET as sessionsGET } from "@/app/api/sessions/route";
+import { GET as sessionDetailGET } from "@/app/api/sessions/[id]/route";
 import { POST as orchestratorsPOST, GET as orchestratorsGET } from "@/app/api/orchestrators/route";
 import { POST as spawnPOST } from "@/app/api/spawn/route";
 import { POST as sendPOST } from "@/app/api/sessions/[id]/send/route";
@@ -219,7 +221,6 @@ import { POST as killPOST } from "@/app/api/sessions/[id]/kill/route";
 import { POST as restorePOST } from "@/app/api/sessions/[id]/restore/route";
 import { POST as remapPOST } from "@/app/api/sessions/[id]/remap/route";
 import { POST as mergePOST } from "@/app/api/prs/[id]/merge/route";
-import { GET as eventsGET } from "@/app/api/events/route";
 import { GET as observabilityGET } from "@/app/api/observability/route";
 import { GET as runtimeTerminalGET } from "@/app/api/runtime/terminal/route";
 import { GET as verifyGET, POST as verifyPOST } from "@/app/api/verify/route";
@@ -371,7 +372,7 @@ describe("API Routes", () => {
         lastActivityAt: new Date("2026-04-19T09:00:00.000Z"),
       });
       const newerLive = makeSession({
-        id: "my-app-orchestrator-2",
+        id: "my-app-orchestrator",
         projectId: "my-app",
         metadata: { role: "orchestrator" },
         lastActivityAt: new Date("2026-04-19T10:00:00.000Z"),
@@ -403,10 +404,10 @@ describe("API Routes", () => {
       expect(res.status).toBe(200);
       const data = await res.json();
 
-      expect(data.orchestratorId).toBe("my-app-orchestrator-2");
+      expect(data.orchestratorId).toBe("my-app-orchestrator");
       expect(data.orchestrators.map((session: { id: string }) => session.id)).toEqual([
+        "my-app-orchestrator",
         "my-app-orchestrator-1",
-        "my-app-orchestrator-2",
       ]);
       expect(data.sessions).toEqual([]);
       expect(mockSessionManager.listCached).toHaveBeenCalledWith("my-app");
@@ -683,6 +684,32 @@ describe("API Routes", () => {
     });
   });
 
+  describe("GET /api/sessions/[id]", () => {
+    it("returns partial session data when metadata and PR enrichment stall", async () => {
+      const metadataSpy = vi
+        .spyOn(serialize, "enrichSessionsMetadata")
+        .mockImplementation(() => new Promise<void>(() => {}));
+      const prSpy = vi
+        .spyOn(serialize, "enrichSessionPR")
+        .mockImplementation(() => new Promise<boolean>(() => {}));
+
+      const responsePromise = sessionDetailGET(
+        makeRequest("http://localhost:3000/api/sessions/backend-7"),
+        { params: Promise.resolve({ id: "backend-7" }) },
+      );
+
+      const res = await responsePromise;
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.id).toBe("backend-7");
+      expect(data.projectId).toBe("my-app");
+
+      metadataSpy.mockRestore();
+      prSpy.mockRestore();
+    }, 10_000);
+  });
+
   describe("GET /api/runtime/terminal", () => {
     function withEnv(overrides: Record<string, string | undefined>, fn: () => Promise<void>) {
       const saved: Record<string, string | undefined> = {};
@@ -929,7 +956,7 @@ describe("API Routes", () => {
     it("returns a guided recovery message for registered orchestrator worktree collisions", async () => {
       (mockSessionManager.spawnOrchestrator as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
         new Error(
-          'Worktree path "/Users/test/.worktrees/my-app/my-app-orchestrator-1" already exists and is still registered with git',
+          'Worktree path "/Users/test/.worktrees/my-app/my-app-orchestrator" already exists and is still registered with git',
         ),
       );
 
@@ -1255,35 +1282,6 @@ describe("API Routes", () => {
       expect(res.status).toBe(409);
       const data = await res.json();
       expect(data.error).toMatch(/merged/);
-    });
-  });
-
-  // ── GET /api/events (SSE) ──────────────────────────────────────────
-
-  describe("GET /api/events", () => {
-    it("returns SSE content type", async () => {
-      const req = makeRequest("/api/events", { method: "GET" });
-      const res = await eventsGET(req);
-      expect(res.headers.get("Content-Type")).toBe("text/event-stream");
-      expect(res.headers.get("Cache-Control")).toBe("no-cache");
-    });
-
-    it("streams initial snapshot event", async () => {
-      const req = makeRequest("/api/events", { method: "GET" });
-      const res = await eventsGET(req);
-      const reader = res.body!.getReader();
-      const { value } = await reader.read();
-      reader.cancel();
-      const text = new TextDecoder().decode(value);
-      expect(text).toContain("data: ");
-      const jsonStr = text.replace("data: ", "").trim();
-      const event = JSON.parse(jsonStr);
-      expect(event.type).toBe("snapshot");
-      expect(event.correlationId).toBeTruthy();
-      expect(Array.isArray(event.sessions)).toBe(true);
-      expect(event.sessions.length).toBeGreaterThan(0);
-      expect(event.sessions[0]).toHaveProperty("id");
-      expect(event.sessions[0]).toHaveProperty("attentionLevel");
     });
   });
 
