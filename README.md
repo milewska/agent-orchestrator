@@ -186,7 +186,7 @@ Set to `false` if you want to allow idle sleep while AO runs.
 
 ## Plugin Architecture
 
-Seven plugin slots. Lifecycle stays in core.
+Six plugin slots. Lifecycle stays in core.
 
 | Slot      | Default     | Alternatives             |
 | --------- | ----------- | ------------------------ |
