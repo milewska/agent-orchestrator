@@ -173,9 +173,11 @@ function DashboardInner({
     return sessions.filter((s) => s.projectId === projectId);
   }, [sessions, projectId]);
   const connectionStatus: "connected" | "reconnecting" | "disconnected" =
-    mux?.status === "disconnected" ? "disconnected"
-    : mux?.status === "connected" ? "connected"
-    : "reconnecting";
+    mux?.status === "disconnected"
+      ? "disconnected"
+      : mux?.status === "connected"
+        ? "connected"
+        : "reconnecting";
   const recoveredFromLoadError = Boolean(dashboardLoadError) && liveSessionsResolved;
   const ssrLoadError = recoveredFromLoadError ? undefined : dashboardLoadError;
   // Live WS error takes precedence; fall back to SSR load error when live data hasn't resolved it.
@@ -256,10 +258,11 @@ function DashboardInner({
       done: [],
     };
     for (const session of displaySessions) {
-      zones[getAttentionLevel(session, attentionZones)].push(session);
+      const liveLevel = attentionLevels[session.id] ?? getAttentionLevel(session, attentionZones);
+      zones[liveLevel].push(session);
     }
     return zones;
-  }, [displaySessions, attentionZones]);
+  }, [displaySessions, attentionLevels, attentionZones]);
 
   const sessionsByProject = useMemo(() => {
     const groupedSessions = new Map<string, DashboardSession[]>();
@@ -290,7 +293,8 @@ function DashboardInner({
       };
 
       for (const session of projectSessions) {
-        counts[getAttentionLevel(session, attentionZones)]++;
+        const liveLevel = attentionLevels[session.id] ?? getAttentionLevel(session, attentionZones);
+        counts[liveLevel]++;
       }
 
       return {
@@ -302,7 +306,14 @@ function DashboardInner({
         counts,
       };
     });
-  }, [activeOrchestrators, allProjectsView, attentionZones, projects, sessionsByProject]);
+  }, [
+    activeOrchestrators,
+    allProjectsView,
+    attentionZones,
+    projects,
+    sessionsByProject,
+    attentionLevels,
+  ]);
 
   const handleSend = useCallback(
     async (sessionId: string, message: string) => {
@@ -458,9 +469,7 @@ function DashboardInner({
       <span className="font-semibold text-[var(--color-status-error)]">
         Orchestrator failed to load
       </span>
-      <span className="break-words text-[var(--color-text-secondary)]">
-        {visibleLoadError}
-      </span>
+      <span className="break-words text-[var(--color-text-secondary)]">{visibleLoadError}</span>
       <span className="text-[var(--color-text-secondary)]">
         Confirm <span className="font-mono text-[10px]">agent-orchestrator.yaml</span> exists and is
         valid, then run <span className="font-mono text-[10px]">ao doctor</span> for diagnostics.

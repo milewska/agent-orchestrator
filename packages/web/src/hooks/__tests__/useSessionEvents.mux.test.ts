@@ -49,7 +49,34 @@ describe("useSessionEvents - mux", () => {
     );
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(
-        "/api/sessions?project=proj",
+        "/api/sessions?fresh=true&project=proj",
+        expect.objectContaining({ signal: expect.any(AbortSignal), cache: "no-store" }),
+      );
+    });
+  });
+
+  it("triggers fresh refresh when mux attention changes without status changes", async () => {
+    const initialSessions = [s1];
+    const muxSessions = [
+      {
+        id: "s1",
+        status: "working",
+        activity: "active",
+        attentionLevel: "merge" as const,
+        lastActivityAt: now,
+      },
+    ];
+    renderHook(() =>
+      useSessionEvents({
+        initialSessions,
+        project: "proj",
+        muxSessions,
+        attentionZones: "simple",
+      }),
+    );
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        "/api/sessions?fresh=true&project=proj",
         expect.objectContaining({ signal: expect.any(AbortSignal), cache: "no-store" }),
       );
     });
