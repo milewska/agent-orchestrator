@@ -200,19 +200,19 @@ export function resolveTmuxSession(
 /**
  * Resolve a user-facing session ID to its Windows named pipe path.
  *
- * Reads `runtimeHandle.data.pipePath` from the on-disk session metadata at
- * `~/.agent-orchestrator/{storageKey}/sessions/{sessionId}`. The metadata is
- * the single source of truth — recomputing the hash here is fragile because
- * the storageKey can be either a bare 12-hex hash or the wrapped
- * `{hash}-{projectName}` form, and on Windows the path-based hash function
- * produces a different value than `deriveStorageKey` once paths contain
- * drive letters and backslashes.
+ * V2 layout (current): JSON metadata at
+ *   `~/.agent-orchestrator/projects/{projectId}/sessions/{sessionId}.json`
+ *   with `runtimeHandle.data.pipePath` as a top-level field.
  *
- * If multiple storageKeys own the sessionId (rare — same id across
- * projects), we walk candidates and return the first one whose metadata
- * carries a parseable pipePath.
+ * V1 layout (legacy fallback): line-delimited key=value at
+ *   `~/.agent-orchestrator/{storageKey}/sessions/{sessionId}` where
+ *   storageKey is bare 12-hex or `{hash}-{projectName}`. Kept so users
+ *   who haven't run `ao migrate-storage` still see live sessions.
  *
- * @returns Full pipe path (e.g., "\\\\.\\pipe\\ao-pty-bac26c5725e3-tr-1"), or null
+ * If multiple projects share a sessionId, walks candidates and returns
+ * the first one whose metadata carries a parseable pipePath.
+ *
+ * @returns Full pipe path (e.g., "\\\\.\\pipe\\ao-pty-win1-orchestrator"), or null
  */
 export function resolvePipePath(
   sessionId: string,
@@ -223,20 +223,45 @@ export function resolvePipePath(
   if (process.platform !== "win32") return null;
 
   const readFile = fs.readFile ?? ((p: string) => readFileSync(p, "utf8"));
+  const aoBase = join(fs.homedir(), ".agent-orchestrator");
 
+  // V2: walk projects/*/sessions/{sessionId}.json
+  const projectsDir = join(aoBase, "projects");
+  if (fs.exists(projectsDir)) {
+    let projects: string[];
+    try {
+      projects = fs.readdir(projectsDir);
+    } catch {
+      projects = [];
+    }
+    for (const projectId of projects) {
+      const sessionFile = join(projectsDir, projectId, "sessions", `${sessionId}.json`);
+      if (!fs.exists(sessionFile)) continue;
+      try {
+        const meta = JSON.parse(readFile(sessionFile)) as {
+          runtimeHandle?: { data?: { pipePath?: string } };
+        };
+        const pipePath = meta.runtimeHandle?.data?.pipePath;
+        if (typeof pipePath === "string" && pipePath.length > 0) return pipePath;
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  // V1 fallback: line-delimited key=value under {storageKey}/sessions/{sessionId}
   for (const storageKey of findStorageKeysForSession(sessionId, {
     readdir: fs.readdir,
     exists: fs.exists,
     homedir: fs.homedir,
   })) {
-    const sessionFile = join(fs.homedir(), ".agent-orchestrator", storageKey, "sessions", sessionId);
+    const sessionFile = join(aoBase, storageKey, "sessions", sessionId);
     let content: string;
     try {
       content = readFile(sessionFile);
     } catch {
       continue;
     }
-    // Metadata is line-delimited key=value. The runtimeHandle value is a JSON blob.
     const match = content.match(/^runtimeHandle=(.+)$/m);
     if (!match) continue;
     try {

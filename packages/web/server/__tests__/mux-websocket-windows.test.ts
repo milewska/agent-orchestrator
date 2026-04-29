@@ -64,6 +64,33 @@ describe("handleWindowsPipeMessage", () => {
     expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ ch: "terminal", id: "s1", type: "opened" }));
   });
 
+  it("rejects malformed session ids before touching the pipe path", () => {
+    const ws = makeWs();
+    const deps: PipeRelayDeps = {
+      connect: vi.fn(),
+      resolvePipePath: vi.fn(),
+    };
+
+    handleWindowsPipeMessage(
+      { id: "../../../etc/passwd", type: "open" },
+      ws,
+      new Map(),
+      new Map(),
+      deps,
+    );
+
+    expect(deps.connect).not.toHaveBeenCalled();
+    expect(deps.resolvePipePath).not.toHaveBeenCalled();
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({
+        ch: "terminal",
+        id: "../../../etc/passwd",
+        type: "error",
+        message: "invalid session id",
+      }),
+    );
+  });
+
   it("throws when pipe path cannot be resolved", () => {
     const ws = makeWs();
     const deps: PipeRelayDeps = {

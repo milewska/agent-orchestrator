@@ -469,6 +469,18 @@ export function handleWindowsPipeMessage(
   const WS_OPEN = 1; // WebSocket.OPEN
   const { id, type } = msg;
 
+  // The Unix path validates inside TerminalManager.open(). The Windows pipe
+  // relay bypasses TerminalManager entirely, so validate here too — `id`
+  // becomes a map key and is constructed into a pipe path downstream.
+  if (!validateSessionId(id)) {
+    if (ws.readyState === WS_OPEN) {
+      ws.send(
+        JSON.stringify({ ch: "terminal", id, type: "error", message: "invalid session id" }),
+      );
+    }
+    return;
+  }
+
   if (type === "open") {
     if (winPipes.has(id)) {
       ws.send(JSON.stringify({ ch: "terminal", id, type: "opened" }));

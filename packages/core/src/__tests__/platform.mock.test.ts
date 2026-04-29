@@ -153,6 +153,32 @@ describe("resolveWindowsShell", () => {
     }
   });
 
+  it.each([
+    ["cmd.exe", ["/c", "echo hi"]],
+    ["C:\\Windows\\System32\\cmd.exe", ["/c", "echo hi"]],
+    ["bash", ["-c", "echo hi"]],
+    ["bash.exe", ["-c", "echo hi"]],
+    ["/usr/bin/sh", ["-c", "echo hi"]],
+    ["pwsh", ["-Command", "echo hi"]],
+    ["powershell.exe", ["-Command", "echo hi"]],
+  ])("AO_SHELL=%s infers args from basename", async (override, expectedArgs) => {
+    setPlatform("win32");
+    const saved = process.env["AO_SHELL"];
+    process.env["AO_SHELL"] = override;
+
+    try {
+      const mod = await import("../platform.js");
+      mod._resetShellCache();
+      const shell = mod.getShell();
+      expect(shell.cmd).toBe(override);
+      expect(shell.args("echo hi")).toEqual(expectedArgs);
+      expect(mockExecFileSync).not.toHaveBeenCalled();
+    } finally {
+      if (saved !== undefined) process.env["AO_SHELL"] = saved;
+      else delete process.env["AO_SHELL"];
+    }
+  });
+
   it("falls back to cmd.exe when both pwsh and powershell.exe are unavailable", async () => {
     setPlatform("win32");
     mockExecFileSync.mockImplementation(() => {

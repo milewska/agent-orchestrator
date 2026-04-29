@@ -29,12 +29,33 @@ interface ShellInfo {
 
 let cachedShell: ShellInfo | null = null;
 
+/**
+ * Infer the command-string flag for a given shell from its basename.
+ * pwsh / powershell → -Command, cmd → /c, bash / sh / zsh → -c.
+ * Default to PowerShell args (the historical behaviour) for unknown shells.
+ */
+function inferShellArgsFlag(cmd: string): (command: string) => string[] {
+  const base = cmd
+    .replace(/\\/g, "/")
+    .split("/")
+    .pop()!
+    .toLowerCase()
+    .replace(/\.exe$/, "");
+  if (base === "cmd") return (c) => ["/c", c];
+  if (base === "bash" || base === "sh" || base === "zsh" || base === "dash") {
+    return (c) => ["-c", c];
+  }
+  // pwsh, powershell, and anything else fall back to PowerShell-style args.
+  return (c) => ["-Command", c];
+}
+
 function resolveWindowsShell(): ShellInfo {
   // Explicit override — set AO_SHELL to an absolute path or shell name
-  // (e.g. "powershell.exe", "pwsh", "C:\\Path\\To\\pwsh.exe") to bypass auto-detection.
+  // (e.g. "powershell.exe", "pwsh", "cmd.exe", "bash"). Args are inferred
+  // from the basename so cmd / bash / sh are usable, not just PowerShell.
   const override = process.env["AO_SHELL"];
   if (override) {
-    return { cmd: override, args: (c) => ["-Command", c] };
+    return { cmd: override, args: inferShellArgsFlag(override) };
   }
 
   // Prefer pwsh (PowerShell Core, cross-platform)

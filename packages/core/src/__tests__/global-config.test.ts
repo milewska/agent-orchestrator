@@ -491,4 +491,14 @@ describe("global-config storage identity", () => {
       postCreate: ["pnpm install"],
     });
   });
+
+  it("defaults the global runtime to the platform-appropriate value", () => {
+    // The Zod default and makeEmptyGlobalConfig() must defer to
+    // getDefaultRuntime() so Windows-loaded projects don't inherit
+    // tmux (which is intentionally unavailable on win32).
+    writeFileSync(configPath, "port: 3000\nprojects: {}\n");
+    const config = loadGlobalConfig(configPath);
+    const expected = process.platform === "win32" ? "process" : "tmux";
+    expect(config?.defaults?.runtime).toBe(expected);
+  });
 });

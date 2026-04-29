@@ -1101,6 +1101,50 @@ describe("resolvePipePath", () => {
     expect(resolvePipePath("ao-1", fs)).toBeNull();
   });
 
+  it("reads V2 JSON metadata under projects/{projectId}/sessions/{sessionId}.json", () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    const PIPE2 = "\\\\.\\pipe\\ao-pty-ao-1";
+    const v2Json = JSON.stringify({
+      runtimeHandle: { id: "ao-1", runtimeName: "process", data: { pipePath: PIPE2 } },
+    });
+    const fs = {
+      readdir: (p: string) =>
+        p.replace(/\\/g, "/").endsWith("/.agent-orchestrator/projects") ? ["my-app"] : [],
+      exists: (p: string) => {
+        const u = p.replace(/\\/g, "/");
+        return (
+          u.endsWith("/projects") || u.endsWith("/projects/my-app/sessions/ao-1.json")
+        );
+      },
+      homedir: () => "/home/u",
+      readFile: () => v2Json,
+    };
+    expect(resolvePipePath("ao-1", fs)).toBe(PIPE2);
+  });
+
+  it("falls back to V1 layout when V2 has no matching session", () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    const fs = {
+      readdir: (p: string) => {
+        const u = p.replace(/\\/g, "/");
+        if (u.endsWith("/.agent-orchestrator/projects")) return ["my-app"];
+        if (u.endsWith("/.agent-orchestrator")) return ["aabbccddeef0", "projects"];
+        return [];
+      },
+      exists: (p: string) => {
+        const u = p.replace(/\\/g, "/");
+        // V2 projects dir exists but its sessions dir doesn't have ao-1.json.
+        if (u.endsWith("/projects")) return true;
+        if (u.endsWith("/projects/my-app/sessions/ao-1.json")) return false;
+        // V1 location does have the session file.
+        return u.endsWith("/aabbccddeef0/sessions/ao-1");
+      },
+      homedir: () => "/home/u",
+      readFile: () => sessionFileContent,
+    };
+    expect(resolvePipePath("ao-1", fs)).toBe(PIPE);
+  });
+
   it("walks multiple candidate storageKeys and returns first with parseable pipePath", () => {
     Object.defineProperty(process, "platform", { value: "win32" });
     const fs = {
