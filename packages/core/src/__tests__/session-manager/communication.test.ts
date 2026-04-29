@@ -220,6 +220,7 @@ describe("send", () => {
     // made restore() spawn a zombie tmux session (real name is
     // `{projectHash}-{sessionId}`), running a duplicate agent on the same
     // worktree. Refuse with a clear error instead.
+    // Guard is tmux-specific — use runtime: "tmux" so it fires.
     writeMetadata(sessionsDir, "app-1", {
       worktree: "/tmp",
       branch: "main",
@@ -227,7 +228,11 @@ describe("send", () => {
       project: "my-app",
     });
 
-    const sm = createSessionManager({ config, registry: mockRegistry });
+    const tmuxConfig = {
+      ...config,
+      projects: { "my-app": { ...config.projects["my-app"]!, runtime: "tmux" } },
+    };
+    const sm = createSessionManager({ config: tmuxConfig, registry: mockRegistry });
     await expect(sm.send("app-1", "hello")).rejects.toThrow(
       /missing its runtime handle/,
     );
@@ -242,6 +247,7 @@ describe("send", () => {
     // otherwise fabricate a handle from the bare sessionId — the same
     // zombie-session hazard. Refuse explicitly rather than silently
     // proceeding with the wrong handle.
+    // Guard is tmux-specific — use runtime: "tmux" so it fires.
     writeMetadata(sessionsDir, "app-1", {
       worktree: "/tmp",
       branch: "main",
@@ -250,12 +256,41 @@ describe("send", () => {
       runtimeHandle: "{not valid json",
     });
 
-    const sm = createSessionManager({ config, registry: mockRegistry });
+    const tmuxConfig = {
+      ...config,
+      projects: { "my-app": { ...config.projects["my-app"]!, runtime: "tmux" } },
+    };
+    const sm = createSessionManager({ config: tmuxConfig, registry: mockRegistry });
     await expect(sm.send("app-1", "hello")).rejects.toThrow(
       /corrupt runtime handle/,
     );
 
     expect(mockRuntime.sendMessage).not.toHaveBeenCalled();
+    expect(mockRuntime.create).not.toHaveBeenCalled();
+  });
+
+  it("falls back to sessionId as handle for non-tmux runtime when runtimeHandle is missing", async () => {
+    // Regression for the over-broad #1456 guard: for process (and other
+    // non-tmux) runtimes, sessionId IS the correct handle id — synthesis is
+    // safe. send() must not refuse these sessions.
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: "/tmp",
+      branch: "main",
+      status: "working",
+      project: "my-app",
+      // No runtimeHandle, no tmuxName — default "mock" runtime synthesizes correctly
+    });
+    vi.mocked(mockRuntime.getOutput)
+      .mockResolvedValueOnce("before")
+      .mockResolvedValueOnce("after");
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    await sm.send("app-1", "hello");
+
+    expect(mockRuntime.sendMessage).toHaveBeenCalledWith(
+      { id: "app-1", runtimeName: "mock", data: {} },
+      "hello",
+    );
     expect(mockRuntime.create).not.toHaveBeenCalled();
   });
 
