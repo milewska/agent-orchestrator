@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -174,16 +174,40 @@ async function isInsideKimiSessions(candidate: string): Promise<boolean> {
 }
 
 /**
+ * Sandbox check for individual files inside a kimi session dir. The dir was
+ * already isInsideKimiSessions-verified, but its CHILDREN aren't — a symlink
+ * placed at, say, ~/.kimi/sessions/<hash>/<uuid>/wire.jsonl pointing at
+ * /etc/passwd or /dev/zero would let stat()/createReadStream() follow it
+ * and read or hang on arbitrary files. Reject anything that isn't a regular
+ * file (rules out symlinks, sockets, FIFOs, block devices). lstat is used
+ * deliberately — stat would follow the symlink before we got the chance.
+ */
+export async function isKimiSessionFile(filePath: string): Promise<boolean> {
+  try {
+    const s = await lstat(filePath);
+    return s.isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get the mtime of the freshest live signal inside a Kimi session directory.
  * context.jsonl / wire.jsonl update on every agent turn. Returns null when
- * neither file exists — callers must treat this dir as "not a real session".
- * Probed in parallel to avoid serial filesystem roundtrips.
+ * neither file exists or both are non-regular (symlink/socket/etc) — callers
+ * must treat this dir as "not a real session". Probed in parallel to avoid
+ * serial filesystem roundtrips.
  */
 async function getKimiLiveSignalMtime(sessionDir: string): Promise<Date | null> {
   const stats = await Promise.all(
-    ["context.jsonl", "wire.jsonl"].map((name) =>
-      stat(join(sessionDir, name)).catch(() => null),
-    ),
+    ["context.jsonl", "wire.jsonl"].map(async (name) => {
+      try {
+        const s = await lstat(join(sessionDir, name));
+        return s.isFile() ? s : null;
+      } catch {
+        return null;
+      }
+    }),
   );
   let newest: Date | null = null;
   for (const s of stats) {

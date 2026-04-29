@@ -982,6 +982,29 @@ describe("getActivityState", () => {
     );
     expect(result).toBeNull();
   });
+
+  // Defensive: a symlinked context.jsonl / wire.jsonl inside the bucket
+  // would let stat() / createReadStream() follow it to /etc/passwd, /dev/zero,
+  // a FIFO, etc. — escaping the kimi-sessions sandbox. lstat-based checks
+  // reject anything that isn't a regular file.
+  it("rejects session dirs whose live-signal files are symlinks (sandbox escape)", async () => {
+    mockTmuxWithProcess("kimi");
+    const bucket = join(fakeHome, ".kimi", "sessions", workspaceHash(workspace));
+    const sessionDir = join(bucket, "symlinked-session");
+    mkdirSync(sessionDir, { recursive: true });
+
+    // Create symlinks where context.jsonl / wire.jsonl should be — pointing
+    // at unrelated files outside the sessions tree.
+    const decoy = join(fakeHome, "decoy.txt");
+    writeFileSync(decoy, "should never be read");
+    symlinkSync(decoy, join(sessionDir, "context.jsonl"));
+    symlinkSync(decoy, join(sessionDir, "wire.jsonl"));
+
+    const result = await agent.getActivityState(
+      makeSession({ runtimeHandle: makeTmuxHandle(), workspacePath: workspace }),
+    );
+    expect(result).toBeNull();
+  });
 });
 
 // =============================================================================
@@ -1138,6 +1161,28 @@ describe("getSessionInfo", () => {
     });
     const info = await agent.getSessionInfo(makeSession({ workspacePath: workspace }));
     expect(info!.summary).toBe("recovered");
+  });
+
+  // Defensive: a symlinked wire.jsonl in the bucket (e.g. pointing at
+  // /etc/passwd, /dev/zero, or a FIFO) must not be opened by
+  // extractKimiSummary. lstat-rejects symlinks before createReadStream.
+  it("returns null summary when wire.jsonl is a symlink (sandbox escape)", async () => {
+    mockTmuxWithProcess("kimi");
+    const bucket = join(fakeHome, ".kimi", "sessions", workspaceHash(workspace));
+    const sessionDir = join(bucket, "symlinked-wire");
+    mkdirSync(sessionDir, { recursive: true });
+    // context.jsonl is real so getKimiLiveSignalMtime succeeds and the dir
+    // is selected. Then extractKimiSummary tries to open the symlinked
+    // wire.jsonl and must refuse.
+    writeFileSync(join(sessionDir, "context.jsonl"), '{"role":"_system_prompt"}\n');
+    const decoy = join(fakeHome, "decoy-wire.txt");
+    writeFileSync(decoy, '{"timestamp":1,"message":{"type":"TurnBegin","payload":{"user_input":"leaked"}}}\n');
+    symlinkSync(decoy, join(sessionDir, "wire.jsonl"));
+
+    const info = await agent.getSessionInfo(makeSession({ workspacePath: workspace }));
+    // Discovery still produced a match (context.jsonl is fine), but the
+    // summary read MUST NOT have followed the symlink.
+    expect(info?.summary).toBeNull();
   });
 });
 

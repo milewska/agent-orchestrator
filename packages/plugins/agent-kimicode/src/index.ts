@@ -30,6 +30,7 @@ import { join } from "node:path";
 import {
   captureKimiBaseline,
   findKimiSessionMatch,
+  isKimiSessionFile,
   _resetSessionMatchCache,
 } from "./session-discovery.js";
 
@@ -47,6 +48,10 @@ const SUMMARY_SCAN_BYTE_LIMIT = 1_000_000;
  */
 async function extractKimiSummary(sessionDir: string): Promise<string | null> {
   const wirePath = join(sessionDir, "wire.jsonl");
+  // Sandbox check: refuse to follow a symlink (or open a socket / FIFO) at
+  // wire.jsonl. The sessionDir was already verified, but its children could
+  // still be planted as symlinks pointing at /etc/passwd or /dev/zero.
+  if (!(await isKimiSessionFile(wirePath))) return null;
   let summary: string | null = null;
   try {
     const rl = createInterface({
