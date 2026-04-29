@@ -5,6 +5,8 @@ import {
   getShell,
   isWindows,
   killProcessTree,
+  registerWindowsPtyHost,
+  unregisterWindowsPtyHost,
   type PluginModule,
   type Runtime,
   type RuntimeCreateConfig,
@@ -140,6 +142,22 @@ export function create(): Runtime {
           ptyChild.stdout?.destroy();
           ptyChild.stderr?.destroy();
 
+          // Sideband registration so `ao stop` can find and graceful-kill this
+          // pty-host even if its session JSON is later wiped. Without this,
+          // `detached: true` puts pty-host in its own console group, escaping
+          // `taskkill /T` on the parent process. See windows-pty-registry.ts.
+          if (typeof ptyChild.pid === "number") {
+            try {
+              registerWindowsPtyHost({
+                sessionId: handleId,
+                ptyHostPid: ptyChild.pid,
+                pipePath,
+              });
+            } catch {
+              /* registry is best-effort; spawn must succeed regardless */
+            }
+          }
+
           return {
             id: handleId,
             runtimeName: "process",
@@ -266,6 +284,11 @@ export function create(): Runtime {
               process.kill(ptyHostPid, 0); // probe
             } catch {
               processes.delete(handle.id);
+              try {
+                unregisterWindowsPtyHost(handle.id);
+              } catch {
+                /* best effort */
+              }
               return; // already gone — clean exit
             }
             await new Promise((r) => setTimeout(r, 25));
@@ -273,6 +296,11 @@ export function create(): Runtime {
           await killProcessTree(ptyHostPid, "SIGKILL");
         }
         processes.delete(handle.id);
+        try {
+          unregisterWindowsPtyHost(handle.id);
+        } catch {
+          /* best effort */
+        }
         return;
       }
 
@@ -455,6 +483,68 @@ export function create(): Runtime {
       };
     },
   };
+}
+
+/**
+ * Sweep all registered Windows pty-hosts: send a graceful kill via the named
+ * pipe (so node-pty disposes its ConPTY handle and avoids the WER 0x800700e8
+ * dialog), wait briefly, then SIGKILL stragglers via the OS process tree.
+ *
+ * Invoked by `ao stop` on Windows so orphaned pty-hosts (whose session JSON
+ * was wiped or whose parent died ungracefully) still get cleaned up.
+ *
+ * Returns counts for diagnostics. No-op on non-Windows.
+ */
+export async function sweepWindowsPtyHosts(): Promise<{
+  attempted: number;
+  gracefullyExited: number;
+  forceKilled: number;
+  failed: number;
+}> {
+  if (!isWindows()) {
+    return { attempted: 0, gracefullyExited: 0, forceKilled: 0, failed: 0 };
+  }
+  const { getWindowsPtyHosts, unregisterWindowsPtyHost } = await import("@aoagents/ao-core");
+  const entries = getWindowsPtyHosts();
+  let gracefullyExited = 0;
+  let forceKilled = 0;
+  let failed = 0;
+  for (const entry of entries) {
+    try {
+      // Step 1: graceful kill via the existing pipe protocol.
+      await ptyHostKill(entry.pipePath);
+
+      // Step 2: poll up to 500ms for the host to exit.
+      const deadline = Date.now() + 500;
+      let exited = false;
+      while (Date.now() < deadline) {
+        try {
+          process.kill(entry.ptyHostPid, 0);
+        } catch {
+          exited = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 25));
+      }
+
+      if (exited) {
+        gracefullyExited++;
+      } else {
+        // Step 3: force-kill stragglers.
+        await killProcessTree(entry.ptyHostPid, "SIGKILL");
+        forceKilled++;
+      }
+
+      try {
+        unregisterWindowsPtyHost(entry.sessionId);
+      } catch {
+        /* best effort */
+      }
+    } catch {
+      failed++;
+    }
+  }
+  return { attempted: entries.length, gracefullyExited, forceKilled, failed };
 }
 
 export default { manifest, create } satisfies PluginModule<Runtime>;

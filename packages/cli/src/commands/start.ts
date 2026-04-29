@@ -2366,6 +2366,42 @@ function isLocalPath(arg: string): boolean {
   return false;
 }
 
+/**
+ * Lazy import + invoke the runtime-process plugin's Windows pty-host sweep.
+ * Kept lazy so non-Windows users don't pay the import cost on every `ao stop`,
+ * and so the cli isn't tightly coupled to the plugin's surface.
+ *
+ * Errors are swallowed: a sweep failure must not prevent `ao stop` from killing
+ * the parent process — the user explicitly asked us to stop AO.
+ */
+async function sweepWindowsPtyHostsBeforeParentKill(): Promise<void> {
+  if (process.platform !== "win32") return;
+  try {
+    const mod = (await import("@aoagents/ao-plugin-runtime-process")) as {
+      sweepWindowsPtyHosts?: () => Promise<{
+        attempted: number;
+        gracefullyExited: number;
+        forceKilled: number;
+        failed: number;
+      }>;
+    };
+    if (typeof mod.sweepWindowsPtyHosts !== "function") return;
+    const result = await mod.sweepWindowsPtyHosts();
+    if (result.attempted > 0) {
+      console.log(
+        chalk.dim(
+          `  Swept ${result.attempted} pty-host(s): ` +
+            `${result.gracefullyExited} graceful, ` +
+            `${result.forceKilled} force-killed` +
+            (result.failed > 0 ? `, ${result.failed} failed` : ""),
+        ),
+      );
+    }
+  } catch {
+    /* sweep is best-effort; don't block ao stop on it */
+  }
+}
+
 export function registerStop(program: Command): void {
   program
     .command("stop [project]")
@@ -2380,6 +2416,12 @@ export function registerStop(program: Command): void {
         if (opts.all) {
           // --all: kill via running.json if available, then fallback to config
           if (running) {
+            // Sweep detached Windows pty-hosts BEFORE killing the parent.
+            // detached:true puts them outside the parent's process tree, so
+            // taskkill /T cannot reach them. The sweep speaks the named-pipe
+            // protocol so node-pty disposes ConPTY gracefully (avoids WER
+            // 0x800700e8). No-op on non-Windows.
+            await sweepWindowsPtyHostsBeforeParentKill();
             // killProcessTree handles process trees on Windows (taskkill /T /F)
             // and process groups on Unix; it swallows "already dead" internally.
             await killProcessTree(running.pid, "SIGTERM");
@@ -2511,6 +2553,12 @@ export function registerStop(program: Command): void {
           // stops every per-project loop. No explicit stop call needed here —
           // this CLI invocation is a separate process with an empty active map.
           if (running) {
+            // Sweep detached Windows pty-hosts BEFORE killing the parent.
+            // detached:true puts them outside the parent's process tree, so
+            // taskkill /T cannot reach them. The sweep speaks the named-pipe
+            // protocol so node-pty disposes ConPTY gracefully (avoids WER
+            // 0x800700e8). No-op on non-Windows.
+            await sweepWindowsPtyHostsBeforeParentKill();
             await killProcessTree(running.pid, "SIGTERM");
             await unregister();
           }

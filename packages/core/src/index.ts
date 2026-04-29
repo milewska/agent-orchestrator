@@ -378,3 +378,11 @@ export type {
 } from "./migration/storage-v2.js";
 
 export { atomicWriteFileSync } from "./atomic-write.js";
+
+export {
+  registerWindowsPtyHost,
+  unregisterWindowsPtyHost,
+  getWindowsPtyHosts,
+  clearWindowsPtyHostRegistry,
+  type WindowsPtyHostEntry,
+} from "./windows-pty-registry.js";
