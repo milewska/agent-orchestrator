@@ -65,6 +65,7 @@ export function useXtermTerminal(
   const [error, setError] = useState<string | null>(null);
   const followOutputRef = useRef(true);
   const [followOutput, setFollowOutput] = useState(true);
+  const previousMuxStatusRef = useRef(muxStatus);
 
   useEffect(() => {
     if (!terminalRef.current) return;
@@ -334,13 +335,21 @@ export function useXtermTerminal(
   // Re-send terminal dimensions on every reconnect so the server-side PTY
   // matches the client's xterm.js size (new PTYs spawn at 80×24 default).
   useEffect(() => {
+    const previousStatus = previousMuxStatusRef.current;
+    previousMuxStatusRef.current = muxStatus;
+
     if (muxStatus !== "connected") return;
     const fit = fitAddon.current;
     const terminal = terminalInstance.current;
     if (!fit || !terminal) return;
+
+    if (previousStatus !== "connected") {
+      openTerminal(sessionId, tmuxName);
+    }
+
     fit.fit();
     resizeTerminalMux(sessionId, terminal.cols, terminal.rows);
-  }, [muxStatus, sessionId, resizeTerminalMux]);
+  }, [muxStatus, sessionId, tmuxName, resizeTerminalMux, openTerminal]);
 
   // Live theme switching without terminal recreation
   useEffect(() => {
