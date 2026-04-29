@@ -46,7 +46,7 @@ import {
   deriveLegacyStatus,
 } from "./lifecycle-state.js";
 import { updateMetadata } from "./metadata.js";
-import { getSessionsDir } from "./paths.js";
+import { getProjectSessionsDir } from "./paths.js";
 import { applyDecisionToLifecycle as commitLifecycleDecisionInPlace } from "./lifecycle-transition.js";
 import {
   classifyActivitySignal,
@@ -91,6 +91,19 @@ function parseDuration(str: string): number {
       return 0;
   }
 }
+
+/** Reaction keys for conditions that can oscillate (e.g. CI failing→pending→failing).
+ *  Their trackers survive status exit so the escalation budget accumulates
+ *  across oscillations instead of resetting to zero each time.
+ *  Note: "merge-conflicts" is NOT here — statusToEventType never emits
+ *  "merge.conflicts", so the transition handler at line ~1892 can't reach it.
+ *  Merge-conflict tracker lifecycle is managed in maybeDispatchMergeConflicts. */
+const PERSISTENT_REACTION_KEYS = new Set(["ci-failed"]);
+
+/** Number of consecutive CI-passing polls required before the ci-failed tracker
+ *  (including its escalated flag) is cleared, allowing a fresh budget for the
+ *  next real CI failure incident. */
+const CI_PASSING_STABLE_THRESHOLD = 2;
 
 type WorkspaceBranchProbe =
   | { kind: "branch"; branch: string }
@@ -385,6 +398,9 @@ export interface LifecycleManagerDeps {
 interface ReactionTracker {
   attempts: number;
   firstTriggered: Date;
+  /** True after this reaction has escalated. Short-circuits further dispatches
+   *  until the underlying condition resolves and the tracker is explicitly cleared. */
+  escalated?: boolean;
 }
 
 /** Create a LifecycleManager instance. */
@@ -551,7 +567,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     // When Guard 1 returned 304, the repo is in prListUnchangedRepos — no new PRs exist.
     for (const session of sessions) {
       if (!session.branch) continue;
-      if (session.metadata["prAutoDetect"] === "off") continue;
+      if (session.metadata["prAutoDetect"] === "off" || session.metadata["prAutoDetect"] === "false") continue;
       if (session.metadata["role"] === "orchestrator" || session.id.endsWith("-orchestrator"))
         continue;
       if (
@@ -574,7 +590,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         const detectedPR = await scm.detectPR(session, project);
         if (detectedPR) {
           session.pr = detectedPR;
-          const sessionsDir = getSessionsDir(project.storageKey);
+          const sessionsDir = getProjectSessionsDir(session.projectId);
           updateMetadata(sessionsDir, session.id, { pr: detectedPR.url });
         }
       } catch (error) {
@@ -628,7 +644,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
       if (session.metadata["prEnrichment"] === blob) continue;
 
-      const sessionsDir = getSessionsDir(project.storageKey);
+      const sessionsDir = getProjectSessionsDir(session.projectId);
       updateMetadata(sessionsDir, session.id, { prEnrichment: blob });
       session.metadata["prEnrichment"] = blob;
     }
@@ -779,9 +795,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
     const commit = (
       decision: LifecycleDecision = {
-        status: deriveLegacyStatus(lifecycle, session.status),
+        status: deriveLegacyStatus(lifecycle),
         evidence: "lifecycle_commit",
-        detectingAttempts: currentDetectingAttempts,
+        detecting: { attempts: currentDetectingAttempts },
       },
     ): DeterminedStatus => {
       commitLifecycleDecisionInPlace(lifecycle, decision, nowIso);
@@ -791,9 +807,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       return {
         status: decision.status,
         evidence: decision.evidence,
-        detectingAttempts: decision.detectingAttempts,
-        detectingStartedAt: decision.detectingStartedAt,
-        detectingEvidenceHash: decision.detectingEvidenceHash,
+        detectingAttempts: decision.detecting.attempts,
+        detectingStartedAt: decision.detecting.startedAt,
+        detectingEvidenceHash: decision.detecting.evidenceHash,
       };
     };
 
@@ -872,7 +888,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             return commit({
               status: SESSION_STATUS.NEEDS_INPUT,
               evidence: activityEvidence,
-              detectingAttempts: 0,
+              detecting: { attempts: 0 },
               sessionState: "needs_input",
               sessionReason: "awaiting_user_input",
             });
@@ -903,7 +919,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
               return commit({
                 status: SESSION_STATUS.NEEDS_INPUT,
                 evidence: activityEvidence,
-                detectingAttempts: 0,
+                detecting: { attempts: 0 },
                 sessionState: "needs_input",
                 sessionReason: "awaiting_user_input",
               });
@@ -936,7 +952,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           return commit({
             status: session.status,
             evidence: activityEvidence,
-            detectingAttempts: currentDetectingAttempts,
+            detecting: { attempts: currentDetectingAttempts },
           });
         }
         return commit(
@@ -992,6 +1008,12 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       try {
         const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
         const cachedData = prEnrichmentCache.get(prKey);
+        if (lifecycle.pr.state === "none") {
+          lifecycle.pr.state = "open";
+        }
+        if (lifecycle.pr.reason === "not_created") {
+          lifecycle.pr.reason = "in_progress";
+        }
         lifecycle.pr.number = session.pr.number;
         lifecycle.pr.url = session.pr.url;
         lifecycle.pr.lastObservedAt = nowIso;
@@ -1071,10 +1093,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
               reason: mapped.sessionReason,
             },
           },
-          session.status,
         ),
         evidence: `agent_report:${agentReport.state}`,
-        detectingAttempts: 0,
+        detecting: { attempts: 0 },
         sessionState: mapped.sessionState,
         sessionReason: mapped.sessionReason,
       });
@@ -1088,7 +1109,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       return commit({
         status: SESSION_STATUS.STUCK,
         evidence: `idle_beyond_threshold ${activityEvidence}`,
-        detectingAttempts: 0,
+        detecting: { attempts: 0 },
         sessionState: "stuck",
         sessionReason: idleWasBlocked ? "error_in_process" : "probe_failure",
       });
@@ -1114,16 +1135,16 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         return commit({
           status: SESSION_STATUS.DETECTING,
           evidence: activityEvidence,
-          detectingAttempts: 0,
+          detecting: { attempts: 0 },
           sessionState: "detecting",
           sessionReason: "probe_failure",
         });
       }
 
       return commit({
-        status: deriveLegacyStatus(lifecycle, session.status),
+        status: deriveLegacyStatus(lifecycle),
         evidence: activityEvidence,
-        detectingAttempts: 0,
+        detecting: { attempts: 0 },
       });
     }
 
@@ -1136,7 +1157,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       return commit({
         status: SESSION_STATUS.WORKING,
         evidence: activityEvidence,
-        detectingAttempts: 0,
+        detecting: { attempts: 0 },
         sessionState: "working",
         sessionReason: "task_in_progress",
       });
@@ -1145,7 +1166,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     return commit({
       status: session.status,
       evidence: activityEvidence,
-      detectingAttempts: 0,
+      detecting: { attempts: 0 },
     });
   }
 
@@ -1162,6 +1183,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     if (!tracker) {
       tracker = { attempts: 0, firstTriggered: new Date() };
       reactionTrackers.set(trackerKey, tracker);
+    }
+
+    // Already escalated — wait for the condition to resolve before resuming.
+    if (tracker.escalated) {
+      return { reactionType: reactionKey, success: true, action: "escalated", escalated: true };
     }
 
     // Increment attempts before checking escalation
@@ -1196,6 +1222,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         data: { reactionKey, attempts: tracker.attempts },
       });
       await notifyHuman(event, reactionConfig.priority ?? "urgent");
+
+      // Mark as escalated — silences further dispatches until the underlying
+      // condition resolves and clearReactionTracker() is called explicitly.
+      tracker.escalated = true;
+
       return {
         reactionType: reactionKey,
         success: true,
@@ -1297,10 +1328,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const project = config.projects[session.projectId];
     if (!project) return;
 
-    const sessionsDir = getSessionsDir(project.storageKey);
+    const sessionsDir = getProjectSessionsDir(session.projectId);
     const lifecycleUpdates = buildLifecycleMetadataPatch(
       cloneLifecycle(session.lifecycle),
-      session.status,
     );
     const mergedUpdates = { ...updates, ...lifecycleUpdates };
     updateMetadata(sessionsDir, session.id, mergedUpdates);
@@ -1317,7 +1347,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       cleaned[key] = value;
     }
     session.metadata = cleaned;
-    session.status = deriveLegacyStatus(session.lifecycle, session.status);
+    session.status = deriveLegacyStatus(session.lifecycle);
   }
 
   function makeFingerprint(ids: string[]): string {
@@ -1652,35 +1682,44 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         (reactionConfig.auto !== false || reactionConfig.action === "notify")
       ) {
         try {
-          if (reactionConfig.action === "send-to-agent") {
+          // Build enriched config with dynamic base branch message.
+          // Preserve "warning" priority from old direct-dispatch code unless
+          // the user explicitly set a different priority in their config.
+          const enrichedConfig = {
+            ...reactionConfig,
+            priority: reactionConfig.priority ?? ("warning" as const),
+          };
+          if (reactionConfig.action === "send-to-agent" && !reactionConfig.message) {
             const baseBranch = session.pr.baseBranch ?? "the default branch";
             const behindNote = cachedData.isBehind ? ` is behind ${baseBranch} and` : "";
-            const message =
-              reactionConfig.message ??
-              `Your PR branch${behindNote} has merge conflicts with ${baseBranch}. Rebase your branch on ${baseBranch}, resolve the conflicts, and push. You should not need to call gh for merge status unless you need additional context — this information is current.`;
-            await sessionManager.send(session.id, message);
-          } else {
-            const event = createEvent("merge.conflicts", {
-              sessionId: session.id,
-              projectId: session.projectId,
-              message: `${session.id}: PR has merge conflicts`,
-            });
-            await notifyHuman(event, reactionConfig.priority ?? "warning");
+            enrichedConfig.message = `Your PR branch${behindNote} has merge conflicts with ${baseBranch}. Rebase your branch on ${baseBranch}, resolve the conflicts, and push. You should not need to call gh for merge status unless you need additional context — this information is current.`;
           }
 
-          updateSessionMetadata(session, {
-            lastMergeConflictDispatched: "true",
-          });
+          const result = await executeReaction(
+            session.id,
+            session.projectId,
+            conflictReactionKey,
+            enrichedConfig,
+          );
+          // Only set dedup flag for non-escalated success — escalation hands off
+          // to the human, so we must NOT suppress future agent dispatches if the
+          // condition recurs after the tracker resets.
+          if (result.success && result.action !== "escalated") {
+            updateSessionMetadata(session, {
+              lastMergeConflictDispatched: "true",
+            });
+          }
         } catch {
-          // Send failed — will retry on next poll cycle
+          // Dispatch failed — will retry on next poll cycle
         }
       }
     } else if (lastDispatched === "true") {
-      // Conflicts resolved — clear so we can re-dispatch if they recur
-      clearReactionTracker(session.id, conflictReactionKey);
+      // Conflicts resolved — clear dedup flag and reaction tracker so future
+      // conflicts start a fresh incident with a fresh escalation budget.
       updateSessionMetadata(session, {
         lastMergeConflictDispatched: "",
       });
+      clearReactionTracker(session.id, conflictReactionKey);
     }
   }
 
@@ -1808,7 +1847,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const previousPRState = session.lifecycle.pr.state;
     const assessment = await determineStatus(session);
     const newStatus = assessment.status;
-    const lifecycleChanged = session.metadata["statePayload"] !== JSON.stringify(session.lifecycle);
+    const lifecycleChanged = session.metadata["lifecycle"] !== JSON.stringify(session.lifecycle);
     let transitionReaction: { key: string; result: ReactionResult | null } | undefined;
 
     const nextLifecycleEvidence = assessment.evidence;
@@ -1845,6 +1884,28 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       updateSessionMetadata(session, metadataUpdates);
     }
 
+    // CI resolution tracking — reset the ci-failed tracker (including its escalated
+    // flag) once CI has been passing for CI_PASSING_STABLE_THRESHOLD consecutive polls.
+    // This lets the next real CI failure start with a fresh budget.
+    if (session.pr) {
+      const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
+      const cachedData = prEnrichmentCache.get(prKey);
+      if (cachedData) {
+        if (cachedData.ciStatus === "passing") {
+          const stableCount = Number(session.metadata["ciPassingStableCount"] ?? "0") + 1;
+          if (stableCount >= CI_PASSING_STABLE_THRESHOLD) {
+            clearReactionTracker(session.id, "ci-failed");
+            updateSessionMetadata(session, { ciPassingStableCount: "" });
+          } else {
+            updateSessionMetadata(session, { ciPassingStableCount: String(stableCount) });
+          }
+        } else if (session.metadata["ciPassingStableCount"]) {
+          // pending or failing resets the stability window — only "passing" counts as resolution
+          updateSessionMetadata(session, { ciPassingStableCount: "" });
+        }
+      }
+    }
+
     if (newStatus !== oldStatus) {
       const correlationId = createCorrelationId("lifecycle-transition");
       // State transition detected
@@ -1875,11 +1936,14 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         allCompleteEmitted = false;
       }
 
-      // Clear reaction trackers for the old status so retries reset on state changes
+      // Clear reaction trackers for the old status so retries reset on state changes.
+      // Persistent keys (ci-failed) are excluded — their trackers survive oscillation
+      // so the escalation budget accumulates across cycles. On escalation, the tracker
+      // is cleared in executeReaction so future incidents get a fresh budget.
       const oldEventType = statusToEventType(undefined, oldStatus);
       if (oldEventType) {
         const oldReactionKey = eventToReactionKey(oldEventType);
-        if (oldReactionKey) {
+        if (oldReactionKey && !PERSISTENT_REACTION_KEYS.has(oldReactionKey)) {
           clearReactionTracker(session.id, oldReactionKey);
         }
       }
