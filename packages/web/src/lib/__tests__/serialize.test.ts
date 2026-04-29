@@ -373,62 +373,6 @@ describe("resolveProject", () => {
   });
 });
 
-describe("listDashboardOrchestrators", () => {
-  function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
-    return {
-      name: "test",
-      repo: "test/repo",
-      path: "/test",
-      defaultBranch: "main",
-      sessionPrefix: "test",
-      ...overrides,
-    };
-  }
-
-  it("excludes terminal orchestrator sessions from dashboard links", () => {
-    const lifecycle = createInitialCanonicalLifecycle("orchestrator", new Date("2025-01-01T00:00:00Z"));
-    lifecycle.session.state = "terminated";
-    lifecycle.session.reason = "manual_kill";
-    lifecycle.runtime.state = "missing";
-    lifecycle.runtime.reason = "process_missing";
-
-    const projects = {
-      test: makeProject(),
-    };
-    const sessions = [
-      createCoreSession({
-        id: "test-orchestrator-1",
-        projectId: "test",
-        status: "killed",
-        activity: "exited",
-        lifecycle,
-        metadata: { role: "orchestrator" },
-      }),
-    ];
-
-    expect(listDashboardOrchestrators(sessions, projects)).toEqual([]);
-  });
-
-  it("keeps active orchestrator sessions in dashboard links", () => {
-    const projects = {
-      test: makeProject(),
-    };
-    const sessions = [
-      createCoreSession({
-        id: "test-orchestrator-1",
-        projectId: "test",
-        status: "working",
-        activity: "active",
-        metadata: { role: "orchestrator" },
-      }),
-    ];
-
-    expect(listDashboardOrchestrators(sessions, projects)).toEqual([
-      { id: "test-orchestrator-1", projectId: "test", projectName: "test" },
-    ]);
-  });
-});
-
 describe("enrichSessionPR", () => {
   it("should enrich PR from metadata", () => {
     const pr = createPRInfo();
@@ -1446,6 +1390,29 @@ describe("listDashboardOrchestrators (issue #1048)", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("my-app-orchestrator");
+  });
+
+  it("drops projects whose only orchestrator is terminal", () => {
+    const lifecycle = createInitialCanonicalLifecycle("orchestrator", new Date("2025-01-01T00:00:00Z"));
+    lifecycle.session.state = "terminated";
+    lifecycle.session.reason = "manual_kill";
+    lifecycle.runtime.state = "missing";
+    lifecycle.runtime.reason = "process_missing";
+
+    const sessions: Session[] = [
+      createCoreSession({
+        id: "app-orchestrator-9",
+        projectId: "my-app",
+        status: "killed",
+        activity: "exited",
+        lifecycle,
+        metadata: { role: "orchestrator" },
+      }),
+    ];
+
+    const result = listDashboardOrchestrators(sessions, projects);
+
+    expect(result).toEqual([]);
   });
 
   it("prefers the live orchestrator over stale exited ones for the same project", () => {
