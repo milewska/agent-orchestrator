@@ -13,6 +13,7 @@ import type {
   OrchestratorConfig,
   PluginRegistry,
   Runtime,
+  RuntimeHandle,
   Agent,
 } from "../../types.js";
 import { setupTestContext, teardownTestContext, makeHandle, type TestContext } from "../test-utils.js";
@@ -253,7 +254,7 @@ describe("send", () => {
       branch: "main",
       status: "working",
       project: "my-app",
-      runtimeHandle: "{not valid json",
+      runtimeHandle: "{not valid json" as unknown as RuntimeHandle,
     });
 
     const tmuxConfig = {
