@@ -1887,7 +1887,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
       const cachedData = prEnrichmentCache.get(prKey);
       if (cachedData) {
-        if (cachedData.ciStatus !== "failing") {
+        if (cachedData.ciStatus === "passing") {
           const stableCount = Number(session.metadata["ciPassingStableCount"] ?? "0") + 1;
           if (stableCount >= CI_PASSING_STABLE_THRESHOLD) {
             clearReactionTracker(session.id, "ci-failed");
@@ -1896,6 +1896,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             updateSessionMetadata(session, { ciPassingStableCount: String(stableCount) });
           }
         } else if (session.metadata["ciPassingStableCount"]) {
+          // pending or failing resets the stability window — only "passing" counts as resolution
           updateSessionMetadata(session, { ciPassingStableCount: "" });
         }
       }

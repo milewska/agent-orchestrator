@@ -3059,6 +3059,131 @@ describe("reactions", () => {
     expect(notifier.notify).not.toHaveBeenCalledWith(expect.objectContaining({ type: "reaction.escalated" }));
   });
 
+  it("pending CI does not count toward ci-failed tracker resolution", async () => {
+    // Regression: real CI goes failing → pending (new run started) → failing.
+    // "pending" must NOT count as resolution — only "passing" does.
+    // Without this, 2 pending polls between failures wipe the tracker and we're back at #1409.
+    config.reactions = {
+      "ci-failed": {
+        auto: true,
+        action: "send-to-agent",
+        message: "CI is failing.",
+        retries: 2,
+      },
+    };
+
+    const batchMock = mockBatchEnrichment({ ciStatus: "failing" });
+    const mockSCM = createMockSCM({ enrichSessionsPRBatch: batchMock });
+
+    const registry: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return plugins.runtime;
+        if (slot === "agent") return plugins.agent;
+        if (slot === "scm") return mockSCM;
+        return null;
+      }),
+    };
+
+    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "pr_open", pr: makePR() }),
+      registry,
+    });
+
+    // CI failing: pr_open → ci_failed, attempt 1 — send
+    await lm.check("app-1");
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+    vi.mocked(mockSessionManager.send).mockClear();
+
+    // CI goes pending (agent pushed a fix, new run started): ci_failed → pr_open
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "pending" }));
+    await lm.check("app-1"); // stableCount must NOT increment
+    await lm.check("app-1"); // two pending polls — must NOT clear tracker
+
+    // CI fails again (run completed failing): pr_open → ci_failed, attempt 2 — send
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "failing" }));
+    await lm.check("app-1");
+    // If pending had wrongly cleared the tracker, this would be attempt 1 (fresh), not attempt 2.
+    // Attempt 2 ≤ retries:2 → sends to agent (not escalates)
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+    vi.mocked(mockSessionManager.send).mockClear();
+
+    // CI goes pending again, then failing — attempt 3 > retries:2 → escalate
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "pending" }));
+    await lm.check("app-1"); // pending: no clear
+    await lm.check("app-1"); // pending: no clear
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "failing" }));
+    await lm.check("app-1");
+    expect(mockSessionManager.send).not.toHaveBeenCalled(); // escalated, not sent to agent
+  });
+
+  it("only passing CI resets ci-failed tracker — pending mid-run does not interfere", async () => {
+    // Complementary to previous: failing → pending(many) → passing(2) → failing SHOULD clear.
+    // Pending during CI run doesn't block resolution; only the final passing state matters.
+    const notifier = createMockNotifier();
+
+    config.reactions = {
+      "ci-failed": {
+        auto: true,
+        action: "send-to-agent",
+        message: "CI is failing.",
+        retries: 1,
+        escalateAfter: 1,
+      },
+    };
+
+    const batchMock = mockBatchEnrichment({ ciStatus: "failing" });
+    const mockSCM = createMockSCM({ enrichSessionsPRBatch: batchMock });
+
+    const registry: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string, name: string) => {
+        if (slot === "runtime") return plugins.runtime;
+        if (slot === "agent") return plugins.agent;
+        if (slot === "scm") return mockSCM;
+        if (slot === "notifier" && name === "desktop") return notifier;
+        return null;
+      }),
+    };
+
+    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "pr_open", pr: makePR() }),
+      registry,
+    });
+
+    // Reach escalated state: attempt 1 → send, attempt 2 → escalate
+    await lm.check("app-1"); // attempt 1, send
+    vi.mocked(mockSessionManager.send).mockClear();
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "passing" }));
+    await lm.check("app-1"); // ci_failed → pr_open
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "failing" }));
+    await lm.check("app-1"); // attempt 2 → escalate
+    vi.mocked(notifier.notify).mockClear();
+
+    // CI goes pending (new run) — stableCount stays 0, does NOT progress toward resolution
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "pending" }));
+    await lm.check("app-1");
+    await lm.check("app-1");
+    await lm.check("app-1"); // many pending polls — stableCount never reaches threshold
+
+    // CI finally passes (2 stable polls) → tracker cleared
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "passing" }));
+    await lm.check("app-1"); // stableCount = 1
+    await lm.check("app-1"); // stableCount = 2 → clearReactionTracker
+
+    // Next CI failure gets fresh budget: attempt 1, send
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "failing" }));
+    await lm.check("app-1");
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+    expect(notifier.notify).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "reaction.escalated" }),
+    );
+  });
+
   it("merge-conflict notify action preserves warning priority", async () => {
     const notifier = createMockNotifier();
 
