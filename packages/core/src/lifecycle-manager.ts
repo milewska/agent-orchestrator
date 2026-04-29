@@ -100,6 +100,11 @@ function parseDuration(str: string): number {
  *  Merge-conflict tracker lifecycle is managed in maybeDispatchMergeConflicts. */
 const PERSISTENT_REACTION_KEYS = new Set(["ci-failed"]);
 
+/** Number of consecutive CI-passing polls required before the ci-failed tracker
+ *  (including its escalated flag) is cleared, allowing a fresh budget for the
+ *  next real CI failure incident. */
+const CI_PASSING_STABLE_THRESHOLD = 2;
+
 type WorkspaceBranchProbe =
   | { kind: "branch"; branch: string }
   | { kind: "detached" }
@@ -393,6 +398,9 @@ export interface LifecycleManagerDeps {
 interface ReactionTracker {
   attempts: number;
   firstTriggered: Date;
+  /** True after this reaction has escalated. Short-circuits further dispatches
+   *  until the underlying condition resolves and the tracker is explicitly cleared. */
+  escalated?: boolean;
 }
 
 /** Create a LifecycleManager instance. */
@@ -1172,6 +1180,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       reactionTrackers.set(trackerKey, tracker);
     }
 
+    // Already escalated — wait for the condition to resolve before resuming.
+    if (tracker.escalated) {
+      return { reactionType: reactionKey, success: true, action: "escalated", escalated: true };
+    }
+
     // Increment attempts before checking escalation
     tracker.attempts++;
 
@@ -1205,10 +1218,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       });
       await notifyHuman(event, reactionConfig.priority ?? "urgent");
 
-      // Clear the tracker so future incidents get a fresh budget.
-      // Without this, long-lived sessions that escalated once would
-      // immediately escalate on every future occurrence of the condition.
-      reactionTrackers.delete(trackerKey);
+      // Mark as escalated — silences further dispatches until the underlying
+      // condition resolves and clearReactionTracker() is called explicitly.
+      tracker.escalated = true;
 
       return {
         reactionType: reactionKey,
@@ -1866,6 +1878,27 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     }
     if (Object.keys(metadataUpdates).length > 0) {
       updateSessionMetadata(session, metadataUpdates);
+    }
+
+    // CI resolution tracking — reset the ci-failed tracker (including its escalated
+    // flag) once CI has been passing for CI_PASSING_STABLE_THRESHOLD consecutive polls.
+    // This lets the next real CI failure start with a fresh budget.
+    if (session.pr) {
+      const prKey = `${session.pr.owner}/${session.pr.repo}#${session.pr.number}`;
+      const cachedData = prEnrichmentCache.get(prKey);
+      if (cachedData) {
+        if (cachedData.ciStatus !== "failing") {
+          const stableCount = Number(session.metadata["ciPassingStableCount"] ?? "0") + 1;
+          if (stableCount >= CI_PASSING_STABLE_THRESHOLD) {
+            clearReactionTracker(session.id, "ci-failed");
+            updateSessionMetadata(session, { ciPassingStableCount: "" });
+          } else {
+            updateSessionMetadata(session, { ciPassingStableCount: String(stableCount) });
+          }
+        } else if (session.metadata["ciPassingStableCount"]) {
+          updateSessionMetadata(session, { ciPassingStableCount: "" });
+        }
+      }
     }
 
     if (newStatus !== oldStatus) {

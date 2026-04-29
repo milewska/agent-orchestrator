@@ -2759,11 +2759,12 @@ describe("reactions", () => {
       expect.objectContaining({ type: "reaction.escalated" }),
     );
 
-    // After escalation, tracker is cleared — new CI failure starts fresh
+    // After escalation, tracker is marked escalated — needs 2 stable passing polls to clear
     vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(
       mockBatchEnrichment({ ciStatus: "passing" }),
     );
-    await lm.check("app-1");
+    await lm.check("app-1"); // stableCount = 1
+    await lm.check("app-1"); // stableCount = 2 → clearReactionTracker
     vi.mocked(mockSessionManager.send).mockClear();
     vi.mocked(notifier.notify).mockClear();
 
@@ -2905,7 +2906,10 @@ describe("reactions", () => {
     expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
   });
 
-  it("CI escalation clears tracker — next CI failure gets fresh budget", async () => {
+  it("CI escalation silences further dispatches — clears only after stable CI pass", async () => {
+    // retries:1 → attempt 1 sends, attempt 2 escalates.
+    // After escalation: tracker.escalated=true silences subsequent oscillations.
+    // Tracker clears only after 2 consecutive passing polls; then next failure gets fresh budget.
     const notifier = createMockNotifier();
 
     config.reactions = {
@@ -2946,13 +2950,13 @@ describe("reactions", () => {
     expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
     vi.mocked(mockSessionManager.send).mockClear();
 
-    // CI passes briefly
+    // CI passes briefly (ci_failed → pr_open, stableCount = 1)
     vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(
       mockBatchEnrichment({ ciStatus: "passing" }),
     );
     await lm.check("app-1");
 
-    // Oscillation 2: ci_failed (attempt 2 > retries:1 — escalate)
+    // Oscillation 2: pr_open → ci_failed (attempt 2 > retries:1 — escalate, tracker.escalated = true)
     vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(
       mockBatchEnrichment({ ciStatus: "failing" }),
     );
@@ -2961,25 +2965,98 @@ describe("reactions", () => {
     expect(notifier.notify).toHaveBeenCalledWith(
       expect.objectContaining({ type: "reaction.escalated" }),
     );
+    vi.mocked(notifier.notify).mockClear();
 
-    // After escalation, tracker is cleared — next CI failure is a fresh incident
+    // CI passes once (stableCount = 1 — not enough to clear yet)
     vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(
       mockBatchEnrichment({ ciStatus: "passing" }),
     );
     await lm.check("app-1");
-    vi.mocked(mockSessionManager.send).mockClear();
-    vi.mocked(notifier.notify).mockClear();
 
+    // Oscillation 3: pr_open → ci_failed — escalated tracker short-circuits, NO dispatch
     vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(
       mockBatchEnrichment({ ciStatus: "failing" }),
     );
     await lm.check("app-1");
+    expect(mockSessionManager.send).not.toHaveBeenCalled();
+    expect(notifier.notify).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "reaction.escalated" }),
+    );
+    vi.mocked(mockSessionManager.send).mockClear();
+    vi.mocked(notifier.notify).mockClear();
 
-    // Fresh budget — sends to agent (attempt 1 again), not escalate
+    // CI passes twice stably (stableCount → 1 → 2 → tracker cleared)
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(
+      mockBatchEnrichment({ ciStatus: "passing" }),
+    );
+    await lm.check("app-1"); // stableCount = 1
+    await lm.check("app-1"); // stableCount = 2 → clearReactionTracker
+
+    // Oscillation 4: pr_open → ci_failed — fresh budget: attempt 1, sends (not escalate)
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(
+      mockBatchEnrichment({ ciStatus: "failing" }),
+    );
+    await lm.check("app-1");
     expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
     expect(notifier.notify).not.toHaveBeenCalledWith(
       expect.objectContaining({ type: "reaction.escalated" }),
     );
+  });
+
+  it("single passing poll does not reset escalated ci-failed tracker", async () => {
+    // Regression: one passing poll must NOT clear the tracker. Requires 2 consecutive passing polls.
+    const notifier = createMockNotifier();
+
+    config.reactions = {
+      "ci-failed": {
+        auto: true,
+        action: "send-to-agent",
+        message: "CI is failing.",
+        retries: 1,
+        escalateAfter: 1,
+      },
+    };
+
+    const batchMock = mockBatchEnrichment({ ciStatus: "failing" });
+    const mockSCM = createMockSCM({ enrichSessionsPRBatch: batchMock });
+
+    const registry: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string, name: string) => {
+        if (slot === "runtime") return plugins.runtime;
+        if (slot === "agent") return plugins.agent;
+        if (slot === "scm") return mockSCM;
+        if (slot === "notifier" && name === "desktop") return notifier;
+        return null;
+      }),
+    };
+
+    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "pr_open", pr: makePR() }),
+      registry,
+    });
+
+    // Reach escalated state: attempt 1 → send, attempt 2 → escalate
+    await lm.check("app-1"); // pr_open → ci_failed: attempt 1, send
+    vi.mocked(mockSessionManager.send).mockClear();
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "passing" }));
+    await lm.check("app-1"); // ci_failed → pr_open
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "failing" }));
+    await lm.check("app-1"); // pr_open → ci_failed: attempt 2 → escalate
+    expect(notifier.notify).toHaveBeenCalledWith(expect.objectContaining({ type: "reaction.escalated" }));
+    vi.mocked(notifier.notify).mockClear();
+
+    // ONE passing poll (stableCount = 1, not enough)
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "passing" }));
+    await lm.check("app-1");
+
+    // Next CI failure: tracker still escalated → short-circuit
+    vi.mocked(mockSCM.enrichSessionsPRBatch!).mockImplementation(mockBatchEnrichment({ ciStatus: "failing" }));
+    await lm.check("app-1");
+    expect(mockSessionManager.send).not.toHaveBeenCalled();
+    expect(notifier.notify).not.toHaveBeenCalledWith(expect.objectContaining({ type: "reaction.escalated" }));
   });
 
   it("merge-conflict notify action preserves warning priority", async () => {
