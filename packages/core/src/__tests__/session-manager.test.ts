@@ -75,7 +75,7 @@ describe("deleteSession retry loop", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses_test_123",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     let deleteCallCount = 0;
@@ -115,7 +115,7 @@ describe("deleteSession retry loop", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses_test_456",
-      runtimeHandle: JSON.stringify(makeHandle("rt-2")),
+      runtimeHandle: makeHandle("rt-2"),
     });
 
     const callTimes: number[] = [];
@@ -165,7 +165,7 @@ describe("deleteSession retry loop", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses_test_789",
-      runtimeHandle: JSON.stringify(makeHandle("rt-3")),
+      runtimeHandle: makeHandle("rt-3"),
     });
 
     const lastError = new Error("Final error after retries");
@@ -206,7 +206,7 @@ describe("deleteSession retry loop", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses_test_abc",
-      runtimeHandle: JSON.stringify(makeHandle("rt-4")),
+      runtimeHandle: makeHandle("rt-4"),
     });
 
     let deleteCallCount = 0;
@@ -248,7 +248,7 @@ describe("deleteSession retry loop", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses_test_def",
-      runtimeHandle: JSON.stringify(makeHandle("rt-5")),
+      runtimeHandle: makeHandle("rt-5"),
     });
 
     const notFoundError = new Error("Session not found: ses_test_def") as Error & {
@@ -290,7 +290,7 @@ describe("spawning session liveness (#1035)", () => {
       status: "spawning",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-spawn")),
+      runtimeHandle: makeHandle("rt-spawn"),
     });
 
     // Make isAlive return false — if it were called, the session would become "killed"

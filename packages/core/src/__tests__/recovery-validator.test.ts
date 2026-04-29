@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { validateSession } from "../recovery/validator.js";
 import type { ScannedSession } from "../recovery/scanner.js";
 import type { Agent, OrchestratorConfig, PluginRegistry, Runtime, Workspace } from "../types.js";
-import { getSessionsDir } from "../paths.js";
+import { getProjectSessionsDir } from "../paths.js";
 
 describe("recovery validator", () => {
   let rootDir = "";
@@ -106,7 +106,7 @@ describe("recovery validator", () => {
       sessionId: "app-orchestrator",
       projectId: "app",
       project: config.projects.app,
-      sessionsDir: getSessionsDir("111111111111"),
+      sessionsDir: getProjectSessionsDir("app"),
       rawMetadata: {
         worktree: projectPath,
         status: "working",
@@ -198,7 +198,7 @@ describe("recovery validator", () => {
       sessionId: "app-1",
       projectId: "app",
       project: config.projects.app,
-      sessionsDir: getSessionsDir("111111111111"),
+      sessionsDir: getProjectSessionsDir("app"),
       rawMetadata: {
         worktree: join(rootDir, "missing-worktree"),
         status: "working",
@@ -292,7 +292,7 @@ describe("recovery validator", () => {
       sessionId: "app-1",
       projectId: "app",
       project: config.projects.app,
-      sessionsDir: getSessionsDir("111111111111"),
+      sessionsDir: getProjectSessionsDir("app"),
       rawMetadata: {
         worktree: join(rootDir, "missing-worktree"),
         status: "working",
@@ -384,7 +384,7 @@ describe("recovery validator", () => {
       sessionId: "app-1",
       projectId: "app",
       project: config.projects.app,
-      sessionsDir: getSessionsDir("111111111111"),
+      sessionsDir: getProjectSessionsDir("app"),
       rawMetadata: {
         worktree: projectPath,
         status: "working",
@@ -457,7 +457,7 @@ describe("recovery validator", () => {
       sessionId: "app-1",
       projectId: "app",
       project: config.projects.app,
-      sessionsDir: getSessionsDir("111111111111"),
+      sessionsDir: getProjectSessionsDir("app"),
       rawMetadata: {
         worktree: projectPath,
         status: "merged",
@@ -547,7 +547,7 @@ describe("recovery validator", () => {
       sessionId: "app-1",
       projectId: "app",
       project: config.projects.app,
-      sessionsDir: getSessionsDir("111111111111"),
+      sessionsDir: getProjectSessionsDir("app"),
       rawMetadata: {
         worktree: projectPath,
         status: "detecting",
@@ -619,7 +619,7 @@ describe("recovery validator", () => {
       sessionId: "app-1",
       projectId: "app",
       project: config.projects.app,
-      sessionsDir: getSessionsDir("111111111111"),
+      sessionsDir: getProjectSessionsDir("app"),
       rawMetadata: {
         worktree: join(rootDir, "missing-worktree"),
         status: "working",
@@ -709,7 +709,7 @@ describe("recovery validator", () => {
       sessionId: "app-1",
       projectId: "app",
       project: config.projects.app,
-      sessionsDir: getSessionsDir("111111111111"),
+      sessionsDir: getProjectSessionsDir("app"),
       rawMetadata: {
         worktree: join(rootDir, "missing-worktree"),
         status: "working",
