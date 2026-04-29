@@ -373,6 +373,62 @@ describe("resolveProject", () => {
   });
 });
 
+describe("listDashboardOrchestrators", () => {
+  function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
+    return {
+      name: "test",
+      repo: "test/repo",
+      path: "/test",
+      defaultBranch: "main",
+      sessionPrefix: "test",
+      ...overrides,
+    };
+  }
+
+  it("excludes terminal orchestrator sessions from dashboard links", () => {
+    const lifecycle = createInitialCanonicalLifecycle("orchestrator", new Date("2025-01-01T00:00:00Z"));
+    lifecycle.session.state = "terminated";
+    lifecycle.session.reason = "manual_kill";
+    lifecycle.runtime.state = "missing";
+    lifecycle.runtime.reason = "process_missing";
+
+    const projects = {
+      test: makeProject(),
+    };
+    const sessions = [
+      createCoreSession({
+        id: "test-orchestrator-1",
+        projectId: "test",
+        status: "killed",
+        activity: "exited",
+        lifecycle,
+        metadata: { role: "orchestrator" },
+      }),
+    ];
+
+    expect(listDashboardOrchestrators(sessions, projects)).toEqual([]);
+  });
+
+  it("keeps active orchestrator sessions in dashboard links", () => {
+    const projects = {
+      test: makeProject(),
+    };
+    const sessions = [
+      createCoreSession({
+        id: "test-orchestrator-1",
+        projectId: "test",
+        status: "working",
+        activity: "active",
+        metadata: { role: "orchestrator" },
+      }),
+    ];
+
+    expect(listDashboardOrchestrators(sessions, projects)).toEqual([
+      { id: "test-orchestrator-1", projectId: "test", projectName: "test" },
+    ]);
+  });
+});
+
 describe("enrichSessionPR", () => {
   it("should enrich PR from metadata", () => {
     const pr = createPRInfo();

@@ -242,6 +242,7 @@ export function listDashboardOrchestrators(
   }
 
   return [...bestByProject.values()]
+    .filter((session) => !isTerminalSession(session))
     .map((session) => ({
       id: session.id,
       projectId: session.projectId,
