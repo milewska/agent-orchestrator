@@ -6,11 +6,13 @@ import type { ClientMessage, ServerMessage, SessionPatch } from "@/lib/mux-proto
 interface MuxContextValue {
   subscribeTerminal: (id: string, callback: (data: string) => void) => () => void;
   writeTerminal: (id: string, data: string) => void;
-  openTerminal: (id: string) => void;
+  openTerminal: (id: string, tmuxName?: string) => void;
   closeTerminal: (id: string) => void;
   resizeTerminal: (id: string, cols: number, rows: number) => void;
   status: "connecting" | "connected" | "reconnecting" | "disconnected";
   sessions: SessionPatch[];
+  /** Last session-fetch error from the server, null when healthy. */
+  lastError: string | null;
 }
 
 const MuxContext = React.createContext<MuxContextValue | undefined>(undefined);
@@ -71,11 +73,12 @@ function buildMuxWsUrl(runtimeConfig: { directTerminalPort?: string; proxyWsPath
 export function MuxProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
   const subscribersRef = useRef(new Map<string, Set<(data: string) => void>>());
-  const openedTerminalsRef = useRef(new Set<string>());
+  const openedTerminalsRef = useRef(new Map<string, string | undefined>());
   const [status, setStatus] = useState<"connecting" | "connected" | "reconnecting" | "disconnected">(
     "connecting",
   );
   const [sessions, setSessions] = useState<SessionPatch[]>([]);
+  const [lastError, setLastError] = useState<string | null>(null);
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const runtimeConfigRef = useRef<{ directTerminalPort?: string; proxyWsPath?: string }>({});
@@ -105,11 +108,12 @@ export function MuxProvider({ children }: { children: ReactNode }) {
         reconnectAttempt.current = 0;
 
         // Re-open previously opened terminals
-        for (const terminalId of openedTerminalsRef.current) {
+        for (const [terminalId, tmuxName] of openedTerminalsRef.current) {
           const openMsg: ClientMessage = {
             ch: "terminal",
             id: terminalId,
             type: "open",
+            ...(tmuxName && { tmuxName }),
           };
           ws.send(JSON.stringify(openMsg));
         }
@@ -136,8 +140,10 @@ export function MuxProvider({ children }: { children: ReactNode }) {
                 }
               }
             } else if (msg.type === "opened") {
-              // Terminal opened successfully
-              openedTerminalsRef.current.add(msg.id);
+              // Terminal opened successfully — preserve existing tmuxName
+              if (!openedTerminalsRef.current.has(msg.id)) {
+                openedTerminalsRef.current.set(msg.id, undefined);
+              }
             } else if (msg.type === "exited") {
               // PTY exited and could not be re-attached — remove so it isn't
               // re-opened on reconnect, and surface a terminal-level error chunk
@@ -152,8 +158,13 @@ export function MuxProvider({ children }: { children: ReactNode }) {
             } else if (msg.type === "error") {
               console.error(`[MuxProvider] Terminal error for ${msg.id}:`, msg.message);
             }
-          } else if (msg.ch === "sessions" && msg.type === "snapshot") {
-            setSessions(msg.sessions);
+          } else if (msg.ch === "sessions") {
+            if (msg.type === "snapshot") {
+              setSessions(msg.sessions);
+              setLastError(null);
+            } else if (msg.type === "error") {
+              setLastError(msg.error);
+            }
           }
         } catch (err) {
           console.error("[MuxProvider] Error processing message:", err);
@@ -269,13 +280,14 @@ export function MuxProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const openTerminal = useCallback((id: string) => {
-    openedTerminalsRef.current.add(id);
+  const openTerminal = useCallback((id: string, tmuxName?: string) => {
+    openedTerminalsRef.current.set(id, tmuxName);
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const msg: ClientMessage = {
         ch: "terminal",
         id,
         type: "open",
+        ...(tmuxName && { tmuxName }),
       };
       wsRef.current.send(JSON.stringify(msg));
     }
@@ -315,8 +327,9 @@ export function MuxProvider({ children }: { children: ReactNode }) {
       resizeTerminal,
       status,
       sessions,
+      lastError,
     }),
-    [subscribeTerminal, writeTerminal, openTerminal, closeTerminal, resizeTerminal, status, sessions],
+    [subscribeTerminal, writeTerminal, openTerminal, closeTerminal, resizeTerminal, status, sessions, lastError],
   );
 
   return <MuxContext.Provider value={contextValue}>{children}</MuxContext.Provider>;

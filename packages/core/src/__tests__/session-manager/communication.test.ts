@@ -43,7 +43,7 @@ describe("send", () => {
       branch: "main",
       status: "working",
       project: "my-app",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
     vi.mocked(mockRuntime.getOutput).mockResolvedValueOnce("before").mockResolvedValueOnce("after");
 
@@ -63,7 +63,7 @@ describe("send", () => {
       status: "working",
       project: "my-app",
       issue: "TEST-1",
-      runtimeHandle: JSON.stringify(makeHandle("rt-old")),
+      runtimeHandle: makeHandle("rt-old"),
     });
 
     vi.mocked(mockRuntime.isAlive).mockImplementation(async (handle) => handle.id !== "rt-old");
@@ -98,7 +98,7 @@ describe("send", () => {
         status: "killed",
         project: "my-app",
         issue: "TEST-1",
-        runtimeHandle: JSON.stringify(makeHandle("rt-old")),
+        runtimeHandle: makeHandle("rt-old"),
       });
 
       vi.mocked(mockRuntime.isAlive).mockImplementation(async (handle) => handle.id !== "rt-restored");
@@ -129,7 +129,7 @@ describe("send", () => {
       branch: "main",
       status: "spawning",
       project: "my-app",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.isAlive).mockResolvedValue(true);
@@ -161,7 +161,7 @@ describe("send", () => {
       branch: "main",
       status: "working",
       project: "my-app",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
     vi.mocked(mockRuntime.getOutput).mockResolvedValue("steady output");
     vi.mocked(mockAgent.detectActivity).mockReturnValue("idle");
@@ -189,7 +189,7 @@ describe("send", () => {
       status: "working",
       project: "my-app",
       issue: "TEST-1",
-      runtimeHandle: JSON.stringify(makeHandle("rt-old")),
+      runtimeHandle: makeHandle("rt-old"),
     });
 
     // rt-old is dead → restore kicks in → rt-restored is ready
@@ -339,7 +339,7 @@ describe("send", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.isAlive).mockResolvedValue(true);
@@ -374,7 +374,7 @@ describe("send", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses bad id",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.isAlive).mockResolvedValue(true);
@@ -421,7 +421,7 @@ describe("send", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses_send_confirmed",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.getOutput).mockResolvedValue("steady output");
@@ -467,7 +467,7 @@ describe("send", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses_send_visibility_only",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.getOutput).mockResolvedValue("steady output");
@@ -495,7 +495,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
       opencodeSessionId: "ses_remap",
     });
 
@@ -527,7 +527,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
       opencodeSessionId: "ses_stale",
     });
 
@@ -560,7 +560,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     const sm = createSessionManager({ config, registry: mockRegistry });
@@ -582,7 +582,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     const sm = createSessionManager({ config, registry: mockRegistry });
@@ -609,7 +609,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     const sm = createSessionManager({ config, registry: mockRegistry });
@@ -640,7 +640,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
       opencodeSessionId: "ses bad id",
     });
 
@@ -676,7 +676,7 @@ describe("remap", () => {
       branch: "main",
       status: "working",
       project: "my-app",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     const sm = createSessionManager({ config, registry: mockRegistry });
