@@ -99,11 +99,24 @@ const WINDOWS_BASH_CANDIDATES = [
   "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
 ];
 
+// Walk PATH searching for bash.exe. Lets us discover Git Bash installs on
+// non-default drives (e.g. D:\Program Files\Git) that the hardcoded list above
+// would miss. Returns the first match or null. PATH-walking is sync but
+// microseconds — no subprocess.
+function findBashOnPath(): string | null {
+  const dirs = (process.env["PATH"] ?? "").split(";").filter(Boolean);
+  for (const dir of dirs) {
+    const candidate = resolve(dir, "bash.exe");
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 function detectWindowsBash(): string | null {
   for (const candidate of WINDOWS_BASH_CANDIDATES) {
     if (existsSync(candidate)) return candidate;
   }
-  return null;
+  return findBashOnPath();
 }
 
 export function hasRepoScript(scriptName: string): boolean {
