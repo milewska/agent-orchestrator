@@ -109,8 +109,9 @@ export async function clearStaleCacheIfNeeded(webDir: string): Promise<void> {
         writeFileSync(stampPath, currentVersion, "utf8");
       }
     }
-  } catch {
+  } catch (err) {
     // Best-effort cache cleanup — never prevent dashboard from starting
+    console.debug("Cache version check skipped:", err);
   }
 }
 
