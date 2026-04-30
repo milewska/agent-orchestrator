@@ -1487,6 +1487,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       let lastError: Error | undefined;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        let sendSucceeded = false;
         try {
           // Poll for agent readiness instead of a blind timer.
           // The agent must show an idle prompt (e.g. ❯) before we send keys,
@@ -1512,6 +1513,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           }
 
           await plugins.runtime.sendMessage(handle, agentLaunchConfig.prompt);
+          sendSucceeded = true;
 
           // Verify the agent transitioned from idle to active after receiving
           // the prompt. If it stays idle, the keystrokes were likely lost.
@@ -1540,6 +1542,16 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           promptDelivered = true;
           break;
         } catch (err) {
+          // If the send itself succeeded but verification timed out, treat as
+          // delivered to avoid sending duplicate prompts on retry. The agent may
+          // just be slow to transition (e.g. model cold-start).
+          if (sendSucceeded) {
+            console.error(
+              `[session-manager] Prompt sent but delivery verification timed out for session ${sessionId}. Treating as delivered.`,
+            );
+            promptDelivered = true;
+            break;
+          }
           lastError = err instanceof Error ? err : new Error(String(err));
           console.error(
             `[session-manager] Prompt delivery attempt ${attempt}/${maxRetries} failed: ${lastError.message}`,

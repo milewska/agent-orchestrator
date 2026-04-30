@@ -117,7 +117,7 @@ function buildConfigLayer(config: PromptBuildConfig): string {
 
   if (issueId) {
     lines.push(`\n## Task`);
-    lines.push(`Work on issue: ${issueId}`);
+    lines.push(`Work on issue #${issueId}`);
     lines.push(
       `Create a branch named so that it auto-links to the issue tracker (e.g. feat/${issueId}).`,
     );

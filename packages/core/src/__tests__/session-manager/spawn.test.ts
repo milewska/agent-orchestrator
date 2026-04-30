@@ -1074,7 +1074,7 @@ describe("spawn", () => {
     expect(systemPrompt).toContain("Session Lifecycle");
     expect(systemPrompt).toContain("## Project Context");
     expect(systemPrompt).toContain("## Task");
-    expect(systemPrompt).toContain("Work on issue: INT-1343");
+    expect(systemPrompt).toContain("Work on issue #INT-1343");
     expect(systemPrompt).not.toContain("## Additional Instructions");
   });
 
@@ -1145,7 +1145,7 @@ describe("spawn", () => {
     expect(opencodeConfig.instructions[0]).toContain("worker-prompt-app-1.md");
 
     const systemPromptPath = opencodeConfig.instructions[0]!;
-    expect(readFileSync(systemPromptPath, "utf-8")).toContain("Work on issue: INT-1343");
+    expect(readFileSync(systemPromptPath, "utf-8")).toContain("Work on issue #INT-1343");
     expect(readFileSync(systemPromptPath, "utf-8")).not.toContain("## Additional Instructions");
 
     const agentsMdPath = getWorkspaceAgentsMdPath(workspacePath);
@@ -1219,7 +1219,7 @@ describe("spawn", () => {
 
     const systemPrompt = readFileSync(callArgs.systemPromptFile!, "utf-8");
     expect(systemPrompt).toContain("## Task");
-    expect(systemPrompt).toContain("Work on issue: INT-1343");
+    expect(systemPrompt).toContain("Work on issue #INT-1343");
   }, 30_000);
 
   it("does not destroy session when post-launch prompt delivery fails", async () => {
