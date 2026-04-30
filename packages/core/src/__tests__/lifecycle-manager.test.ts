@@ -1280,12 +1280,12 @@ describe("check (single session)", () => {
 
     try {
       lm.start(60_000);
-      await new Promise((resolve) => setTimeout(resolve, 25));
-
-      const adoptedCount = [sessionA.branch, sessionB.branch].filter(
-        (branch) => branch === "shared-branch",
-      ).length;
-      expect(adoptedCount).toBe(1);
+      await vi.waitFor(() => {
+        const adoptedCount = [sessionA.branch, sessionB.branch].filter(
+          (branch) => branch === "shared-branch",
+        ).length;
+        expect(adoptedCount).toBe(1);
+      });
       expect(mockSessionManager.list).toHaveBeenCalledTimes(1);
     } finally {
       lm.stop();
