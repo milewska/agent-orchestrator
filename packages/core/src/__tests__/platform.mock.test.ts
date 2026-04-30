@@ -94,32 +94,46 @@ describe("resolveWindowsShell", () => {
 
   it("falls back to powershell.exe via PATH probe when pwsh missing and absolute path missing", async () => {
     setPlatform("win32");
-    // pwsh throws, powershell.exe (PATH probe) succeeds
-    mockExecFileSync.mockImplementationOnce(() => {
-      throw new Error("pwsh not found");
+    const savedPath = process.env["PATH"];
+    const savedPathExt = process.env["PATHEXT"];
+    process.env["PATH"] = "C:\\fake\\bin";
+    process.env["PATHEXT"] = ".EXE";
+
+    // pwsh missing on PATH; absolute powershell missing; powershell.exe present on PATH.
+    mockExistsSync.mockImplementation((p: unknown) => {
+      const path = String(p);
+      if (path === "C:\\fake\\bin\\powershell.EXE") return true;
+      return false;
     });
-    mockExecFileSync.mockImplementationOnce(() => "");
-    // Absolute path doesn't exist, forcing the bare-name probe
-    mockExistsSync.mockReturnValue(false);
 
-    const mod = await import("../platform.js");
-    mod._resetShellCache();
-    const shell = mod.getShell();
+    try {
+      const mod = await import("../platform.js");
+      mod._resetShellCache();
+      const shell = mod.getShell();
 
-    expect(shell.cmd).toBe("powershell.exe");
-    expect(shell.args("echo hi")).toEqual(["-Command", "echo hi"]);
+      expect(shell.cmd).toBe("C:\\fake\\bin\\powershell.EXE");
+      expect(shell.args("echo hi")).toEqual(["-Command", "echo hi"]);
+    } finally {
+      if (savedPath !== undefined) process.env["PATH"] = savedPath;
+      else delete process.env["PATH"];
+      if (savedPathExt !== undefined) process.env["PATHEXT"] = savedPathExt;
+      else delete process.env["PATHEXT"];
+    }
   });
 
-  it("uses absolute powershell.exe path when pwsh fails (PATH-degraded process)", async () => {
+  it("uses absolute powershell.exe path when pwsh missing and absolute path exists", async () => {
     setPlatform("win32");
-    // pwsh throws, then absolute path exists — never reaches the bare-name probe
-    mockExecFileSync.mockImplementationOnce(() => {
-      throw new Error("pwsh not found");
-    });
-    mockExistsSync.mockReturnValue(true);
-
     const savedRoot = process.env["SystemRoot"];
+    const savedPath = process.env["PATH"];
+    const savedPathExt = process.env["PATHEXT"];
     process.env["SystemRoot"] = "C:\\Windows";
+    process.env["PATH"] = "C:\\fake\\bin";
+    process.env["PATHEXT"] = ".EXE";
+
+    // pwsh missing on PATH; absolute powershell exists.
+    mockExistsSync.mockImplementation((p: unknown) => {
+      return String(p) === "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+    });
 
     try {
       const mod = await import("../platform.js");
@@ -131,6 +145,10 @@ describe("resolveWindowsShell", () => {
     } finally {
       if (savedRoot !== undefined) process.env["SystemRoot"] = savedRoot;
       else delete process.env["SystemRoot"];
+      if (savedPath !== undefined) process.env["PATH"] = savedPath;
+      else delete process.env["PATH"];
+      if (savedPathExt !== undefined) process.env["PATHEXT"] = savedPathExt;
+      else delete process.env["PATHEXT"];
     }
   });
 

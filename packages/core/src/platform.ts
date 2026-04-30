@@ -1,7 +1,8 @@
-import { execFile as execFileCb, execFileSync } from "node:child_process";
+import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir, userInfo } from "node:os";
 import { existsSync } from "node:fs";
+import { delimiter as pathDelimiter, join as joinPath } from "node:path";
 
 const execFileAsync = promisify(execFileCb);
 
@@ -49,6 +50,24 @@ function inferShellArgsFlag(cmd: string): (command: string) => string[] {
   return (c) => ["-Command", c];
 }
 
+/** Walk PATH looking for an executable. Returns the absolute path or null. */
+function findOnPath(name: string): string | null {
+  const exts = process.env["PATHEXT"]?.split(";").filter(Boolean) ?? [
+    ".COM",
+    ".EXE",
+    ".BAT",
+    ".CMD",
+  ];
+  const dirs = (process.env["PATH"] ?? "").split(pathDelimiter).filter(Boolean);
+  for (const dir of dirs) {
+    for (const ext of [...exts, ""]) {
+      const candidate = joinPath(dir, name + ext);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
 function resolveWindowsShell(): ShellInfo {
   // Explicit override — set AO_SHELL to an absolute path or shell name
   // (e.g. "powershell.exe", "pwsh", "cmd.exe", "bash"). Args are inferred
@@ -58,36 +77,30 @@ function resolveWindowsShell(): ShellInfo {
     return { cmd: override, args: inferShellArgsFlag(override) };
   }
 
-  // Prefer pwsh (PowerShell Core, cross-platform)
-  try {
-    execFileSync("pwsh", ["-Version"], { timeout: 5000, stdio: "ignore", windowsHide: true });
-    return { cmd: "pwsh", args: (c) => ["-Command", c] };
-  } catch {
-    // not installed or not on PATH
+  // Prefer pwsh (PowerShell Core, cross-platform). PATH-walk via existsSync
+  // rather than execFileSync — a missing pwsh would otherwise block the event
+  // loop for the spawn timeout on every cold start (this resolver is sync).
+  const pwshPath = findOnPath("pwsh");
+  if (pwshPath) {
+    return { cmd: pwshPath, args: (c) => ["-Command", c] };
   }
 
   // Fall back to powershell.exe (Windows PowerShell, always on Win 10+).
   // Use the absolute path because the spawning process may have a degraded
   // PATH that doesn't include C:\Windows\System32 (e.g. Next.js dashboard
   // children spawned without full system PATH inheritance). Without this,
-  // both probes fail and we'd fall through to cmd.exe — which breaks any
-  // launch command that uses PowerShell syntax (e.g. Codex's `& 'codex' ...`).
+  // we'd fall through to cmd.exe — which breaks any launch command that uses
+  // PowerShell syntax (e.g. Codex's `& 'codex' ...`).
   const systemRoot = process.env["SystemRoot"] || "C:\\Windows";
   const psAbsolute = `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
   if (existsSync(psAbsolute)) {
     return { cmd: psAbsolute, args: (c) => ["-Command", c] };
   }
 
-  // Try the bare name as a final PowerShell attempt (in case of unusual installs)
-  try {
-    execFileSync("powershell.exe", ["-Command", "echo ok"], {
-      timeout: 5000,
-      stdio: "ignore",
-      windowsHide: true,
-    });
-    return { cmd: "powershell.exe", args: (c) => ["-Command", c] };
-  } catch {
-    // not available (very unlikely on Win 10+)
+  // Try PATH lookup as a final PowerShell attempt (unusual installs).
+  const psPathLookup = findOnPath("powershell");
+  if (psPathLookup) {
+    return { cmd: psPathLookup, args: (c) => ["-Command", c] };
   }
 
   // Last resort: cmd.exe. Note that agent launch commands often use PowerShell
