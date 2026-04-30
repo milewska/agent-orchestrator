@@ -1015,10 +1015,15 @@ describe("spawn", () => {
   });
 
   it("sends prompt post-launch when agent.promptDelivery is 'post-launch'", async () => {
-    vi.useFakeTimers();
+    // detectActivity returns "idle" first (readiness), then "active" (verification)
+    let callCount = 0;
     const postLaunchAgent = {
       ...mockAgent,
       promptDelivery: "post-launch" as const,
+      detectActivity: vi.fn().mockImplementation(() => {
+        callCount++;
+        return callCount <= 1 ? "idle" : "active";
+      }),
     };
     const registryWithPostLaunch: PluginRegistry = {
       ...mockRegistry,
@@ -1031,17 +1036,14 @@ describe("spawn", () => {
     };
 
     const sm = createSessionManager({ config, registry: registryWithPostLaunch });
-    const spawnPromise = sm.spawn({ projectId: "my-app", prompt: "Fix the bug" });
-    await vi.advanceTimersByTimeAsync(5_000);
-    await spawnPromise;
+    await sm.spawn({ projectId: "my-app", prompt: "Fix the bug" });
 
     // Prompt should be sent via runtime.sendMessage, not included in launch command
     expect(mockRuntime.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ id: expect.any(String) }),
       expect.stringContaining("Fix the bug"),
     );
-    vi.useRealTimers();
-  });
+  }, 30_000);
 
   it("writes worker system prompt to file and passes only explicit task prompt to agent", async () => {
     const sm = createSessionManager({ config, registry: mockRegistry });
@@ -1159,7 +1161,6 @@ describe("spawn", () => {
   });
 
   it("does not send a post-launch message when no task prompt is available", async () => {
-    vi.useFakeTimers();
     const postLaunchAgent = {
       ...mockAgent,
       promptDelivery: "post-launch" as const,
@@ -1175,20 +1176,23 @@ describe("spawn", () => {
     };
 
     const sm = createSessionManager({ config, registry: registryWithPostLaunch });
-    const spawnPromise = sm.spawn({ projectId: "my-app" });
-    await vi.advanceTimersByTimeAsync(5_000);
-    const session = await spawnPromise;
+    const session = await sm.spawn({ projectId: "my-app" });
 
     expect(mockRuntime.sendMessage).not.toHaveBeenCalled();
     expect(session.metadata.promptDelivered).toBeUndefined();
-    vi.useRealTimers();
   });
 
   it("sends a minimal post-launch task for issue-only spawns", async () => {
-    vi.useFakeTimers();
+    // detectActivity returns "idle" first (readiness check), then "active" (delivery verification)
+    let callCount = 0;
     const postLaunchAgent = {
       ...mockAgent,
       promptDelivery: "post-launch" as const,
+      detectActivity: vi.fn().mockImplementation(() => {
+        callCount++;
+        // First calls are readiness checks (expect idle), later calls are delivery verification (expect active)
+        return callCount <= 1 ? "idle" : "active";
+      }),
     };
     const registryWithPostLaunch: PluginRegistry = {
       ...mockRegistry,
@@ -1201,35 +1205,35 @@ describe("spawn", () => {
     };
 
     const sm = createSessionManager({ config, registry: registryWithPostLaunch });
-    const spawnPromise = sm.spawn({ projectId: "my-app", issueId: "INT-1343" });
-    await vi.advanceTimersByTimeAsync(5_000);
-    const session = await spawnPromise;
+    const session = await sm.spawn({ projectId: "my-app", issueId: "INT-1343" });
 
     expect(mockRuntime.sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ id: expect.any(String) }),
-      "Work on issue: INT-1343",
+      expect.stringContaining("Work on issue #INT-1343"),
     );
     expect(session.metadata.promptDelivered).toBe("true");
 
     const callArgs = vi.mocked(postLaunchAgent.getLaunchCommand).mock.calls[0][0];
-    expect(callArgs.prompt).toBe("Work on issue: INT-1343");
+    expect(callArgs.prompt).toContain("Work on issue #INT-1343");
     expect(callArgs.systemPromptFile).toContain("worker-prompt-app-1.md");
 
     const systemPrompt = readFileSync(callArgs.systemPromptFile!, "utf-8");
     expect(systemPrompt).toContain("## Task");
     expect(systemPrompt).toContain("Work on issue: INT-1343");
-    vi.useRealTimers();
-  });
+  }, 30_000);
 
   it("does not destroy session when post-launch prompt delivery fails", async () => {
-    vi.useFakeTimers();
     const failingRuntime: Runtime = {
       ...mockRuntime,
       sendMessage: vi.fn().mockRejectedValue(new Error("tmux send failed")),
+      // Return output so readiness check passes (agent appears idle/ready)
+      getOutput: vi.fn().mockResolvedValue("❯"),
     };
     const postLaunchAgent = {
       ...mockAgent,
       promptDelivery: "post-launch" as const,
+      // Agent appears idle (ready for input) so readiness polling passes
+      detectActivity: vi.fn().mockReturnValue("idle"),
     };
     const registryWithFailingSend: PluginRegistry = {
       ...mockRegistry,
@@ -1242,10 +1246,7 @@ describe("spawn", () => {
     };
 
     const sm = createSessionManager({ config, registry: registryWithFailingSend });
-    const spawnPromise = sm.spawn({ projectId: "my-app", prompt: "Fix the bug" });
-    // With retry logic (3 attempts at 3s, 6s, 9s delays before each attempt), need to advance 18s for all retries
-    await vi.advanceTimersByTimeAsync(18_000);
-    const session = await spawnPromise;
+    const session = await sm.spawn({ projectId: "my-app", prompt: "Fix the bug" });
 
     // Session should still be returned successfully despite sendMessage failure
     expect(session.id).toBe("app-1");
@@ -1254,19 +1255,35 @@ describe("spawn", () => {
     expect(failingRuntime.destroy).not.toHaveBeenCalled();
     // Verify promptDelivered is set to false in metadata
     expect(session.metadata.promptDelivered).toBe("false");
-    vi.useRealTimers();
-  }, 30_000);
+  }, 120_000);
 
-  it("waits before sending post-launch prompt", async () => {
-    vi.useFakeTimers();
+  it("polls for readiness before sending post-launch prompt", async () => {
+    // Simulate agent that takes a few polls to become ready
+    let getOutputCallCount = 0;
+    const delayedReadyRuntime: Runtime = {
+      ...mockRuntime,
+      getOutput: vi.fn().mockImplementation(() => {
+        getOutputCallCount++;
+        // First call: agent still loading; second call onwards: agent is ready
+        return Promise.resolve(getOutputCallCount <= 1 ? "Loading..." : "❯");
+      }),
+    };
+    let detectCallCount = 0;
     const postLaunchAgent = {
       ...mockAgent,
       promptDelivery: "post-launch" as const,
+      detectActivity: vi.fn().mockImplementation(() => {
+        detectCallCount++;
+        // First call: still loading (active); subsequent: idle then active after send
+        if (detectCallCount <= 1) return "active";
+        if (detectCallCount <= 2) return "idle";
+        return "active";
+      }),
     };
     const registryWithPostLaunch: PluginRegistry = {
       ...mockRegistry,
       get: vi.fn().mockImplementation((slot: string) => {
-        if (slot === "runtime") return mockRuntime;
+        if (slot === "runtime") return delayedReadyRuntime;
         if (slot === "agent") return postLaunchAgent;
         if (slot === "workspace") return mockWorkspace;
         return null;
@@ -1274,18 +1291,14 @@ describe("spawn", () => {
     };
 
     const sm = createSessionManager({ config, registry: registryWithPostLaunch });
-    const spawnPromise = sm.spawn({ projectId: "my-app", prompt: "Fix the bug" });
+    const session = await sm.spawn({ projectId: "my-app", prompt: "Fix the bug" });
 
-    // Advance only 2s — not enough, message should not have been sent yet
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(mockRuntime.sendMessage).not.toHaveBeenCalled();
-
-    // Advance the remaining 1s — now the first attempt should fire (3s total = 3000 * 1)
-    await vi.advanceTimersByTimeAsync(1_000);
-    await spawnPromise;
-    expect(mockRuntime.sendMessage).toHaveBeenCalled();
-    vi.useRealTimers();
-  }, 20_000);
+    // getOutput should have been polled multiple times (readiness + verification)
+    expect(delayedReadyRuntime.getOutput).toHaveBeenCalled();
+    // sendMessage should eventually have been called after agent became ready
+    expect(delayedReadyRuntime.sendMessage).toHaveBeenCalled();
+    expect(session.metadata.promptDelivered).toBe("true");
+  }, 30_000);
 
   describe("displayName derivation", () => {
     it("persists the issue title as displayName when tracker returns one", async () => {

@@ -60,7 +60,7 @@ describe("buildPrompt split output", () => {
     expect(systemPrompt).not.toContain("## Additional Instructions");
 
     expect(taskPrompt).toContain("Focus on the API layer only.");
-    expect(taskPrompt).not.toContain("Work on issue: INT-1343");
+    expect(taskPrompt).not.toContain("Work on issue #INT-1343");
     expect(taskPrompt).not.toContain("Layered Prompt System");
   });
 
@@ -91,7 +91,8 @@ describe("buildPrompt", () => {
     });
     expect(systemPrompt).toContain(BASE_AGENT_PROMPT);
     expect(systemPrompt).toContain("Work on issue: INT-1343");
-    expect(taskPrompt).toBe("Work on issue: INT-1343");
+    expect(taskPrompt).toContain("Work on issue #INT-1343");
+    expect(taskPrompt).toContain("start implementing without fetching the issue");
   });
 
   it("includes project context", () => {
@@ -123,7 +124,8 @@ describe("buildPrompt", () => {
     });
     expect(systemPrompt).toContain("Work on issue: INT-1343");
     expect(systemPrompt).toContain("feat/INT-1343");
-    expect(taskPrompt).toBe("Work on issue: INT-1343");
+    expect(taskPrompt).toContain("Work on issue #INT-1343");
+    expect(taskPrompt).toContain("start implementing without fetching the issue");
   });
 
   it("includes issue context when provided", () => {
@@ -136,7 +138,7 @@ describe("buildPrompt", () => {
     expect(systemPrompt).toContain("## Issue Details");
     expect(systemPrompt).toContain("Layered Prompt System");
     expect(systemPrompt).toContain("Priority: High");
-    expect(taskPrompt).toBe("Work on issue: INT-1343");
+    expect(taskPrompt).toContain("Work on issue #INT-1343");
     expect(taskPrompt).not.toContain("Layered Prompt System");
   });
 

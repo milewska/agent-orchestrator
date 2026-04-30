@@ -1482,15 +1482,61 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     let promptDelivered = false;
     if (plugins.agent.promptDelivery === "post-launch" && agentLaunchConfig.prompt) {
       const maxRetries = 3;
-      const baseDelayMs = 3_000;
+      const readyPollIntervalMs = 2_000;
+      const readyPollTimeoutMs = 60_000;
       let lastError: Error | undefined;
 
       for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
-          // Wait for agent to start and be ready for input
-          // Use exponential backoff: 3s, 6s, 9s between attempts
-          await new Promise((resolve) => setTimeout(resolve, baseDelayMs * attempt));
+          // Poll for agent readiness instead of a blind timer.
+          // The agent must show an idle prompt (e.g. ❯) before we send keys,
+          // otherwise the keystrokes go into the loading screen and are lost.
+          const readyDeadline = Date.now() + readyPollTimeoutMs;
+          let agentReady = false;
+          while (Date.now() < readyDeadline) {
+            try {
+              const output = await plugins.runtime.getOutput(handle, 5);
+              const activity = plugins.agent.detectActivity(output);
+              if (activity === "idle") {
+                agentReady = true;
+                break;
+              }
+            } catch {
+              // getOutput may fail if runtime isn't ready yet — keep polling
+            }
+            await new Promise((resolve) => setTimeout(resolve, readyPollIntervalMs));
+          }
+
+          if (!agentReady) {
+            throw new Error("Agent did not become ready within timeout");
+          }
+
           await plugins.runtime.sendMessage(handle, agentLaunchConfig.prompt);
+
+          // Verify the agent transitioned from idle to active after receiving
+          // the prompt. If it stays idle, the keystrokes were likely lost.
+          const verifyDeadline = Date.now() + 10_000;
+          let deliveryConfirmed = false;
+          // Brief pause before first check to let the agent process input
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          while (Date.now() < verifyDeadline) {
+            try {
+              const output = await plugins.runtime.getOutput(handle, 5);
+              const activity = plugins.agent.detectActivity(output);
+              if (activity === "active") {
+                deliveryConfirmed = true;
+                break;
+              }
+            } catch {
+              // Ignore transient failures
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1_000));
+          }
+
+          if (!deliveryConfirmed) {
+            throw new Error("Agent stayed idle after prompt send — delivery likely failed");
+          }
+
           promptDelivered = true;
           break;
         } catch (err) {
