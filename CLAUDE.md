@@ -62,12 +62,12 @@ pnpm dev                                    # Web dashboard (Next.js + 2 WS serv
 
 # Type checking
 pnpm typecheck                              # All packages
-pnpm --filter @composio/ao-web typecheck    # Web only
+pnpm --filter @aoagents/ao-web typecheck    # Web only
 
 # Testing
 pnpm test                                   # All packages (excludes web)
-pnpm --filter @composio/ao-web test         # Web tests
-pnpm --filter @composio/ao-web test:watch   # Web watch mode
+pnpm --filter @aoagents/ao-web test         # Web tests
+pnpm --filter @aoagents/ao-web test:watch   # Web watch mode
 pnpm test:integration                       # Integration tests
 
 # Lint & format
@@ -96,6 +96,13 @@ Every abstraction is a pluggable interface defined in `packages/core/src/types.t
 
 ### Session Lifecycle
 
+Sessions have a **canonical lifecycle** (in `lifecycle-state.ts`) with separate `state` and `reason` fields, and a **legacy status** derived from them for display.
+
+**Canonical session states:** `not_started`, `working`, `idle`, `needs_input`, `stuck`, `detecting`, `done`, `terminated`
+
+**Terminal reasons:** `manually_killed`, `runtime_lost`, `agent_process_exited`, `probe_failure`, `error_in_process`, `auto_cleanup`, `pr_merged`
+
+**Legacy status flow (derived via `deriveLegacyStatus`):**
 ```
 spawning -> working -> pr_open -> ci_failed / review_pending
                                       |              |
@@ -103,6 +110,8 @@ spawning -> working -> pr_open -> ci_failed / review_pending
                                       |              |
                                       +-> mergeable -> merged -> cleanup -> done
 ```
+
+**Stale runtime reconciliation:** `sm.list()` detects dead runtimes (tmux/process gone) during enrichment and persists `runtime_lost` reason to disk. This maps to legacy status `killed`. Without this, sessions with dead runtimes would show stale "active" status indefinitely.
 
 ### Data Flow
 
@@ -119,17 +128,105 @@ agent-orchestrator.yaml -> Config Loader (Zod) -> Plugin Registry
 No database. Flat files + memory:
 
 - **Config:** `agent-orchestrator.yaml` (Zod-validated)
+- **Global config:** `~/.agent-orchestrator/config.yaml` (all registered projects)
 - **Session metadata:** `~/.agent-orchestrator/{hash}-{projectId}/sessions/{sessionId}` (key-value pairs)
 - **Worktrees:** `~/.agent-orchestrator/{hash}-{projectId}/worktrees/{sessionId}/`
 - **Archives:** `~/.agent-orchestrator/{hash}-{projectId}/archive/{sessionId}_{timestamp}`
+- **Running state:** `~/.agent-orchestrator/running.json` (current ao start PID, port, projects)
+- **Last-stop state:** `~/.agent-orchestrator/last-stop.json` (sessions killed by ao stop / Ctrl+C, includes `otherProjects` for cross-project sessions — used by ao start to offer session restore)
 
 Hash = SHA-256 of config directory (first 12 chars). Prevents collision across multiple checkouts.
+
+**Config resolution:** `loadConfig()` searches up from cwd and finds the nearest `agent-orchestrator.yaml` (typically 1 project). The global config at `~/.agent-orchestrator/config.yaml` contains all registered projects. CLI commands that need cross-project visibility (ao stop, tab completions) fall back to the global config.
 
 ### Prompt Assembly (3 Layers)
 
 1. Base prompt (system instructions in core)
 2. Config prompt (project-specific rules from YAML)
 3. Rules files (optional `.agent-rules.md` from repo)
+
+## Working Principles
+
+These behavioral guidelines apply to every agent working on this codebase. They are not optional - they prevent the most common causes of PR rejection and rewrite.
+
+### Think Before Coding
+
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+- State assumptions explicitly. If uncertain, ask.
+- If multiple interpretations of a task exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+- When editing `lifecycle-manager.ts` or `session-manager.ts`: state which invariants your change preserves. These files have subtle state dependencies.
+
+### Simplicity First
+
+Minimum code that solves the problem. Nothing speculative.
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- Plugin slots are the extension point. Don't add configuration surface when a new plugin is the right answer.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### Surgical Changes
+
+Touch only what you must. Clean up only your own mess.
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If your changes create orphans (unused imports, dead variables), remove them.
+- Don't remove pre-existing dead code unless asked.
+- Every changed line should trace directly to the task description.
+
+This is especially critical in:
+- `types.ts` - changing an interface breaks every plugin. Minimize surface changes.
+- `globals.css` - tokens are consumed across 50+ components. Don't rename casually.
+- `lifecycle-manager.ts` - state transitions have implicit dependencies. Document why a transition is safe.
+
+### Goal-Driven Execution
+
+Define success criteria. Loop until verified.
+
+Transform tasks into verifiable goals:
+- "Add a new status" -> "Add to enum, update `isTerminalSession`, add to dashboard column mapping, write tests for all three"
+- "Fix the bug" -> "Write a test that reproduces it, then make it pass"
+- "Refactor X" -> "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+
+[Step] -> verify: [check]
+[Step] -> verify: [check]
+[Step] -> verify: [check]
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+## CLI Behavior (ao start / ao stop)
+
+### ao start
+- Registers in `running.json` (PID, port, projects)
+- Offers to restore sessions from `last-stop.json` — includes cross-project sessions via `otherProjects` field
+- **Ctrl+C performs full graceful shutdown** (same as ao stop): kills all sessions, writes last-stop state, unregisters from running.json. 10s hard timeout guarantees exit.
+
+### ao stop
+- `ao stop` (no args): kills ALL sessions across ALL projects, sends SIGTERM to parent ao start process, stops dashboard, unregisters
+- `ao stop <project>`: kills only that project's sessions, does NOT kill parent process or dashboard (they serve all projects)
+- Always loads global config (`~/.agent-orchestrator/config.yaml`) to see all projects — local config only has the cwd project
+- Records `LastStopState` with `otherProjects` field for cross-project session restore
+
+### Dashboard sidebar
+- Sidebar always shows sessions from ALL projects regardless of which project page is active
+- `useSessionEvents` in Dashboard.tsx is called without project filter — sidebar gets unscoped sessions
+- Kanban board filters client-side via `projectSessions` memo
+
+### Key invariants
+- `sm.list()` persists `runtime_lost` lifecycle to disk when enrichment detects dead runtimes — this is the only place stale runtime state gets reconciled
+- `deriveLegacyStatus()` maps canonical lifecycle to legacy status — new terminal reasons must be added here
+- Tab completions merge local config + global config to show all projects
 
 ## Conventions
 
@@ -159,7 +256,7 @@ Hash = SHA-256 of config directory (first 12 chars). Prevents collision across m
 ### Imports
 
 - `@/` alias -> `packages/web/src/`
-- `@composio/ao-core` for core imports
+- `@aoagents/ao-core` for core imports
 - `workspace:*` for cross-package
 
 ### Web / Styling
@@ -190,8 +287,9 @@ Hash = SHA-256 of config directory (first 12 chars). Prevents collision across m
 | File | Purpose |
 |------|---------|
 | `packages/core/src/types.ts` | Central type definitions (all 8 plugin interfaces) |
-| `packages/core/src/session-manager.ts` | Session CRUD operations |
+| `packages/core/src/session-manager.ts` | Session CRUD + stale runtime reconciliation (persists runtime_lost on dead runtimes) |
 | `packages/core/src/lifecycle-manager.ts` | State machine + polling loop + reactions |
+| `packages/core/src/lifecycle-state.ts` | Canonical lifecycle → legacy status mapping (deriveLegacyStatus) |
 | `packages/core/src/config.ts` | YAML config loading with Zod validation |
 | `packages/core/src/plugin-registry.ts` | Plugin discovery and resolution |
 | `packages/core/src/index.ts` | Core public API (stable, do not break) |
@@ -199,12 +297,16 @@ Hash = SHA-256 of config directory (first 12 chars). Prevents collision across m
 | `packages/web/src/components/SessionDetail.tsx` | Session detail view |
 | `packages/web/src/components/DirectTerminal.tsx` | xterm.js terminal with WebSocket |
 | `packages/web/src/components/SessionCard.tsx` | Kanban session card |
-| `packages/web/src/hooks/useSessionEvents.ts` | SSE consumer hook |
+| `packages/web/src/hooks/useSessionEvents.ts` | SSE consumer hook (project filter optional — sidebar uses unscoped) |
 | `packages/web/src/lib/types.ts` | Dashboard types |
-| `packages/web/src/app/globals.css` | Design tokens and base styles |
+| `packages/web/src/app/globals.css` | Design tokens and base styles (full token definitions) |
+| `DESIGN.md` | **Design system reference** — design principles, token mapping, component patterns, anti-patterns (read this before writing any web UI) |
 | `agent-orchestrator.yaml` | Project-level config (user-created) |
 | `eslint.config.js` | ESLint flat config |
 | `tsconfig.base.json` | Shared TypeScript base config |
+| `packages/cli/src/commands/start.ts` | ao start/stop commands + Ctrl+C graceful shutdown |
+| `packages/cli/src/lib/running-state.ts` | RunningState + LastStopState management (register/unregister, last-stop read/write) |
+| `packages/web/src/components/ProjectSidebar.tsx` | Sidebar — always shows all projects' sessions |
 
 ## Plugin Standards
 
@@ -212,7 +314,7 @@ Hash = SHA-256 of config directory (first 12 chars). Prevents collision across m
 
 ```
 packages/plugins/{slot}-{name}/
-├── package.json          # @composio/ao-plugin-{slot}-{name}
+├── package.json          # @aoagents/ao-plugin-{slot}-{name}
 ├── tsconfig.json         # extends ../../../tsconfig.base.json
 ├── src/
 │   ├── index.ts          # manifest + create + detect (default export)
@@ -221,7 +323,7 @@ packages/plugins/{slot}-{name}/
 
 ### Naming
 
-- Package: `@composio/ao-plugin-{slot}-{name}` (lowercase, hyphenated)
+- Package: `@aoagents/ao-plugin-{slot}-{name}` (lowercase, hyphenated)
 - `manifest.name` must match the `{name}` suffix (e.g. package `...-runtime-tmux` -> name: `"tmux"`)
 - `manifest.slot` must use `as const` to preserve the literal type
 
@@ -230,7 +332,7 @@ packages/plugins/{slot}-{name}/
 Every plugin default-exports a `PluginModule<T>`:
 
 ```typescript
-import type { PluginModule, Runtime } from "@composio/ao-core";
+import type { PluginModule, Runtime } from "@aoagents/ao-core";
 
 export const manifest = {
   name: "tmux",
@@ -294,7 +396,7 @@ import {
   PREFERRED_GH_PATH,            // /usr/local/bin/gh
   CI_STATUS, ACTIVITY_STATE, SESSION_STATUS,  // Constants
   type Session, type ProjectConfig, type RuntimeHandle,
-} from "@composio/ao-core";
+} from "@aoagents/ao-core";
 ```
 
 ### Testing
@@ -342,7 +444,7 @@ All agent plugins (claude-code, codex, aider, opencode, etc.) must implement the
 **Environment requirements:**
 - All agents must set `AO_SESSION_ID` and optionally `AO_ISSUE_ID`
 - All agents using PATH wrappers must prepend `~/.ao/bin` to PATH
-- Use `normalizeAgentPermissionMode` from `@composio/ao-core` (not a local duplicate)
+- Use `normalizeAgentPermissionMode` from `@aoagents/ao-core` (not a local duplicate)
 
 **Activity detection architecture:**
 

@@ -139,9 +139,11 @@ describe("list", () => {
 describe("loadBuiltins", () => {
   it("silently skips unavailable packages", async () => {
     const registry = createPluginRegistry();
-    // loadBuiltins tries to import all built-in packages.
-    // In the test environment, most are not resolvable — should not throw.
-    await expect(registry.loadBuiltins()).resolves.toBeUndefined();
+    const importUnavailable = async (pkg: string): Promise<unknown> => {
+      throw new Error(`Not found: ${pkg}`);
+    };
+
+    await expect(registry.loadBuiltins(undefined, importUnavailable)).resolves.toBeUndefined();
   });
 
   it("registers multiple agent plugins from importFn", async () => {
@@ -152,9 +154,9 @@ describe("loadBuiltins", () => {
     const fakeOpenCode = makePlugin("agent", "opencode");
 
     await registry.loadBuiltins(undefined, async (pkg: string) => {
-      if (pkg === "@composio/ao-plugin-agent-claude-code") return fakeClaudeCode;
-      if (pkg === "@composio/ao-plugin-agent-codex") return fakeCodex;
-      if (pkg === "@composio/ao-plugin-agent-opencode") return fakeOpenCode;
+      if (pkg === "@aoagents/ao-plugin-agent-claude-code") return fakeClaudeCode;
+      if (pkg === "@aoagents/ao-plugin-agent-codex") return fakeCodex;
+      if (pkg === "@aoagents/ao-plugin-agent-opencode") return fakeOpenCode;
       throw new Error(`Not found: ${pkg}`);
     });
 
@@ -175,8 +177,8 @@ describe("loadBuiltins", () => {
     const fakeScm = makePlugin("scm", "gitlab");
 
     await registry.loadBuiltins(undefined, async (pkg: string) => {
-      if (pkg === "@composio/ao-plugin-tracker-gitlab") return fakeTracker;
-      if (pkg === "@composio/ao-plugin-scm-gitlab") return fakeScm;
+      if (pkg === "@aoagents/ao-plugin-tracker-gitlab") return fakeTracker;
+      if (pkg === "@aoagents/ao-plugin-scm-gitlab") return fakeScm;
       throw new Error(`Not found: ${pkg}`);
     });
 
@@ -203,7 +205,7 @@ describe("loadBuiltins", () => {
     });
 
     await registry.loadBuiltins(config, async (pkg: string) => {
-      if (pkg === "@composio/ao-plugin-notifier-webhook") return fakeWebhookNotifier;
+      if (pkg === "@aoagents/ao-plugin-notifier-webhook") return fakeWebhookNotifier;
       throw new Error(`Not found: ${pkg}`);
     });
 
@@ -228,13 +230,97 @@ describe("loadBuiltins", () => {
     });
 
     await registry.loadBuiltins(config, async (pkg: string) => {
-      if (pkg === "@composio/ao-plugin-notifier-webhook") return fakeWebhookNotifier;
+      if (pkg === "@aoagents/ao-plugin-notifier-webhook") return fakeWebhookNotifier;
       throw new Error(`Not found: ${pkg}`);
     });
 
     expect(fakeWebhookNotifier.create).toHaveBeenCalledWith({
       url: "http://127.0.0.1:8787/custom-hook",
       retries: 4,
+    });
+  });
+
+  it("registers alias-specific notifier instances for the same plugin", async () => {
+    const registry = createPluginRegistry();
+    const fakeSlackNotifier = makePlugin("notifier", "slack");
+    const config = makeOrchestratorConfig({
+      configPath: "/test/config.yaml",
+      notifiers: {
+        alerts: {
+          plugin: "slack",
+          webhookUrl: "https://hooks.slack.com/services/alerts",
+          channel: "#alerts",
+        },
+        ops: {
+          plugin: "slack",
+          webhookUrl: "https://hooks.slack.com/services/ops",
+          channel: "#ops",
+        },
+      },
+    });
+
+    await registry.loadBuiltins(config, async (pkg: string) => {
+      if (pkg === "@aoagents/ao-plugin-notifier-slack") return fakeSlackNotifier;
+      throw new Error(`Not found: ${pkg}`);
+    });
+
+    expect(fakeSlackNotifier.create).toHaveBeenCalledTimes(2);
+    expect(
+      registry.get<{ _config: Record<string, unknown> }>("notifier", "alerts")?._config,
+    ).toEqual({
+      webhookUrl: "https://hooks.slack.com/services/alerts",
+      channel: "#alerts",
+      configPath: "/test/config.yaml",
+    });
+    expect(registry.get<{ _config: Record<string, unknown> }>("notifier", "ops")?._config).toEqual({
+      webhookUrl: "https://hooks.slack.com/services/ops",
+      channel: "#ops",
+      configPath: "/test/config.yaml",
+    });
+    expect(registry.get("notifier", "slack")).not.toBeNull();
+    expect(registry.list("notifier")).toContainEqual(
+      expect.objectContaining({ name: "slack", slot: "notifier" }),
+    );
+    expect(registry.list("notifier")).toHaveLength(1);
+  });
+
+  it("prefers the notifier id matching the plugin name for direct plugin lookups", async () => {
+    const registry = createPluginRegistry();
+    const fakeSlackNotifier = makePlugin("notifier", "slack");
+    const config = makeOrchestratorConfig({
+      configPath: "/test/config.yaml",
+      notifiers: {
+        slack: {
+          plugin: "slack",
+          webhookUrl: "https://hooks.slack.com/services/default",
+          channel: "#general",
+        },
+        alerts: {
+          plugin: "slack",
+          webhookUrl: "https://hooks.slack.com/services/alerts",
+          channel: "#alerts",
+        },
+      },
+    });
+
+    await registry.loadBuiltins(config, async (pkg: string) => {
+      if (pkg === "@aoagents/ao-plugin-notifier-slack") return fakeSlackNotifier;
+      throw new Error(`Not found: ${pkg}`);
+    });
+
+    expect(
+      registry.get<{ _config: Record<string, unknown> }>("notifier", "slack")?._config,
+    ).toEqual({
+      webhookUrl: "https://hooks.slack.com/services/default",
+      channel: "#general",
+      configPath: "/test/config.yaml",
+    });
+    expect(
+      registry.get<{ _config: Record<string, unknown> }>("notifier", "alerts")?._config,
+    ).toEqual({
+      webhookUrl: "https://hooks.slack.com/services/alerts",
+      channel: "#alerts",
+      configPath: "/test/config.yaml",
     });
   });
 
@@ -252,7 +338,7 @@ describe("loadBuiltins", () => {
     });
 
     await registry.loadBuiltins(cfg, async (pkg: string) => {
-      if (pkg === "@composio/ao-plugin-notifier-openclaw") return fakeOpenClaw;
+      if (pkg === "@aoagents/ao-plugin-notifier-openclaw") return fakeOpenClaw;
       throw new Error(`Not found: ${pkg}`);
     });
 
@@ -271,7 +357,7 @@ describe("loadBuiltins", () => {
         mywebhook: {
           plugin: "webhook",
           // package field is allowed for resolution but should be stripped:
-          package: "@composio/ao-plugin-notifier-webhook",
+          package: "@aoagents/ao-plugin-notifier-webhook",
           // These are plugin-specific fields that should be passed through:
           url: "https://webhook.example.com/notify",
           retries: 3,
@@ -280,7 +366,7 @@ describe("loadBuiltins", () => {
     });
 
     await registry.loadBuiltins(cfg, async (pkg: string) => {
-      if (pkg === "@composio/ao-plugin-notifier-webhook") return fakeWebhook;
+      if (pkg === "@aoagents/ao-plugin-notifier-webhook") return fakeWebhook;
       throw new Error(`Not found: ${pkg}`);
     });
 
@@ -308,11 +394,13 @@ describe("loadBuiltins", () => {
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 
     await registry.loadBuiltins(cfg, async (pkg: string) => {
-      if (pkg === "@composio/ao-plugin-notifier-webhook") return fakeWebhook;
+      if (pkg === "@aoagents/ao-plugin-notifier-webhook") return fakeWebhook;
       return null;
     });
 
-    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('"path" field conflicts with reserved'));
+    expect(stderrSpy).toHaveBeenCalledWith(
+      expect.stringContaining('"path" field conflicts with reserved'),
+    );
     stderrSpy.mockRestore();
 
     // Plugin should not be registered due to config error
@@ -334,8 +422,8 @@ describe("loadBuiltins", () => {
     });
 
     await registry.loadBuiltins(cfg, async (pkg: string) => {
-      if (pkg === "@composio/ao-plugin-notifier-openclaw") return fakeOpenClaw;
-      if (pkg === "@composio/ao-plugin-notifier-webhook") return fakeWebhook;
+      if (pkg === "@aoagents/ao-plugin-notifier-openclaw") return fakeOpenClaw;
+      if (pkg === "@aoagents/ao-plugin-notifier-webhook") return fakeWebhook;
       throw new Error(`Not found: ${pkg}`);
     });
 
@@ -353,7 +441,7 @@ describe("loadBuiltins", () => {
     const fakeImportFn = async (pkg: string): Promise<unknown> => {
       importedPackages.push(pkg);
       // Return a valid plugin module for runtime-tmux
-      if (pkg === "@composio/ao-plugin-runtime-tmux") {
+      if (pkg === "@aoagents/ao-plugin-runtime-tmux") {
         return {
           manifest: { name: "tmux", slot: "runtime", description: "test", version: "0.0.0" },
           create: () => ({ name: "tmux" }),
@@ -367,7 +455,7 @@ describe("loadBuiltins", () => {
 
     // importFn should have been called for all builtin plugins
     expect(importedPackages.length).toBeGreaterThan(0);
-    expect(importedPackages).toContain("@composio/ao-plugin-runtime-tmux");
+    expect(importedPackages).toContain("@aoagents/ao-plugin-runtime-tmux");
 
     // The tmux plugin should be registered
     const tmux = registry.get("runtime", "tmux");
@@ -404,10 +492,11 @@ describe("loadFromConfig", () => {
   it("does not throw when no plugins are importable", async () => {
     const registry = createPluginRegistry();
     const config = makeOrchestratorConfig({});
+    const importUnavailable = async (pkg: string): Promise<unknown> => {
+      throw new Error(`Not found: ${pkg}`);
+    };
 
-    // loadFromConfig calls loadBuiltins internally, which may fail to
-    // import packages in the test env — should still succeed gracefully
-    await expect(registry.loadFromConfig(config)).resolves.toBeUndefined();
+    await expect(registry.loadFromConfig(config, importUnavailable)).resolves.toBeUndefined();
   });
 
   it("should pass importFn through loadFromConfig to loadBuiltins", async () => {
@@ -424,7 +513,7 @@ describe("loadFromConfig", () => {
 
     // Should have attempted to import builtin plugins via the provided importFn
     expect(importedPackages.length).toBeGreaterThan(0);
-    expect(importedPackages).toContain("@composio/ao-plugin-runtime-tmux");
+    expect(importedPackages).toContain("@aoagents/ao-plugin-runtime-tmux");
   });
 
   it("loads external package plugins from config.plugins", async () => {
@@ -518,7 +607,12 @@ describe("External plugin manifest validation", () => {
     const registry = createPluginRegistry();
 
     const mockPlugin = {
-      manifest: { name: "jira", slot: "tracker" as const, version: "1.0.0", description: "Jira tracker" },
+      manifest: {
+        name: "jira",
+        slot: "tracker" as const,
+        version: "1.0.0",
+        description: "Jira tracker",
+      },
       create: vi.fn(() => ({})),
     };
 
@@ -559,7 +653,12 @@ describe("External plugin manifest validation", () => {
     const registry = createPluginRegistry();
 
     const mockPlugin = {
-      manifest: { name: "jira-enterprise", slot: "tracker" as const, version: "1.0.0", description: "Jira Enterprise" },
+      manifest: {
+        name: "jira-enterprise",
+        slot: "tracker" as const,
+        version: "1.0.0",
+        description: "Jira Enterprise",
+      },
       create: vi.fn(() => ({})),
     };
 
@@ -609,7 +708,12 @@ describe("External plugin manifest validation", () => {
     const registry = createPluginRegistry();
 
     const mockPlugin = {
-      manifest: { name: "jira", slot: "tracker" as const, version: "1.0.0", description: "Jira tracker" },
+      manifest: {
+        name: "jira",
+        slot: "tracker" as const,
+        version: "1.0.0",
+        description: "Jira tracker",
+      },
       create: vi.fn(() => ({})),
     };
 
@@ -654,7 +758,12 @@ describe("External plugin manifest validation", () => {
     const registry = createPluginRegistry();
 
     const mockPlugin = {
-      manifest: { name: "ms-teams", slot: "notifier" as const, version: "1.0.0", description: "Teams notifier" },
+      manifest: {
+        name: "ms-teams",
+        slot: "notifier" as const,
+        version: "1.0.0",
+        description: "Teams notifier",
+      },
       create: vi.fn(() => ({})),
     };
 
@@ -700,7 +809,12 @@ describe("External plugin manifest validation", () => {
     const registry = createPluginRegistry();
 
     const mockPlugin = {
-      manifest: { name: "ms-teams", slot: "notifier" as const, version: "1.0.0", description: "Teams notifier" },
+      manifest: {
+        name: "ms-teams",
+        slot: "notifier" as const,
+        version: "1.0.0",
+        description: "Teams notifier",
+      },
       create: vi.fn(() => ({})),
     };
 
@@ -756,11 +870,85 @@ describe("External plugin manifest validation", () => {
     expect(registry.get("notifier", "ms-teams")).not.toBeNull();
   });
 
+  it("registers external notifier aliases separately after manifest name resolution", async () => {
+    const registry = createPluginRegistry();
+
+    const mockPlugin = {
+      manifest: {
+        name: "ms-teams",
+        slot: "notifier" as const,
+        version: "1.0.0",
+        description: "Teams notifier",
+      },
+      create: vi.fn((pluginConfig?: Record<string, unknown>) => ({
+        name: "ms-teams",
+        _config: pluginConfig,
+      })),
+    };
+
+    const importFn = vi.fn(async () => mockPlugin);
+
+    const config = makeOrchestratorConfig({
+      configPath: "/test/config.yaml",
+      plugins: [
+        { name: "teams", source: "npm", package: "@acme/ao-plugin-notifier-teams", enabled: true },
+      ],
+      projects: {},
+      notifiers: {
+        alerts: {
+          plugin: "teams",
+          package: "@acme/ao-plugin-notifier-teams",
+          webhookUrl: "https://teams.example/alerts",
+        },
+        ops: {
+          plugin: "teams",
+          package: "@acme/ao-plugin-notifier-teams",
+          webhookUrl: "https://teams.example/ops",
+        },
+      },
+      _externalPluginEntries: [
+        {
+          source: "notifiers.alerts",
+          location: { kind: "notifier", notifierId: "alerts" },
+          slot: "notifier",
+          package: "@acme/ao-plugin-notifier-teams",
+        },
+        {
+          source: "notifiers.ops",
+          location: { kind: "notifier", notifierId: "ops" },
+          slot: "notifier",
+          package: "@acme/ao-plugin-notifier-teams",
+        },
+      ],
+    });
+
+    await registry.loadFromConfig(config, importFn);
+
+    expect(config.notifiers?.alerts?.plugin).toBe("ms-teams");
+    expect(config.notifiers?.ops?.plugin).toBe("ms-teams");
+    expect(
+      registry.get<{ _config: Record<string, unknown> }>("notifier", "alerts")?._config,
+    ).toEqual({
+      webhookUrl: "https://teams.example/alerts",
+      configPath: "/test/config.yaml",
+    });
+    expect(registry.get<{ _config: Record<string, unknown> }>("notifier", "ops")?._config).toEqual({
+      webhookUrl: "https://teams.example/ops",
+      configPath: "/test/config.yaml",
+    });
+    expect(registry.get("notifier", "ms-teams")).not.toBeNull();
+  });
+
   it("warns when plugin slot does not match config slot", async () => {
     const registry = createPluginRegistry();
 
     const mockPlugin = {
-      manifest: { name: "jira", slot: "notifier" as const, version: "1.0.0", description: "Wrong slot!" },
+      manifest: {
+        name: "jira",
+        slot: "notifier" as const,
+        version: "1.0.0",
+        description: "Wrong slot!",
+      },
       create: vi.fn(() => ({})),
     };
 
@@ -795,7 +983,7 @@ describe("External plugin manifest validation", () => {
     await registry.loadFromConfig(config, importFn);
 
     expect(stderrSpy).toHaveBeenCalledWith(
-      expect.stringContaining("has slot \"notifier\" but was configured as \"tracker\""),
+      expect.stringContaining('has slot "notifier" but was configured as "tracker"'),
     );
     stderrSpy.mockRestore();
   });
@@ -804,7 +992,12 @@ describe("External plugin manifest validation", () => {
     const registry = createPluginRegistry();
 
     const mockPlugin = {
-      manifest: { name: "jira-cloud", slot: "tracker" as const, version: "1.0.0", description: "Jira Cloud" },
+      manifest: {
+        name: "jira-cloud",
+        slot: "tracker" as const,
+        version: "1.0.0",
+        description: "Jira Cloud",
+      },
       create: vi.fn(() => ({})),
     };
 
@@ -865,7 +1058,12 @@ describe("External plugin manifest validation", () => {
     const registry = createPluginRegistry();
 
     const mockPlugin = {
-      manifest: { name: "jira-cloud", slot: "tracker" as const, version: "1.0.0", description: "Jira Cloud" },
+      manifest: {
+        name: "jira-cloud",
+        slot: "tracker" as const,
+        version: "1.0.0",
+        description: "Jira Cloud",
+      },
       create: vi.fn(() => ({})),
     };
 

@@ -11,7 +11,7 @@
  * Reference: scripts/claude-ao-session, scripts/send-to-session
  */
 
-import { statSync, existsSync, readdirSync, writeFileSync, mkdirSync, utimesSync, unlinkSync } from "node:fs";
+import { statSync, existsSync, writeFileSync, mkdirSync, utimesSync, unlinkSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -19,6 +19,7 @@ import { promisify } from "node:util";
 import {
   isIssueNotFoundError,
   isRestorable,
+  isTerminalSession,
   NON_RESTORABLE_STATUSES,
   SessionNotFoundError,
   SessionNotRestorableError,
@@ -31,6 +32,9 @@ import {
   type CleanupResult,
   type ClaimPROptions,
   type ClaimPRResult,
+  type KillOptions,
+  type KillResult,
+  type LifecycleKillReason,
   type OrchestratorConfig,
   type ProjectConfig,
   type Runtime,
@@ -41,31 +45,58 @@ import {
   type PluginRegistry,
   type RuntimeHandle,
   type Issue,
+  type CanonicalSessionLifecycle,
   PR_STATE,
 } from "./types.js";
 import {
   readMetadataRaw,
-  readArchivedMetadataRaw,
-  updateArchivedMetadata,
   writeMetadata,
   updateMetadata,
+  mutateMetadata,
   deleteMetadata,
   listMetadata,
   reserveSessionId,
 } from "./metadata.js";
-import { buildPrompt } from "./prompt-builder.js";
 import {
-  getSessionsDir,
-  getWorktreesDir,
-  getProjectBaseDir,
-  generateTmuxName,
-  validateAndStoreOrigin,
+  buildLifecycleMetadataPatch,
+  cloneLifecycle,
+  createInitialCanonicalLifecycle,
+  deriveLegacyStatus,
+  parseCanonicalLifecycle,
+} from "./lifecycle-state.js";
+import { buildPrompt } from "./prompt-builder.js";
+import { classifyActivitySignal, createActivitySignal } from "./activity-signal.js";
+import {
+  getProjectSessionsDir,
+  getProjectWorktreesDir,
+  getProjectDir,
+  generateSessionName,
 } from "./paths.js";
 import { asValidOpenCodeSessionId } from "./opencode-session-id.js";
-import { normalizeOrchestratorSessionStrategy } from "./orchestrator-session-strategy.js";
+import {
+  getCachedOpenCodeSessionList,
+  getOpenCodeChildEnv,
+  invalidateOpenCodeSessionListCache,
+  resetOpenCodeSessionListCache as resetSharedOpenCodeSessionListCache,
+  type OpenCodeSessionListEntry,
+} from "./opencode-shared.js";
+import {
+  writeWorkspaceOpenCodeAgentsMd,
+} from "./opencode-agents-md.js";
+import { writeOpenCodeConfig } from "./opencode-config.js";
+import {
+  getOrchestratorSessionId,
+  normalizeOrchestratorSessionStrategy,
+} from "./orchestrator-session-strategy.js";
 import { sessionFromMetadata } from "./utils/session-from-metadata.js";
-import { safeJsonParse } from "./utils/validation.js";
+import { safeJsonParse, validateStatus } from "./utils/validation.js";
+import { isGitBranchNameSafe } from "./utils.js";
 import { resolveAgentSelection, resolveSessionRole } from "./agent-selection.js";
+import {
+  buildAgentPath,
+  setupPathWrapperWorkspace,
+  PREFERRED_GH_PATH,
+} from "./agent-workspace-hooks.js";
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_DISCOVERY_TIMEOUT_MS = 10_000;
@@ -90,10 +121,15 @@ async function deleteOpenCodeSession(sessionId: string): Promise<void> {
     try {
       await execFileAsync("opencode", ["session", "delete", validatedSessionId], {
         timeout: 30_000,
+        env: getOpenCodeChildEnv(),
       });
+      // Drop cached list immediately so reuse / remap / restore call sites
+      // do not observe the deleted id for the remainder of the TTL window.
+      invalidateOpenCodeSessionListCache();
       return;
     } catch (err) {
       if (errorIncludesSessionNotFound(err)) {
+        invalidateOpenCodeSessionListCache();
         return;
       }
       lastError = err;
@@ -102,42 +138,15 @@ async function deleteOpenCodeSession(sessionId: string): Promise<void> {
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-interface OpenCodeSessionListEntry {
-  id: string;
-  title: string;
-  updatedAt?: number;
+/** Re-export so existing core test-utils + session-manager call sites keep working. */
+export function resetOpenCodeSessionListCache(): void {
+  resetSharedOpenCodeSessionListCache();
 }
 
 async function fetchOpenCodeSessionList(
-  timeoutMs = OPENCODE_DISCOVERY_TIMEOUT_MS,
+  timeoutMs: number = OPENCODE_DISCOVERY_TIMEOUT_MS,
 ): Promise<OpenCodeSessionListEntry[]> {
-  try {
-    const { stdout } = await execFileAsync("opencode", ["session", "list", "--format", "json"], {
-      timeout: timeoutMs,
-    });
-    const parsed = safeJsonParse<unknown>(stdout);
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed.flatMap((entry) => {
-      if (!entry || typeof entry !== "object") return [];
-      const title = typeof entry["title"] === "string" ? entry["title"] : "";
-      const id = asValidOpenCodeSessionId(entry["id"]);
-      if (!id) return [];
-      const rawUpdated = entry["updated"];
-      let updatedAt: number | undefined;
-      if (typeof rawUpdated === "number" && Number.isFinite(rawUpdated)) {
-        updatedAt = rawUpdated;
-      } else if (typeof rawUpdated === "string") {
-        const parsedUpdated = Date.parse(rawUpdated);
-        if (!Number.isNaN(parsedUpdated)) {
-          updatedAt = parsedUpdated;
-        }
-      }
-      return [{ id, title, ...(updatedAt !== undefined ? { updatedAt } : {}) }];
-    });
-  } catch {
-    return [];
-  }
+  return getCachedOpenCodeSessionList({ timeoutMs });
 }
 
 async function discoverOpenCodeSessionIdsByTitle(
@@ -208,6 +217,59 @@ const STALE_PR_OWNERSHIP_STATUSES: ReadonlySet<string> = new Set([
   "merged",
 ]);
 
+/**
+ * Maximum length for the `displayName` metadata field.
+ * Long enough to express intent ("Refactor session manager to use flat metadata files")
+ * without overflowing kanban cards and tabs in the dashboard.
+ */
+const DISPLAY_NAME_MAX_LENGTH = 80;
+
+/**
+ * Derive a human-readable display name from any available task context.
+ *
+ * Priority:
+ *   1. Issue title (always the best signal when present)
+ *   2. First meaningful line of a freeform prompt
+ *
+ * The result is trimmed, collapsed to single-line, and truncated to
+ * {@link DISPLAY_NAME_MAX_LENGTH} characters (with an ellipsis).
+ * Returns `undefined` when no usable context exists so callers can skip
+ * writing the field entirely.
+ */
+function deriveDisplayName(input: {
+  issueTitle?: string;
+  prompt?: string;
+}): string | undefined {
+  const pickLine = (text: string): string => {
+    const line = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l.length > 0);
+    return line ?? "";
+  };
+
+  const truncate = (text: string): string => {
+    const collapsed = text.replace(/\s+/g, " ").trim();
+    // Split on code points so emoji / astral characters aren't cleaved into
+    // lone UTF-16 surrogates at the truncation boundary.
+    const codePoints = Array.from(collapsed);
+    if (codePoints.length <= DISPLAY_NAME_MAX_LENGTH) return collapsed;
+    // Leave room for the ellipsis character.
+    return `${codePoints.slice(0, DISPLAY_NAME_MAX_LENGTH - 1).join("").trimEnd()}…`;
+  };
+
+  if (input.issueTitle && input.issueTitle.trim()) {
+    return truncate(input.issueTitle);
+  }
+
+  if (input.prompt && input.prompt.trim()) {
+    const line = pickLine(input.prompt);
+    if (line) return truncate(line);
+  }
+
+  return undefined;
+}
+
 const SEND_RESTORE_READY_TIMEOUT_MS = 5_000;
 const SEND_RESTORE_READY_POLL_MS = 500;
 const SEND_CONFIRMATION_ATTEMPTS = 6;
@@ -215,9 +277,15 @@ const SEND_CONFIRMATION_POLL_MS = 500;
 const SEND_CONFIRMATION_OUTPUT_LINES = 20;
 const SEND_BOOTSTRAP_READY_TIMEOUT_MS = 20_000;
 const SEND_BOOTSTRAP_STABLE_POLLS = 2;
+const ENSURE_ORCHESTRATOR_CONFLICT_WAIT_MS = 20_000;
+const ENSURE_ORCHESTRATOR_CONFLICT_POLL_MS = 250;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isFixedOrchestratorReservationError(err: unknown, sessionId: string): boolean {
+  return err instanceof Error && err.message.includes(`Orchestrator session "${sessionId}" already exists`);
 }
 
 async function getTmuxForegroundCommand(sessionName: string): Promise<string | null> {
@@ -234,16 +302,38 @@ async function getTmuxForegroundCommand(sessionName: string): Promise<string | n
   }
 }
 
+/** Parse lifecycle from raw metadata for writeMetadata (restore path). */
+function parseLifecycleFromRaw(
+  raw: Record<string, string>,
+): CanonicalSessionLifecycle | undefined {
+  const source = raw["lifecycle"] ?? raw["statePayload"];
+  if (!source) return undefined;
+  try {
+    return JSON.parse(source) as CanonicalSessionLifecycle;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Reconstruct a Session object from raw metadata key=value pairs. */
 function metadataToSession(
   sessionId: SessionId,
   meta: Record<string, string>,
   projectId: string,
+  sessionPrefix?: string,
   createdAt?: Date,
   modifiedAt?: Date,
 ): Session {
+  const sessionKind =
+    meta["role"] === "orchestrator" ||
+    (sessionPrefix
+      ? new RegExp(`^${escapeRegex(sessionPrefix)}-orchestrator-\\d+$`).test(sessionId)
+      : false)
+      ? "orchestrator"
+      : "worker";
   return sessionFromMetadata(sessionId, meta, {
     projectId,
+    sessionKind,
     createdAt,
     lastActivityAt: modifiedAt ?? new Date(),
   });
@@ -271,13 +361,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     modifiedAt?: Date;
   }
 
-  /**
-   * Get the sessions directory for a project.
-   */
-  function getProjectSessionsDir(project: ProjectConfig): string {
-    return getSessionsDir(config.configPath, project.path);
-  }
-
   function normalizePath(path: string): string {
     return resolve(path).replace(/\/$/, "");
   }
@@ -288,13 +371,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}/`);
   }
 
-  function getManagedWorkspaceRoots(project: ProjectConfig, projectId?: string): string[] {
-    const roots = [getWorktreesDir(config.configPath, project.path)];
+  function getManagedWorkspaceRoots(projectId: string, projectPath: string): string[] {
+    const roots = [getProjectWorktreesDir(projectId)];
+    // Legacy: some worktrees live under ~/.worktrees/{basename}
     const legacyIds = new Set<string>();
-    if (projectId) {
-      legacyIds.add(projectId);
-    }
-    legacyIds.add(basename(project.path));
+    legacyIds.add(projectId);
+    legacyIds.add(basename(projectPath));
 
     for (const id of legacyIds) {
       roots.push(join(homedir(), ".worktrees", id));
@@ -308,22 +390,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     projectId: string | undefined,
     workspacePath: string,
   ): boolean {
-    if (!project) return false;
+    if (!project || !projectId) return false;
     if (normalizePath(workspacePath) === normalizePath(project.path)) return false;
 
-    const roots = getManagedWorkspaceRoots(project, projectId);
+    const roots = getManagedWorkspaceRoots(projectId, project.path);
     return roots.some((root) => isPathInside(workspacePath, root));
-  }
-
-  function listArchivedSessionIds(sessionsDir: string): string[] {
-    const archiveDir = join(sessionsDir, "archive");
-    if (!existsSync(archiveDir)) return [];
-    const ids = new Set<string>();
-    for (const file of readdirSync(archiveDir)) {
-      const match = file.match(/^([a-zA-Z0-9_-]+)_\d/);
-      if (match?.[1]) ids.add(match[1]);
-    }
-    return [...ids];
   }
 
   function isOrchestratorSessionRecord(
@@ -332,11 +403,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     sessionPrefix?: string,
   ): boolean {
     if (!raw) return false;
-    if (raw["role"] === "orchestrator" || sessionId.endsWith("-orchestrator")) return true;
+    if (raw["role"] === "orchestrator") return true;
     // Check the -orchestrator-N pattern only when the prefix is known so the
     // regex is anchored to the project prefix, preventing false-positives when
     // the user-configured sessionPrefix itself ends with "-orchestrator".
     if (sessionPrefix) {
+      if (sessionId === `${sessionPrefix}-orchestrator`) {
+        return true;
+      }
       return new RegExp(`^${escapeRegex(sessionPrefix)}-orchestrator-\\d+$`).test(sessionId);
     }
     return false;
@@ -347,6 +421,9 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     sessionId: string,
     metadata?: Record<string, string> | null,
   ): boolean {
+    if (sessionId === `${project.sessionPrefix}-orchestrator`) {
+      return true;
+    }
     return isOrchestratorSessionRecord(sessionId, metadata ?? {}, project.sessionPrefix);
   }
 
@@ -368,13 +445,35 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     return next;
   }
 
+  function buildUpdatedLifecycle(
+    sessionId: string,
+    raw: Record<string, string>,
+    updater: (lifecycle: ReturnType<typeof parseCanonicalLifecycle>) => void,
+  ) {
+    const lifecycle = cloneLifecycle(
+      parseCanonicalLifecycle(raw, {
+        sessionId,
+        status: validateStatus(raw["status"]),
+      }),
+    );
+    updater(lifecycle);
+    return lifecycle;
+  }
+
+  function lifecycleMetadataUpdates(
+    raw: Record<string, string>,
+    lifecycle: ReturnType<typeof parseCanonicalLifecycle>,
+  ): Partial<Record<string, string>> {
+    return buildLifecycleMetadataPatch(lifecycle);
+  }
+
   function updateMetadataPreservingMtime(
     sessionsDir: string,
     sessionName: string,
     updates: Partial<Record<string, string>>,
     modifiedAt?: Date,
   ): void {
-    const metaPath = join(sessionsDir, sessionName);
+    const metaPath = join(sessionsDir, `${sessionName}.json`);
     let preservedMtime = modifiedAt;
     if (!preservedMtime) {
       try {
@@ -394,6 +493,19 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     }
   }
 
+  const SESSION_CACHE_TTL_MS = 35_000;
+  let sessionCache:
+    | {
+        sessions: Session[];
+        expiresAt: number;
+      }
+    | null = null;
+  const ensureOrchestratorPromises = new Map<string, Promise<Session>>();
+
+  function invalidateCache(): void {
+    sessionCache = null;
+  }
+
   function repairSingleSessionMetadataOnRead(
     sessionsDir: string,
     record: ActiveSessionRecord,
@@ -411,21 +523,36 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     if (repaired.raw["pr"]) {
       updates["pr"] = "";
     }
-    if (repaired.raw["prAutoDetect"] !== "off") {
-      updates["prAutoDetect"] = "off";
+    if (repaired.raw["prAutoDetect"] !== "off" && repaired.raw["prAutoDetect"] !== "false") {
+      updates["prAutoDetect"] = "false";
     }
     if (STALE_PR_OWNERSHIP_STATUSES.has(repaired.raw["status"] ?? "")) {
       updates["status"] = "working";
     }
 
     if (Object.keys(updates).length > 0) {
+      const lifecycle = buildUpdatedLifecycle(repaired.sessionName, repaired.raw, (next) => {
+        next.session.kind = "orchestrator";
+        next.pr.state = "none";
+        next.pr.reason = "not_created";
+        next.pr.number = null;
+        next.pr.url = null;
+        next.pr.lastObservedAt = null;
+        if (updates["status"] === "working") {
+          next.session.state = "working";
+          next.session.reason = "task_in_progress";
+        }
+      });
       updateMetadataPreservingMtime(
         sessionsDir,
         repaired.sessionName,
-        updates,
+        { ...updates, ...lifecycleMetadataUpdates(repaired.raw, lifecycle) },
         repaired.modifiedAt,
       );
-      repaired.raw = applyMetadataUpdatesToRaw(repaired.raw, updates);
+      repaired.raw = applyMetadataUpdatesToRaw(repaired.raw, {
+        ...updates,
+        ...lifecycleMetadataUpdates(repaired.raw, lifecycle),
+      });
     }
 
     return repaired;
@@ -446,6 +573,27 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const duplicatePRAttachments = new Map<string, ActiveSessionRecord[]>();
 
     for (const record of repaired) {
+      if (!record.raw["lifecycle"] && (!record.raw["statePayload"] || record.raw["stateVersion"] !== "2")) {
+        const lifecycle = cloneLifecycle(
+          parseCanonicalLifecycle(record.raw, {
+            sessionId: record.sessionName,
+            status: validateStatus(record.raw["status"]),
+            createdAt: record.raw["createdAt"] ? new Date(record.raw["createdAt"]) : undefined,
+            sessionKind: isOrchestratorSessionRecord(record.sessionName, record.raw, sessionPrefix)
+              ? "orchestrator"
+              : "worker",
+          }),
+        );
+        const canonicalUpdates = lifecycleMetadataUpdates(record.raw, lifecycle);
+        updateMetadataPreservingMtime(
+          sessionsDir,
+          record.sessionName,
+          canonicalUpdates,
+          record.modifiedAt,
+        );
+        record.raw = applyMetadataUpdatesToRaw(record.raw, canonicalUpdates);
+      }
+
       if (isOrchestratorSessionRecord(record.sessionName, record.raw, sessionPrefix)) {
         record.raw = repairSingleSessionMetadataOnRead(sessionsDir, record, sessionPrefix).raw;
         continue;
@@ -479,19 +627,36 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       for (const record of staleRecords) {
         const updates: Partial<Record<string, string>> = {
           pr: "",
-          prAutoDetect: "off",
+          prAutoDetect: "false",
           ...(PR_TRACKING_STATUSES.has(record.raw["status"] ?? "") ? { status: "working" } : {}),
         };
-        updateMetadataPreservingMtime(sessionsDir, record.sessionName, updates, record.modifiedAt);
-        record.raw = applyMetadataUpdatesToRaw(record.raw, updates);
+        const lifecycle = buildUpdatedLifecycle(record.sessionName, record.raw, (next) => {
+          next.pr.state = "none";
+          next.pr.reason = "not_created";
+          next.pr.number = null;
+          next.pr.url = null;
+          next.pr.lastObservedAt = null;
+          if (updates["status"] === "working") {
+            next.session.state = "working";
+            next.session.reason = "task_in_progress";
+          }
+        });
+        const lifecycleUpdates = lifecycleMetadataUpdates(record.raw, lifecycle);
+        updateMetadataPreservingMtime(
+          sessionsDir,
+          record.sessionName,
+          { ...updates, ...lifecycleUpdates },
+          record.modifiedAt,
+        );
+        record.raw = applyMetadataUpdatesToRaw(record.raw, { ...updates, ...lifecycleUpdates });
       }
     }
 
     return repaired;
   }
 
-  function loadActiveSessionRecords(project: ProjectConfig): ActiveSessionRecord[] {
-    const sessionsDir = getProjectSessionsDir(project);
+  function loadActiveSessionRecords(projectId: string, project: ProjectConfig): ActiveSessionRecord[] {
+    const sessionsDir = getProjectSessionsDir(projectId);
     if (!existsSync(sessionsDir)) return [];
 
     const records = listMetadata(sessionsDir).flatMap((sessionName) => {
@@ -500,7 +665,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
       let modifiedAt: Date | undefined;
       try {
-        modifiedAt = statSync(join(sessionsDir, sessionName)).mtime;
+        modifiedAt = statSync(join(sessionsDir, `${sessionName}.json`)).mtime;
       } catch {
         void 0;
       }
@@ -509,13 +674,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     });
 
     return repairSessionMetadataOnRead(sessionsDir, records, project.sessionPrefix);
-  }
-
-  function markArchivedOpenCodeCleanup(sessionsDir: string, sessionId: SessionId): void {
-    updateArchivedMetadata(sessionsDir, sessionId, {
-      opencodeSessionId: "",
-      opencodeCleanedAt: new Date().toISOString(),
-    });
   }
 
   function sortSessionIdsForReuse(ids: string[]): string[] {
@@ -560,13 +718,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     for (const id of sortSessionIdsForReuse(listMetadata(sessionsDir))) {
       maybeAdd(id, readMetadataRaw(sessionsDir, id));
-    }
-    for (const id of sortSessionIdsForReuse(listArchivedSessionIds(sessionsDir))) {
-      maybeAdd(id, readArchivedMetadataRaw(sessionsDir, id));
-    }
-
-    if (criteria.sessionId) {
-      maybeAdd(criteria.sessionId, readArchivedMetadataRaw(sessionsDir, criteria.sessionId));
     }
 
     return [...new Set(ids)];
@@ -645,10 +796,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     tmuxName: string | undefined;
   }> {
     const usedNumbers = new Set<number>();
-    for (const sessionName of [
-      ...listMetadata(sessionsDir),
-      ...listArchivedSessionIds(sessionsDir),
-    ]) {
+    for (const sessionName of listMetadata(sessionsDir)) {
       const num = getSessionNumber(sessionName, project.sessionPrefix);
       if (num !== undefined) usedNumbers.add(num);
     }
@@ -662,8 +810,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     );
     for (let attempts = 0; attempts < 10_000; attempts++) {
       const sessionId = `${project.sessionPrefix}-${num}`;
-      const tmuxName = config.configPath
-        ? generateTmuxName(config.configPath, project.sessionPrefix, num)
+      const tmuxName = project.path
+        ? generateSessionName(project.sessionPrefix, num)
         : undefined;
 
       if (!usedNumbers.has(num) && reserveSessionId(sessionsDir, sessionId)) {
@@ -679,64 +827,21 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     );
   }
 
-  /**
-   * Reserve a unique orchestrator identity ({prefix}-orchestrator-N) for a worktree-based orchestrator.
-   * Unlike worker sessions, orchestrator IDs are assigned locally without remote branch checks.
-   */
-  function reserveNextOrchestratorIdentity(
+  function reserveFixedOrchestratorIdentity(
     project: ProjectConfig,
     sessionsDir: string,
-  ): { num: number; sessionId: string; tmuxName: string | undefined } {
-    const orchestratorPrefix = `${project.sessionPrefix}-orchestrator`;
-    const usedNumbers = new Set<number>();
-
-    const orchestratorPattern = new RegExp(`^${escapeRegex(orchestratorPrefix)}-(\\d+)$`);
-    for (const sessionName of [
-      ...listMetadata(sessionsDir),
-      ...listArchivedSessionIds(sessionsDir),
-    ]) {
-      const match = sessionName.match(orchestratorPattern);
-      if (match) {
-        const parsed = Number.parseInt(match[1], 10);
-        if (!Number.isNaN(parsed)) usedNumbers.add(parsed);
-      }
+  ): { sessionId: string; tmuxName: string | undefined } {
+    const sessionId = getOrchestratorSessionId(project);
+    if (!reserveSessionId(sessionsDir, sessionId)) {
+      throw new Error(
+        `Orchestrator session "${sessionId}" already exists. Use ensureOrchestrator() to reuse or restore it.`,
+      );
     }
 
-    // Build worker-ID patterns for all other projects. If another project has
-    // sessionPrefix === orchestratorPrefix (e.g. project B has prefix "app-orchestrator"),
-    // then its workers are named "app-orchestrator-1", "app-orchestrator-2", etc. — which
-    // would collide with our orchestrator IDs. Detect this impossible configuration early.
-    for (const [otherProjectId, otherProject] of Object.entries(config.projects)) {
-      const otherPrefix = otherProject.sessionPrefix ?? otherProjectId;
-      if (otherPrefix === project.sessionPrefix) continue;
-      if (otherPrefix === orchestratorPrefix) {
-        // Another project's workers are "{otherPrefix}-\d+" which equals "{orchestratorPrefix}-\d+".
-        // Every candidate ID we would generate collides — fail immediately with a clear message.
-        throw new Error(
-          `Cannot spawn orchestrator for project "${project.sessionPrefix}": the orchestrator ID prefix "${orchestratorPrefix}" ` +
-            `conflicts with the session prefix of project "${otherProjectId}" ("${otherPrefix}"). ` +
-            `Rename one of the project sessionPrefix values to avoid this overlap.`,
-        );
-      }
-    }
-
-    let num = 1;
-    for (let attempts = 0; attempts < 10_000; attempts++) {
-      if (!usedNumbers.has(num)) {
-        const sessionId = `${orchestratorPrefix}-${num}`;
-        const tmuxName = config.configPath
-          ? generateTmuxName(config.configPath, orchestratorPrefix, num)
-          : undefined;
-        if (reserveSessionId(sessionsDir, sessionId)) {
-          return { num, sessionId, tmuxName };
-        }
-      }
-      num += 1;
-    }
-
-    throw new Error(
-      `Failed to reserve orchestrator session ID after 10000 attempts (prefix: ${orchestratorPrefix})`,
-    );
+    return {
+      sessionId,
+      tmuxName: config.configPath ? sessionId : undefined,
+    };
   }
 
   /** Resolve which plugins to use for a project. */
@@ -762,7 +867,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     metadata: Record<string, string>,
   ) {
     return resolveAgentSelection({
-      role: resolveSessionRole(sessionId, metadata, project.sessionPrefix),
+      role: resolveSessionRole(
+        sessionId,
+        metadata,
+        project.sessionPrefix,
+        Object.values(config.projects).map((p) => p.sessionPrefix),
+      ),
       project,
       defaults: config.defaults,
       persistedAgent: metadata["agent"],
@@ -792,13 +902,13 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
   function findSessionRecord(sessionId: SessionId): LocatedSession | null {
     for (const [projectId, project] of Object.entries(config.projects)) {
-      const sessionsDir = getProjectSessionsDir(project);
+      const sessionsDir = getProjectSessionsDir(projectId);
       const raw = readMetadataRaw(sessionsDir, sessionId);
       if (!raw) continue;
 
       let modifiedAt: Date | undefined;
       try {
-        modifiedAt = statSync(join(sessionsDir, sessionId)).mtime;
+        modifiedAt = statSync(join(sessionsDir, `${sessionId}.json`)).mtime;
       } catch {
         modifiedAt = undefined;
       }
@@ -875,44 +985,75 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     plugins: ReturnType<typeof resolvePlugins>,
     handleFromMetadata: boolean,
   ): Promise<void> {
-    // Skip all subprocess/IO work for sessions already known to be terminal.
-    if (TERMINAL_SESSION_STATUSES.has(session.status)) {
-      session.activity = "exited";
-      return;
-    }
-
-    // Check runtime liveness — but only if the handle came from metadata.
+    // Check runtime liveness first — for all statuses except "spawning".
+    // Skip spawning sessions because tmux may not be fully initialized yet,
+    // and a false-negative from isAlive() would permanently mark the session
+    // as "killed" (see #1035).
+    // This also fixes #1081: terminal statuses (merged, done, etc.) should not
+    // force activity to "exited" if the agent process is still alive.
     // Fabricated handles (constructed as fallback for external sessions) should
     // NOT override status to "killed" — we don't know if the session ever had
     // a tmux session, and we'd clobber meaningful statuses like "pr_open".
-    if (handleFromMetadata && session.runtimeHandle && plugins.runtime) {
+    if (handleFromMetadata && session.runtimeHandle && plugins.runtime && session.status !== "spawning") {
       try {
         const alive = await plugins.runtime.isAlive(session.runtimeHandle);
         if (!alive) {
-          session.status = "killed";
+          session.lifecycle.runtime.state = "missing";
+          session.lifecycle.runtime.reason =
+            session.runtimeHandle.runtimeName === "tmux" ? "tmux_missing" : "process_missing";
+          session.lifecycle.runtime.lastObservedAt = new Date().toISOString();
+          if (
+            session.lifecycle.session.state !== "done" &&
+            session.lifecycle.session.state !== "terminated"
+          ) {
+            session.lifecycle.session.state = "detecting";
+            session.lifecycle.session.reason = "runtime_lost";
+            session.lifecycle.session.lastTransitionAt = new Date().toISOString();
+          }
+          // Process is confirmed dead — set activity to exited.
+          // Only update status to "killed" if not already in a terminal state.
+          if (!TERMINAL_SESSION_STATUSES.has(session.status)) {
+            session.status = "killed";
+          }
           session.activity = "exited";
+          session.activitySignal = createActivitySignal("valid", {
+            activity: "exited",
+            source: "runtime",
+          });
           return;
         }
       } catch {
         // Can't check liveness — continue to activity detection
+        session.lifecycle.runtime.state = "probe_failed";
+        session.lifecycle.runtime.reason = "probe_error";
+        session.lifecycle.runtime.lastObservedAt = new Date().toISOString();
       }
     }
 
-    // Detect activity independently of runtime handle.
+    // Detect activity independently of runtime handle and session status.
     // Activity detection reads JSONL files on disk — it only needs workspacePath,
     // not a runtime handle. Gating on runtimeHandle caused sessions created by
     // external scripts (which don't store runtimeHandle) to always show "unknown".
+    // This now runs for ALL sessions, including terminal statuses, so a merged
+    // session with a live agent shows accurate activity (ready/idle/waiting_input).
+    session.activitySignal = createActivitySignal("unavailable");
     if (plugins.agent) {
       try {
         const detected = await plugins.agent.getActivityState(session, config.readyThresholdMs);
         if (detected !== null) {
+          session.activitySignal = classifyActivitySignal(detected, "native");
           session.activity = detected.state;
+          session.lifecycle.runtime.state = "alive";
+          session.lifecycle.runtime.reason = "process_running";
+          session.lifecycle.runtime.lastObservedAt = new Date().toISOString();
           if (detected.timestamp && detected.timestamp > session.lastActivityAt) {
             session.lastActivityAt = detected.timestamp;
           }
+        } else {
+          session.activitySignal = createActivitySignal("null", { source: "native" });
         }
       } catch {
-        // Can't detect activity — keep existing value
+        session.activitySignal = createActivitySignal("probe_failure", { source: "native" });
       }
 
       // Enrich with live agent session info (summary, cost).
@@ -968,12 +1109,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     }
 
     // Get the sessions directory for this project
-    const sessionsDir = getProjectSessionsDir(project);
-
-    // Validate and store .origin file (new architecture only)
-    if (config.configPath) {
-      validateAndStoreOrigin(config.configPath, project.path);
-    }
+    const sessionsDir = getProjectSessionsDir(spawnConfig.projectId);
 
     // Determine session ID — atomically reserve to prevent concurrent collisions
     const { sessionId, tmuxName } = await reserveNextSessionIdentity(project, sessionsDir);
@@ -983,7 +1119,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     if (spawnConfig.branch) {
       branch = spawnConfig.branch;
     } else if (spawnConfig.issueId && plugins.tracker && resolvedIssue) {
-      branch = plugins.tracker.branchName(spawnConfig.issueId, project);
+      const fromIssue = resolvedIssue.branchName;
+      branch =
+        fromIssue && isGitBranchNameSafe(fromIssue)
+          ? fromIssue
+          : plugins.tracker.branchName(spawnConfig.issueId, project);
     } else if (spawnConfig.issueId) {
       // If the issueId is already branch-safe (e.g. "INT-9999"), use as-is.
       // Otherwise sanitize free-text (e.g. "fix login bug") into a valid slug.
@@ -1010,6 +1150,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           project,
           sessionId,
           branch,
+          worktreeDir: getProjectWorktreesDir(spawnConfig.projectId),
         });
         workspacePath = wsInfo.path;
 
@@ -1031,7 +1172,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       } catch (err) {
         // Clean up reserved session ID on workspace failure
         try {
-          deleteMetadata(sessionsDir, sessionId, false);
+          deleteMetadata(sessionsDir, sessionId);
         } catch {
           /* best effort */
         }
@@ -1050,26 +1191,83 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     }
 
-    const composedPrompt = buildPrompt({
+    const cleanupSpawnWorkspaceAndMetadata = async (
+      promptFile?: string,
+      opencodeConfigFile?: string,
+    ): Promise<void> => {
+      if (
+        plugins.workspace &&
+        shouldDestroyWorkspacePath(project, spawnConfig.projectId, workspacePath)
+      ) {
+        try {
+          await plugins.workspace.destroy(workspacePath);
+        } catch {
+          /* best effort */
+        }
+      }
+      try {
+        deleteMetadata(sessionsDir, sessionId);
+      } catch {
+        /* best effort */
+      }
+      if (promptFile) {
+        try {
+          unlinkSync(promptFile);
+        } catch {
+          /* best effort */
+        }
+      }
+      if (opencodeConfigFile) {
+        try {
+          unlinkSync(opencodeConfigFile);
+        } catch {
+          /* best effort */
+        }
+      }
+    };
+
+    const { systemPrompt, taskPrompt } = buildPrompt({
       project,
       projectId: spawnConfig.projectId,
       issueId: spawnConfig.issueId,
       issueContext,
       userPrompt: spawnConfig.prompt,
-      lineage: spawnConfig.lineage,
-      siblings: spawnConfig.siblings,
     });
+
+    let systemPromptFile: string | undefined;
+
+    // need a seperate config file to pass instructions for opencode session
+    let opencodeConfigFile: string | undefined;
+
+    try {
+      const baseDir = getProjectDir(spawnConfig.projectId);
+      mkdirSync(baseDir, { recursive: true });
+      systemPromptFile = join(baseDir, `worker-prompt-${sessionId}.md`);
+      writeFileSync(systemPromptFile, systemPrompt, "utf-8");
+      if (plugins.agent.name === "opencode") {
+        opencodeConfigFile = writeOpenCodeConfig(baseDir, sessionId, [systemPromptFile]);
+      }
+    } catch (err) {
+      await cleanupSpawnWorkspaceAndMetadata(systemPromptFile, opencodeConfigFile);
+      throw err;
+    }
 
     // Get agent launch config and create runtime — clean up workspace on failure
     const opencodeIssueSessionStrategy = project.opencodeIssueSessionStrategy ?? "reuse";
-    const reusedOpenCodeSessionId =
-      plugins.agent.name === "opencode" && spawnConfig.issueId
-        ? await resolveOpenCodeSessionReuse({
-            sessionsDir,
-            criteria: { issueId: spawnConfig.issueId },
-            strategy: opencodeIssueSessionStrategy,
-          })
-        : undefined;
+    let reusedOpenCodeSessionId: string | undefined;
+    try {
+      reusedOpenCodeSessionId =
+        plugins.agent.name === "opencode" && spawnConfig.issueId
+          ? await resolveOpenCodeSessionReuse({
+              sessionsDir,
+              criteria: { issueId: spawnConfig.issueId },
+              strategy: opencodeIssueSessionStrategy,
+            })
+          : undefined;
+    } catch (err) {
+      await cleanupSpawnWorkspaceAndMetadata(systemPromptFile, opencodeConfigFile);
+      throw err;
+    }
     const agentLaunchConfig = {
       sessionId,
       projectConfig: {
@@ -1080,7 +1278,8 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         },
       },
       issueId: spawnConfig.issueId,
-      prompt: composedPrompt,
+      prompt: taskPrompt,
+      systemPromptFile,
       permissions: selection.permissions,
       model: selection.model,
       subagent: spawnConfig.subagent ?? selection.subagent,
@@ -1097,6 +1296,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         launchCommand,
         environment: {
           ...environment,
+          ...(opencodeConfigFile ? { OPENCODE_CONFIG: opencodeConfigFile } : {}),
+          PATH: buildAgentPath(environment["PATH"] ?? process.env["PATH"]),
+          GH_PATH: PREFERRED_GH_PATH,
+          ...(process.env["AO_AGENT_GH_TRACE"] && {
+            AO_AGENT_GH_TRACE: process.env["AO_AGENT_GH_TRACE"],
+          }),
           AO_SESSION: sessionId,
           AO_DATA_DIR: sessionsDir, // Pass sessions directory (not root dataDir)
           AO_SESSION_NAME: sessionId, // User-facing session name
@@ -1109,41 +1314,49 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         },
       });
     } catch (err) {
-      // Clean up workspace and reserved ID if agent config or runtime creation failed
-      if (
-        plugins.workspace &&
-        shouldDestroyWorkspacePath(project, spawnConfig.projectId, workspacePath)
-      ) {
-        try {
-          await plugins.workspace.destroy(workspacePath);
-        } catch {
-          /* best effort */
-        }
-      }
-      try {
-        deleteMetadata(sessionsDir, sessionId, false);
-      } catch {
-        /* best effort */
-      }
+      // Clean up workspace, prompt file, and reserved ID if agent config or runtime creation failed
+      await cleanupSpawnWorkspaceAndMetadata(systemPromptFile, opencodeConfigFile);
       throw err;
     }
 
+    // Derive a stable display name from task context. Unlike issue-title
+    // enrichment (which is a live tracker API call), this value is captured at
+    // spawn time and persisted, so the dashboard has a good name even when the
+    // tracker is unavailable or the session has no attached PR yet.
+    const displayName = deriveDisplayName({
+      issueTitle: resolvedIssue?.title,
+      prompt: spawnConfig.prompt,
+    });
+
     // Write metadata and run post-launch setup — clean up on failure
+    const createdAt = new Date();
+    const lifecycle = createInitialCanonicalLifecycle("worker", createdAt);
+    lifecycle.runtime.handle = handle;
+    lifecycle.runtime.tmuxName = tmuxName ?? null;
+
     const session: Session = {
       id: sessionId,
       projectId: spawnConfig.projectId,
-      status: "spawning",
+      status: deriveLegacyStatus(lifecycle),
       activity: "active",
+      activitySignal: createActivitySignal("valid", {
+        activity: "active",
+        timestamp: createdAt,
+        source: "runtime",
+      }),
+      lifecycle,
       branch,
       issueId: spawnConfig.issueId ?? null,
       pr: null,
       workspacePath,
       runtimeHandle: handle,
       agentInfo: null,
-      createdAt: new Date(),
-      lastActivityAt: new Date(),
+      createdAt,
+      lastActivityAt: createdAt,
       metadata: {
         ...(reusedOpenCodeSessionId ? { opencodeSessionId: reusedOpenCodeSessionId } : {}),
+        ...(spawnConfig.prompt ? { userPrompt: spawnConfig.prompt } : {}),
+        ...(displayName ? { displayName } : {}),
       },
     };
 
@@ -1151,14 +1364,26 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       writeMetadata(sessionsDir, sessionId, {
         worktree: workspacePath,
         branch,
-        status: "spawning",
+        status: deriveLegacyStatus(lifecycle),
+        ...buildLifecycleMetadataPatch(lifecycle),
+        // Override stringified lifecycle/runtimeHandle from the patch
+        // with their canonical object forms. `buildLifecycleMetadataPatch`
+        // produces `Partial<Record<string, string>>` for the
+        // updateMetadata/mutateMetadata path; spreading it directly into
+        // a typed `SessionMetadata` literal silently widens the
+        // `lifecycle`/`runtimeHandle` fields to strings, which then get
+        // re-encoded by `JSON.stringify` and rejected by
+        // `parseLifecycleField` on the next read.
+        lifecycle,
         tmuxName, // Store tmux name for mapping
         issue: spawnConfig.issueId,
         project: spawnConfig.projectId,
         agent: selection.agentName, // Persist agent name for lifecycle manager
-        createdAt: new Date().toISOString(),
-        runtimeHandle: JSON.stringify(handle),
+        createdAt: createdAt.toISOString(),
+        runtimeHandle: handle,
         opencodeSessionId: reusedOpenCodeSessionId,
+        userPrompt: spawnConfig.prompt,
+        displayName,
       });
 
       if (plugins.agent.postLaunchSetup) {
@@ -1182,6 +1407,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       if (Object.keys(session.metadata || {}).length > 0) {
         updateMetadata(sessionsDir, sessionId, session.metadata);
       }
+      invalidateCache();
     } catch (err) {
       // Clean up runtime and workspace on post-launch failure
       try {
@@ -1189,26 +1415,13 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       } catch {
         /* best effort */
       }
-      if (
-        plugins.workspace &&
-        shouldDestroyWorkspacePath(project, spawnConfig.projectId, workspacePath)
-      ) {
-        try {
-          await plugins.workspace.destroy(workspacePath);
-        } catch {
-          /* best effort */
-        }
-      }
-      try {
-        deleteMetadata(sessionsDir, sessionId, false);
-      } catch {
-        /* best effort */
-      }
+      await cleanupSpawnWorkspaceAndMetadata(systemPromptFile);
       throw err;
     }
 
-    // Send initial prompt post-launch for agents that need it (e.g. Claude Code
-    // exits after -p, so we send the prompt after it starts in interactive mode).
+    // Send the task-specific prompt post-launch for agents that need it
+    // (e.g. Claude Code exits after -p, so we send the prompt after it starts
+    // in interactive mode).
     // This is intentionally outside the try/catch above — a prompt delivery failure
     // should NOT destroy the session. The agent is running; user can retry with `ao send`.
     let promptDelivered = false;
@@ -1247,6 +1460,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     if (session.metadata["promptDelivered"]) {
       updateMetadata(sessionsDir, sessionId, session.metadata);
+      invalidateCache();
     }
 
     return session;
@@ -1262,6 +1476,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       role: "orchestrator",
       project,
       defaults: config.defaults,
+      spawnAgentOverride: orchestratorConfig.agent,
     });
     const plugins = resolvePlugins(project, selection.agentName);
     if (!plugins.runtime) {
@@ -1271,31 +1486,23 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       throw new Error(`Agent plugin '${selection.agentName}' not found`);
     }
 
+    // Get the sessions directory for this project
+    const sessionsDir = getProjectSessionsDir(orchestratorConfig.projectId);
+
     const orchestratorSessionStrategy = normalizeOrchestratorSessionStrategy(
       project.orchestratorSessionStrategy,
     );
 
-    // Get the sessions directory for this project
-    const sessionsDir = getProjectSessionsDir(project);
-
-    // Validate and store .origin file before reserving any identity so that
-    // a validation failure does not leave an orphaned metadata entry.
-    if (config.configPath) {
-      validateAndStoreOrigin(config.configPath, project.path);
-    }
-
-    // Reserve a new unique orchestrator identity (e.g. {prefix}-orchestrator-1, -2, …).
-    // Each spawnOrchestrator call gets its own numbered session and isolated worktree.
-    const identity = reserveNextOrchestratorIdentity(project, sessionsDir);
+    const identity = reserveFixedOrchestratorIdentity(project, sessionsDir);
     const sessionId = identity.sessionId;
     const tmuxName = identity.tmuxName;
 
-    // Each orchestrator gets an isolated worktree on its own branch.
+    // The main orchestrator is deterministic, but still uses an isolated worktree.
     const branch = `orchestrator/${sessionId}`;
 
     if (!plugins.workspace) {
       try {
-        deleteMetadata(sessionsDir, sessionId, false);
+        deleteMetadata(sessionsDir, sessionId);
       } catch {
         /* best effort */
       }
@@ -1311,11 +1518,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         project,
         sessionId,
         branch,
+        worktreeDir: getProjectWorktreesDir(orchestratorConfig.projectId),
       });
       workspacePath = wsInfo.path;
     } catch (err) {
       try {
-        deleteMetadata(sessionsDir, sessionId, false);
+        deleteMetadata(sessionsDir, sessionId);
       } catch {
         /* best effort */
       }
@@ -1332,7 +1540,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         /* best effort */
       }
       try {
-        deleteMetadata(sessionsDir, sessionId, false);
+        deleteMetadata(sessionsDir, sessionId);
       } catch {
         /* best effort */
       }
@@ -1345,10 +1553,16 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     };
 
-    // Setup agent hooks for automatic metadata updates
+    // Setup agent hooks for automatic metadata updates.
+    // Claude Code uses native PostToolUse hooks for metadata writes — skip
+    // PATH wrappers to avoid two concurrent writers (wrapper + hook) hitting
+    // the same metadata file with no locking.
     try {
       if (plugins.agent.setupWorkspaceHooks) {
         await plugins.agent.setupWorkspaceHooks(workspacePath, { dataDir: sessionsDir });
+      }
+      if (plugins.agent.name !== "claude-code") {
+        await setupPathWrapperWorkspace(workspacePath);
       }
     } catch (err) {
       await cleanupWorktreeAndMetadata();
@@ -1361,10 +1575,19 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     let systemPromptFile: string | undefined;
     if (orchestratorConfig.systemPrompt) {
       try {
-        const baseDir = getProjectBaseDir(config.configPath, project.path);
-        mkdirSync(baseDir, { recursive: true });
-        systemPromptFile = join(baseDir, `orchestrator-prompt-${sessionId}.md`);
+        const projectDir = getProjectDir(orchestratorConfig.projectId);
+        mkdirSync(projectDir, { recursive: true });
+        systemPromptFile = join(projectDir, `orchestrator-prompt-${sessionId}.md`);
         writeFileSync(systemPromptFile, orchestratorConfig.systemPrompt, "utf-8");
+      } catch (err) {
+        await cleanupWorktreeAndMetadata(systemPromptFile);
+        throw err;
+      }
+    }
+
+    if (plugins.agent.name === "opencode" && systemPromptFile) {
+      try {
+        writeWorkspaceOpenCodeAgentsMd(workspacePath, systemPromptFile);
       } catch (err) {
         await cleanupWorktreeAndMetadata(systemPromptFile);
         throw err;
@@ -1424,6 +1647,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         launchCommand,
         environment: {
           ...environment,
+          PATH: buildAgentPath(environment["PATH"] ?? process.env["PATH"]),
+          GH_PATH: PREFERRED_GH_PATH,
+          ...(process.env["AO_AGENT_GH_TRACE"] && {
+            AO_AGENT_GH_TRACE: process.env["AO_AGENT_GH_TRACE"],
+          }),
           AO_SESSION: sessionId,
           AO_DATA_DIR: sessionsDir,
           AO_SESSION_NAME: sessionId,
@@ -1439,22 +1667,44 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       throw err;
     }
 
+    // Derive a stable display name from the orchestrator's system prompt so
+    // the dashboard shows something more useful than "Ao Orchestrator 8".
+    const displayName = deriveDisplayName({
+      prompt: orchestratorConfig.systemPrompt,
+    });
+
     // Write metadata and run post-launch setup
+    const createdAt = new Date();
+    const lifecycle = createInitialCanonicalLifecycle("orchestrator", createdAt);
+    lifecycle.session.state = "working";
+    lifecycle.session.reason = "task_in_progress";
+    lifecycle.session.startedAt = createdAt.toISOString();
+    lifecycle.session.lastTransitionAt = createdAt.toISOString();
+    lifecycle.runtime.handle = handle;
+    lifecycle.runtime.tmuxName = tmuxName ?? null;
+
     const session: Session = {
       id: sessionId,
       projectId: orchestratorConfig.projectId,
-      status: "working",
+      status: deriveLegacyStatus(lifecycle),
       activity: "active",
+      activitySignal: createActivitySignal("valid", {
+        activity: "active",
+        timestamp: createdAt,
+        source: "runtime",
+      }),
+      lifecycle,
       branch,
       issueId: null,
       pr: null,
       workspacePath,
       runtimeHandle: handle,
       agentInfo: null,
-      createdAt: new Date(),
-      lastActivityAt: new Date(),
+      createdAt,
+      lastActivityAt: createdAt,
       metadata: {
         ...(reusableOpenCodeSessionId ? { opencodeSessionId: reusableOpenCodeSessionId } : {}),
+        ...(displayName ? { displayName } : {}),
       },
     };
 
@@ -1462,14 +1712,19 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       writeMetadata(sessionsDir, sessionId, {
         worktree: workspacePath,
         branch,
-        status: "working",
+        status: deriveLegacyStatus(lifecycle),
+        ...buildLifecycleMetadataPatch(lifecycle),
+        // Object overrides for the typed writeMetadata path —
+        // see the spawnSession site for the rationale.
+        lifecycle,
         role: "orchestrator",
         tmuxName,
         project: orchestratorConfig.projectId,
         agent: selection.agentName,
-        createdAt: new Date().toISOString(),
-        runtimeHandle: JSON.stringify(handle),
+        createdAt: createdAt.toISOString(),
+        runtimeHandle: handle,
         opencodeSessionId: reusableOpenCodeSessionId,
+        displayName,
       });
 
       if (plugins.agent.postLaunchSetup) {
@@ -1493,6 +1748,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       if (Object.keys(session.metadata || {}).length > 0) {
         updateMetadata(sessionsDir, sessionId, session.metadata);
       }
+      invalidateCache();
     } catch (err) {
       // Clean up runtime on post-launch failure
       try {
@@ -1507,10 +1763,90 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     return session;
   }
 
+  async function waitForConcurrentOrchestrator(sessionId: string): Promise<Session | null> {
+    const deadline = Date.now() + ENSURE_ORCHESTRATOR_CONFLICT_WAIT_MS;
+    while (Date.now() < deadline) {
+      const existing = await get(sessionId);
+      if (existing?.metadata["role"] === "orchestrator") {
+        return existing;
+      }
+      await sleep(ENSURE_ORCHESTRATOR_CONFLICT_POLL_MS);
+    }
+    return null;
+  }
+
+  async function ensureOrchestratorInternal(orchestratorConfig: OrchestratorSpawnConfig): Promise<Session> {
+    const project = config.projects[orchestratorConfig.projectId];
+    if (!project) {
+      throw new Error(`Unknown project: ${orchestratorConfig.projectId}`);
+    }
+
+    const sessionId = getOrchestratorSessionId(project);
+    const existing = await get(sessionId);
+    if (existing) {
+      const orchestratorSessionStrategy = normalizeOrchestratorSessionStrategy(
+        project.orchestratorSessionStrategy,
+      );
+      if (
+        orchestratorSessionStrategy === "delete" ||
+        orchestratorSessionStrategy === "ignore"
+      ) {
+        await kill(sessionId, { purgeOpenCode: orchestratorSessionStrategy === "delete" });
+        deleteMetadata(getProjectSessionsDir(orchestratorConfig.projectId), sessionId);
+        return spawnOrchestrator(orchestratorConfig);
+      }
+      if (existing.lifecycle.session.state === "done") {
+        throw new SessionNotRestorableError(
+          sessionId,
+          `canonical orchestrator session is terminal with status "${existing.status}". Remove or clean up this session before starting a new orchestrator.`,
+        );
+      }
+      if (isRestorable(existing)) {
+        return restore(sessionId);
+      }
+      if (!isTerminalSession(existing)) {
+        return existing;
+      }
+      throw new SessionNotRestorableError(
+        sessionId,
+        `canonical orchestrator session is terminal with status "${existing.status}". Remove or clean up this session before starting a new orchestrator.`,
+      );
+    }
+
+    try {
+      return await spawnOrchestrator(orchestratorConfig);
+    } catch (err) {
+      if (!isFixedOrchestratorReservationError(err, sessionId)) {
+        throw err;
+      }
+
+      const concurrent = await waitForConcurrentOrchestrator(sessionId);
+      if (concurrent) return concurrent;
+      throw err;
+    }
+  }
+
+  async function ensureOrchestrator(orchestratorConfig: OrchestratorSpawnConfig): Promise<Session> {
+    const project = config.projects[orchestratorConfig.projectId];
+    if (!project) {
+      throw new Error(`Unknown project: ${orchestratorConfig.projectId}`);
+    }
+
+    const sessionId = getOrchestratorSessionId(project);
+    const existingPromise = ensureOrchestratorPromises.get(sessionId);
+    if (existingPromise) return existingPromise;
+
+    const promise = ensureOrchestratorInternal(orchestratorConfig).finally(() => {
+      ensureOrchestratorPromises.delete(sessionId);
+    });
+    ensureOrchestratorPromises.set(sessionId, promise);
+    return promise;
+  }
+
   async function list(projectId?: string): Promise<Session[]> {
     const allSessions = Object.entries(config.projects).flatMap(([entryProjectId, project]) => {
       if (projectId && entryProjectId !== projectId) return [];
-      return loadActiveSessionRecords(project).map((record) => ({
+      return loadActiveSessionRecords(entryProjectId, project).map((record) => ({
         sessionName: record.sessionName,
         projectId: entryProjectId,
         raw: record.raw,
@@ -1522,12 +1858,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       const project = config.projects[sessionProjectId];
       if (!project) return null;
 
-      const sessionsDir = getProjectSessionsDir(project);
+      const sessionsDir = getProjectSessionsDir(sessionProjectId);
 
       let createdAt: Date | undefined;
       let modifiedAt: Date | undefined;
       try {
-        const metaPath = join(sessionsDir, sessionName);
+        const metaPath = join(sessionsDir, `${sessionName}.json`);
         const stats = statSync(metaPath);
         createdAt = stats.birthtime;
         modifiedAt = stats.mtime;
@@ -1535,7 +1871,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         // If stat fails, timestamps will fall back to current time
       }
 
-      const session = metadataToSession(sessionName, raw, sessionProjectId, createdAt, modifiedAt);
+      const session = metadataToSession(
+        sessionName,
+        raw,
+        sessionProjectId,
+        project.sessionPrefix,
+        createdAt,
+        modifiedAt,
+      );
       const selection = resolveSelectionForSession(project, sessionName, raw);
       const effectiveAgentName = selection.agentName;
       const plugins = resolvePlugins(project, effectiveAgentName);
@@ -1565,6 +1908,35 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         }
       }
 
+      // Persist lifecycle to disk when enrichment detected a dead runtime.
+      // enrichSessionWithRuntimeState updates the in-memory lifecycle but
+      // doesn't write to disk — without this, the stale "alive" state persists
+      // and the dashboard shows terminated sessions on the active sidebar.
+      if (
+        session.lifecycle &&
+        (session.lifecycle.runtime.state === "missing" ||
+          session.lifecycle.runtime.state === "exited") &&
+        session.lifecycle.session.state !== "terminated" &&
+        session.lifecycle.session.state !== "done"
+      ) {
+        try {
+          const persisted = buildUpdatedLifecycle(sessionName, raw, (next) => {
+            next.session.state = "terminated";
+            next.session.reason = "runtime_lost";
+            next.session.terminatedAt = new Date().toISOString();
+            next.session.lastTransitionAt = next.session.terminatedAt;
+            next.runtime.state = session.lifecycle!.runtime.state;
+            next.runtime.reason = session.lifecycle!.runtime.reason;
+            next.runtime.lastObservedAt = new Date().toISOString();
+          });
+          updateMetadata(sessionsDir, sessionName, lifecycleMetadataUpdates(raw, persisted));
+          session.lifecycle = persisted;
+          session.status = deriveLegacyStatus(persisted);
+        } catch {
+          // Persist failed — in-memory state is still correct for this request
+        }
+      }
+
       return session;
     });
 
@@ -1572,10 +1944,28 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     return resolved.filter((session): session is Session => session !== null);
   }
 
+  async function listCached(projectId?: string): Promise<Session[]> {
+    if (sessionCache && Date.now() < sessionCache.expiresAt) {
+      return projectId
+        ? sessionCache.sessions.filter((session) => session.projectId === projectId)
+        : sessionCache.sessions;
+    }
+
+    const sessions = await list();
+    sessionCache = {
+      sessions,
+      expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
+    };
+
+    return projectId
+      ? sessions.filter((session) => session.projectId === projectId)
+      : sessions;
+  }
+
   async function get(sessionId: SessionId): Promise<Session | null> {
     // Try to find the session in any project's sessions directory
     for (const [projectId, project] of Object.entries(config.projects)) {
-      const sessionsDir = getProjectSessionsDir(project);
+      const sessionsDir = getProjectSessionsDir(projectId);
       const raw = readMetadataRaw(sessionsDir, sessionId);
       if (!raw) continue;
 
@@ -1583,7 +1973,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       let createdAt: Date | undefined;
       let modifiedAt: Date | undefined;
       try {
-        const metaPath = join(sessionsDir, sessionId);
+        const metaPath = join(sessionsDir, `${sessionId}.json`);
         const stats = statSync(metaPath);
         createdAt = stats.birthtime;
         modifiedAt = stats.mtime;
@@ -1597,7 +1987,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         project.sessionPrefix,
       );
 
-      const session = metadataToSession(sessionId, repaired.raw, projectId, createdAt, modifiedAt);
+      const session = metadataToSession(
+        sessionId,
+        repaired.raw,
+        projectId,
+        project.sessionPrefix,
+        createdAt,
+        modifiedAt,
+      );
 
       const selection = resolveSelectionForSession(project, sessionId, repaired.raw);
       const effectiveAgentName = selection.agentName;
@@ -1617,9 +2014,33 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     return null;
   }
 
-  async function kill(sessionId: SessionId, options?: { purgeOpenCode?: boolean }): Promise<void> {
-    const { raw, sessionsDir, project, projectId } = requireSessionRecord(sessionId);
+  async function kill(sessionId: SessionId, options?: KillOptions): Promise<KillResult> {
+    const located = findSessionRecord(sessionId);
+    if (!located) {
+      // Session not found via findSessionRecord — check if it exists with
+      // a terminated lifecycle so auto-cleanup retries don't throw.
+      for (const [killProjectId] of Object.entries(config.projects)) {
+        const sessionsDir = getProjectSessionsDir(killProjectId);
+        const raw = readMetadataRaw(sessionsDir, sessionId);
+        if (raw) {
+          const lifecycle = parseLifecycleFromRaw(raw);
+          if (lifecycle?.session.state === "terminated") {
+            return { cleaned: false, alreadyTerminated: true };
+          }
+        }
+      }
+      throw new SessionNotFoundError(sessionId);
+    }
+    const { raw, sessionsDir, project, projectId } = located;
 
+    // Idempotency: if lifecycle already says terminated, don't re-run destroys
+    // (which could double-purge opencode or race with concurrent kills).
+    const existingLifecycle = parseCanonicalLifecycle(raw);
+    if (existingLifecycle?.session.state === "terminated") {
+      return { cleaned: false, alreadyTerminated: true };
+    }
+
+    const killReason: LifecycleKillReason = options?.reason ?? "manually_killed";
     const cleanupAgent = resolveSelectionForSession(project, sessionId, raw).agentName;
 
     // Destroy runtime — prefer handle.runtimeName to find the correct plugin
@@ -1674,11 +2095,31 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     }
 
-    // Archive metadata
-    deleteMetadata(sessionsDir, sessionId, true);
-    if (didPurgeOpenCodeSession) {
-      markArchivedOpenCodeCleanup(sessionsDir, sessionId);
-    }
+    const runtimeReason =
+      killReason === "pr_merged"
+        ? "pr_merged_cleanup"
+        : killReason === "auto_cleanup"
+          ? "auto_cleanup"
+          : "manual_kill_requested";
+    const terminatedLifecycle = buildUpdatedLifecycle(sessionId, raw, (next) => {
+      next.session.state = "terminated";
+      next.session.reason = killReason;
+      next.session.terminatedAt = new Date().toISOString();
+      next.session.lastTransitionAt = next.session.terminatedAt;
+      next.runtime.state = raw["runtimeHandle"] || raw["tmuxName"] ? "missing" : "exited";
+      next.runtime.reason = runtimeReason;
+      next.runtime.lastObservedAt = new Date().toISOString();
+    });
+    updateMetadata(sessionsDir, sessionId, {
+      ...lifecycleMetadataUpdates(raw, terminatedLifecycle),
+      ...(didPurgeOpenCodeSession && {
+        opencodeSessionId: "",
+        opencodeCleanedAt: new Date().toISOString(),
+      }),
+    });
+
+    invalidateCache();
+    return { cleaned: true, alreadyTerminated: false };
   }
 
   async function cleanup(
@@ -1687,9 +2128,6 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   ): Promise<CleanupResult> {
     const result: CleanupResult = { killed: [], skipped: [], errors: [] };
     const sessions = await list(projectId);
-    const activeSessionKeys = new Set(
-      sessions.map((session) => `${session.projectId}:${session.id}`),
-    );
 
     const killedKeys = new Set<string>();
     const skippedKeys = new Set<string>();
@@ -1736,11 +2174,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         const plugins = resolvePlugins(project);
         let shouldKill = false;
 
-        // Check if PR is merged
+        // Check if PR was closed without merging.
         if (session.pr && plugins.scm) {
           try {
             const prState = await plugins.scm.getPRState(session.pr);
-            if (prState === PR_STATE.MERGED || prState === PR_STATE.CLOSED) {
+            if (prState === PR_STATE.CLOSED) {
               shouldKill = true;
             }
           } catch {
@@ -1784,43 +2222,55 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     }
 
+    // Clean up terminated sessions with uncleaned OpenCode mappings.
+    // These sessions are already in sessions/ (returned by listMetadata) and may
+    // have been processed by the first loop via list(). We skip sessions that were
+    // already killed above, but still process those that were only skipped.
     for (const [projectKey, project] of Object.entries(config.projects)) {
       if (projectId && projectKey !== projectId) continue;
 
-      const sessionsDir = getProjectSessionsDir(project);
-      for (const archivedId of listArchivedSessionIds(sessionsDir)) {
-        if (activeSessionKeys.has(`${projectKey}:${archivedId}`)) continue;
+      const sessionsDir = getProjectSessionsDir(projectKey);
+      for (const terminatedId of listMetadata(sessionsDir)) {
+        const entryKey = toEntryKey(projectKey, terminatedId);
+        if (killedKeys.has(entryKey)) continue;
 
-        const archived = readArchivedMetadataRaw(sessionsDir, archivedId);
-        if (!archived) continue;
+        const terminatedRaw = readMetadataRaw(sessionsDir, terminatedId);
+        if (!terminatedRaw) continue;
 
-        if (isCleanupProtectedSession(project, archivedId, archived)) {
-          pushSkipped(projectKey, archivedId);
+        const lifecycle = parseLifecycleFromRaw(terminatedRaw);
+        if (lifecycle?.session.state !== "terminated") continue;
+
+        if (isCleanupProtectedSession(project, terminatedId, terminatedRaw)) {
+          pushSkipped(projectKey, terminatedId);
           continue;
         }
 
-        const cleanupAgent = resolveSelectionForSession(project, archivedId, archived).agentName;
-        const mappedOpenCodeSessionId = asValidOpenCodeSessionId(archived["opencodeSessionId"]);
-        if (cleanupAgent === "opencode" && archived["opencodeCleanedAt"]) {
-          pushSkipped(projectKey, archivedId);
+        const cleanupAgent = resolveSelectionForSession(project, terminatedId, terminatedRaw).agentName;
+        const mappedOpenCodeSessionId = asValidOpenCodeSessionId(terminatedRaw["opencodeSessionId"]);
+        if (cleanupAgent === "opencode" && terminatedRaw["opencodeCleanedAt"]) {
+          pushSkipped(projectKey, terminatedId);
           continue;
         }
         if (cleanupAgent === "opencode" && mappedOpenCodeSessionId && shouldPurgeOpenCode) {
           if (!options?.dryRun) {
             try {
               await deleteOpenCodeSession(mappedOpenCodeSessionId);
-              markArchivedOpenCodeCleanup(sessionsDir, archivedId);
+              mutateMetadata(sessionsDir, terminatedId, (existing) => ({
+                ...existing,
+                opencodeSessionId: "",
+                opencodeCleanedAt: new Date().toISOString(),
+              }));
             } catch (err) {
               result.errors.push({
-                sessionId: archivedId,
+                sessionId: terminatedId,
                 error: `Failed to delete OpenCode session ${mappedOpenCodeSessionId}: ${err instanceof Error ? err.message : String(err)}`,
               });
               continue;
             }
           }
-          pushKilled(projectKey, archivedId);
+          pushKilled(projectKey, terminatedId);
         } else {
-          pushSkipped(projectKey, archivedId);
+          pushSkipped(projectKey, terminatedId);
         }
       }
     }
@@ -1856,6 +2306,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       if (discovered) {
         raw["opencodeSessionId"] = discovered;
         updateMetadata(sessionsDir, sessionId, { opencodeSessionId: discovered });
+        invalidateCache();
       }
     }
     const parsedHandle = raw["runtimeHandle"]
@@ -1958,10 +2409,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     };
 
-    const waitForRestoredSession = async (restoredSession: Session): Promise<void> => {
+    const waitForRestoredSession = async (restoredSession: Session): Promise<boolean> => {
       const handle = restoredSession.runtimeHandle;
       if (!handle) {
-        return;
+        return false;
       }
 
       const deadline = Date.now() + SEND_RESTORE_READY_TIMEOUT_MS;
@@ -1979,11 +2430,11 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           foregroundCommand === null || foregroundCommand === agentPlugin.processName;
 
         if (runtimeAlive && foregroundReady && (processRunning || output.trim().length > 0)) {
-          return;
+          return true;
         }
 
         if (Date.now() >= deadline) {
-          return;
+          return false;
         }
 
         await sleep(SEND_RESTORE_READY_POLL_MS);
@@ -1991,13 +2442,16 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     };
 
     const restoreForDelivery = async (reason: string, session: Session): Promise<Session> => {
-      if (NON_RESTORABLE_STATUSES.has(session.status)) {
+      if (session.lifecycle.session.state === "done") {
         throw new Error(`Cannot send to session ${sessionId}: ${reason}`);
       }
 
       try {
         const restored = await restore(sessionId);
-        await waitForRestoredSession(restored);
+        const ready = await waitForRestoredSession(restored);
+        if (!ready) {
+          throw new Error("restored session did not become ready for delivery");
+        }
         return restored;
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
@@ -2102,7 +2556,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       await sendWithConfirmation(prepared);
     } catch (err) {
       const shouldRetryWithRestore =
-        prepared.restoredAt === undefined && !NON_RESTORABLE_STATUSES.has(prepared.status);
+        prepared.restoredAt === undefined && isRestorable(prepared);
 
       if (!shouldRetryWithRestore) {
         if (err instanceof Error) {
@@ -2154,7 +2608,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     }
 
     const conflictingSessions = new Set<SessionId>();
-    const activeRecords = loadActiveSessionRecords(project).filter(
+    const activeRecords = loadActiveSessionRecords(projectId, project).filter(
       (record) => record.sessionName !== sessionId,
     );
 
@@ -2163,7 +2617,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
       const samePr = otherRaw["pr"] === pr.url;
       const sameBranch =
-        otherRaw["branch"] === pr.branch && (otherRaw["prAutoDetect"] ?? "on") !== "off";
+        otherRaw["branch"] === pr.branch && (otherRaw["prAutoDetect"] ?? "on") !== "off" && otherRaw["prAutoDetect"] !== "false";
 
       if (samePr || sameBranch) {
         conflictingSessions.add(sessionName);
@@ -2179,22 +2633,46 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     const branchChanged = await scm.checkoutPR(pr, workspacePath);
 
+    const claimLifecycle = buildUpdatedLifecycle(sessionId, raw, (next) => {
+      next.pr.state = "open";
+      next.pr.reason = "in_progress";
+      next.pr.number = pr.number;
+      next.pr.url = pr.url;
+      next.pr.lastObservedAt = new Date().toISOString();
+    });
     updateMetadata(sessionsDir, sessionId, {
       pr: pr.url,
-      status: "pr_open",
+      status: deriveLegacyStatus(claimLifecycle),
       branch: pr.branch,
       prAutoDetect: "",
+      ...lifecycleMetadataUpdates(raw, claimLifecycle),
     });
+    invalidateCache();
 
     for (const previousSessionId of takenOverFrom) {
       const previousRaw = readMetadataRaw(sessionsDir, previousSessionId);
       if (!previousRaw) continue;
 
+      const previousLifecycle = buildUpdatedLifecycle(previousSessionId, previousRaw, (next) => {
+        next.pr.state = "none";
+        next.pr.reason = "not_created";
+        next.pr.number = null;
+        next.pr.url = null;
+        next.pr.lastObservedAt = null;
+        if (PR_TRACKING_STATUSES.has(previousRaw["status"] ?? "")) {
+          next.session.state = "working";
+          next.session.reason = "task_in_progress";
+        }
+      });
       updateMetadata(sessionsDir, previousSessionId, {
         pr: "",
-        prAutoDetect: "off",
-        ...(PR_TRACKING_STATUSES.has(previousRaw["status"] ?? "") ? { status: "working" } : {}),
+        prAutoDetect: "false",
+        ...(PR_TRACKING_STATUSES.has(previousRaw["status"] ?? "")
+          ? { status: "working" }
+          : {}),
+        ...lifecycleMetadataUpdates(previousRaw, previousLifecycle),
       });
+      invalidateCache();
     }
 
     let githubAssigned = false;
@@ -2249,40 +2727,16 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
   }
 
   async function restore(sessionId: SessionId): Promise<Session> {
-    // 1. Find session metadata across all projects (active first, then archive)
-    let raw: Record<string, string> | null = null;
-    let sessionsDir: string | null = null;
-    let project: ProjectConfig | undefined;
-    let projectId: string | undefined;
-    let fromArchive = false;
-
+    // 1. Find session metadata across all projects
     const activeRecord = findSessionRecord(sessionId);
-    if (activeRecord) {
-      raw = activeRecord.raw;
-      sessionsDir = activeRecord.sessionsDir;
-      project = activeRecord.project;
-      projectId = activeRecord.projectId;
-    }
-
-    // Fall back to archived metadata (killed/cleaned sessions)
-    if (!raw) {
-      for (const [key, proj] of Object.entries(config.projects)) {
-        const dir = getProjectSessionsDir(proj);
-        const archived = readArchivedMetadataRaw(dir, sessionId);
-        if (archived) {
-          raw = archived;
-          sessionsDir = dir;
-          project = proj;
-          projectId = key;
-          fromArchive = true;
-          break;
-        }
-      }
-    }
-
-    if (!raw || !sessionsDir || !project || !projectId) {
+    if (!activeRecord) {
       throw new SessionNotFoundError(sessionId);
     }
+
+    let raw: Record<string, string> = activeRecord.raw;
+    const sessionsDir: string = activeRecord.sessionsDir;
+    const project: ProjectConfig = activeRecord.project;
+    const projectId: string = activeRecord.projectId;
 
     const selection = resolveSelectionForSession(project, sessionId, raw);
     const selectedAgent = selection.agentName;
@@ -2295,46 +2749,23 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         throw new SessionNotRestorableError(sessionId, "OpenCode session mapping is missing");
       }
       raw = { ...raw, opencodeSessionId: discovered };
-      if (!fromArchive) {
-        updateMetadata(sessionsDir, sessionId, { opencodeSessionId: discovered });
-      }
+      updateMetadata(sessionsDir, sessionId, { opencodeSessionId: discovered });
     }
 
     // 2. Reconstruct Session from metadata and enrich with live runtime state.
     //    metadataToSession sets activity: null, so without enrichment a crashed
     //    session (status "working", agent exited) would not be detected as terminal
     //    and isRestorable would reject it.
-    const session = metadataToSession(sessionId, raw, projectId);
+    const session = metadataToSession(sessionId, raw, projectId, project.sessionPrefix);
     const plugins = resolvePlugins(project, selection.agentName);
     await enrichSessionWithRuntimeState(session, plugins, true);
 
     // 3. Validate restorability
     if (!isRestorable(session)) {
-      if (NON_RESTORABLE_STATUSES.has(session.status)) {
-        throw new SessionNotRestorableError(sessionId, `status is "${session.status}"`);
-      }
-      throw new SessionNotRestorableError(sessionId, "session is not in a terminal state");
-    }
-
-    if (fromArchive) {
-      writeMetadata(sessionsDir, sessionId, {
-        worktree: raw["worktree"] ?? "",
-        branch: raw["branch"] ?? "",
-        status: raw["status"] ?? "killed",
-        role: raw["role"],
-        tmuxName: raw["tmuxName"],
-        issue: raw["issue"],
-        pr: raw["pr"],
-        prAutoDetect:
-          raw["prAutoDetect"] === "off" ? "off" : raw["prAutoDetect"] === "on" ? "on" : undefined,
-        summary: raw["summary"],
-        project: raw["project"],
-        agent: raw["agent"],
-        createdAt: raw["createdAt"],
-        runtimeHandle: raw["runtimeHandle"],
-        opencodeSessionId: raw["opencodeSessionId"],
-        pinnedSummary: raw["pinnedSummary"],
-      });
+      const reason = NON_RESTORABLE_STATUSES.has(session.status)
+        ? `status "${session.status}" is not restorable`
+        : `session is not in a terminal state (status: "${session.status}", activity: "${session.activity}")`;
+      throw new SessionNotRestorableError(sessionId, reason);
     }
 
     // 4. Validate required plugins (plugins already resolved above for enrichment)
@@ -2366,6 +2797,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
             project,
             sessionId,
             branch: session.branch,
+            worktreeDir: getProjectWorktreesDir(projectId),
           },
           workspacePath,
         );
@@ -2382,6 +2814,30 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     }
 
+    if (plugins.agent.name === "opencode" && selection.role === "orchestrator") {
+      const projectDir = getProjectDir(projectId);
+      const systemPromptFile = join(projectDir, `orchestrator-prompt-${sessionId}.md`);
+      if (existsSync(systemPromptFile)) {
+        try {
+          writeWorkspaceOpenCodeAgentsMd(workspacePath, systemPromptFile);
+        } catch (err) {
+          throw new Error(
+            `failed to restore OpenCode orchestrator AGENTS.md: ${err instanceof Error ? err.message : String(err)}`,
+            { cause: err },
+          );
+        }
+      }
+    }
+
+    let opencodeConfigPath: string | undefined;
+    if (plugins.agent.name === "opencode" && selection.role !== "orchestrator") {
+      const baseDir = getProjectDir(projectId!);
+      const systemPromptFile = join(baseDir, `worker-prompt-${sessionId}.md`);
+      if (existsSync(systemPromptFile)) {
+        opencodeConfigPath = writeOpenCodeConfig(baseDir, sessionId, [systemPromptFile]);
+      }
+    }
+
     // 6. Destroy old runtime if still alive (e.g. tmux session survives agent crash)
     if (session.runtimeHandle) {
       try {
@@ -2393,18 +2849,19 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     // 7. Get launch command — try restore command first, fall back to fresh launch
     let launchCommand: string;
+    const projectConfigForLaunch: ProjectConfig = {
+      ...project,
+      agentConfig: {
+        ...selection.agentConfig,
+        ...(selection.role === "orchestrator" ? { permissions: "permissionless" as const } : {}),
+        ...(session.metadata?.opencodeSessionId
+          ? { opencodeSessionId: session.metadata.opencodeSessionId }
+          : {}),
+      },
+    };
     const agentLaunchConfig = {
       sessionId,
-      projectConfig: {
-        ...project,
-        agentConfig: {
-          ...selection.agentConfig,
-          ...(selection.role === "orchestrator" ? { permissions: "permissionless" as const } : {}),
-          ...(session.metadata?.opencodeSessionId
-            ? { opencodeSessionId: session.metadata.opencodeSessionId }
-            : {}),
-        },
-      },
+      projectConfig: projectConfigForLaunch,
       issueId: session.issueId ?? undefined,
       permissions: selection.role === "orchestrator" ? "permissionless" : selection.permissions,
       model: selection.model,
@@ -2412,7 +2869,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     };
 
     if (plugins.agent.getRestoreCommand) {
-      const restoreCmd = await plugins.agent.getRestoreCommand(session, project);
+      const restoreCmd = await plugins.agent.getRestoreCommand(session, projectConfigForLaunch);
       launchCommand = restoreCmd ?? plugins.agent.getLaunchCommand(agentLaunchConfig);
     } else {
       launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
@@ -2428,6 +2885,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       launchCommand,
       environment: {
         ...environment,
+        ...(opencodeConfigPath ? { OPENCODE_CONFIG: opencodeConfigPath } : {}),
+        PATH: buildAgentPath(environment["PATH"] ?? process.env["PATH"]),
+        GH_PATH: PREFERRED_GH_PATH,
+        ...(process.env["AO_AGENT_GH_TRACE"] && {
+          AO_AGENT_GH_TRACE: process.env["AO_AGENT_GH_TRACE"],
+        }),
         AO_SESSION: sessionId,
         AO_DATA_DIR: sessionsDir,
         AO_SESSION_NAME: sessionId,
@@ -2439,18 +2902,42 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       },
     });
 
-    // 9. Update metadata — merge updates, preserving existing fields
+    // 9. Update metadata — reset lifecycle to working state
     const now = new Date().toISOString();
+    const restoredLifecycle = cloneLifecycle(session.lifecycle);
+    restoredLifecycle.session.state = "working";
+    restoredLifecycle.session.reason = "task_in_progress";
+    restoredLifecycle.session.lastTransitionAt = now;
+    restoredLifecycle.session.terminatedAt = null;
+    restoredLifecycle.session.completedAt = null;
+    restoredLifecycle.runtime.state = "alive";
+    restoredLifecycle.runtime.reason = "process_running";
+    restoredLifecycle.runtime.handle = handle;
+    restoredLifecycle.runtime.lastObservedAt = now;
+
+    // Reset terminal PR state so the lifecycle manager doesn't immediately
+    // re-terminate the session. The old PR is done — if the agent creates
+    // a new one, PR auto-detect will pick it up.
+    if (restoredLifecycle.pr.state === "merged" || restoredLifecycle.pr.state === "closed") {
+      restoredLifecycle.pr.state = "none";
+      restoredLifecycle.pr.reason = "cleared_on_restore";
+      restoredLifecycle.pr.number = null;
+      restoredLifecycle.pr.url = null;
+      restoredLifecycle.pr.lastObservedAt = null;
+    }
+
     updateMetadata(sessionsDir, sessionId, {
-      status: "spawning",
-      runtimeHandle: JSON.stringify(handle),
+      ...buildLifecycleMetadataPatch(restoredLifecycle),
       restoredAt: now,
+      mergedPendingCleanupSince: "",
     });
+    invalidateCache();
 
     // 10. Run postLaunchSetup (non-fatal)
+    const restoredStatus = deriveLegacyStatus(restoredLifecycle);
     const restoredSession: Session = {
       ...session,
-      status: "spawning",
+      status: restoredStatus,
       activity: "active",
       workspacePath,
       runtimeHandle: handle,
@@ -2471,6 +2958,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
         if (Object.keys(metadataUpdates).length > 0) {
           updateMetadata(sessionsDir, sessionId, metadataUpdates);
+          invalidateCache();
         }
       } catch {
         // Non-fatal — session is already running
@@ -2480,5 +2968,19 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     return restoredSession;
   }
 
-  return { spawn, spawnOrchestrator, restore, list, get, kill, cleanup, send, claimPR, remap };
+  return {
+    spawn,
+    spawnOrchestrator,
+    ensureOrchestrator,
+    restore,
+    list,
+    listCached,
+    invalidateCache,
+    get,
+    kill,
+    cleanup,
+    send,
+    claimPR,
+    remap,
+  };
 }

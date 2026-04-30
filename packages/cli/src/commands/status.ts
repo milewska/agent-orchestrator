@@ -1,6 +1,8 @@
 import chalk from "chalk";
 import type { Command } from "commander";
 import {
+  createInitialCanonicalLifecycle,
+  createActivitySignal,
   type Agent,
   type SCM,
   type Session,
@@ -10,9 +12,13 @@ import {
   type ActivityState,
   type Tracker,
   type ProjectConfig,
+  type AgentReportAuditEntry,
   isOrchestratorSession,
+  isTerminalSession,
   loadConfig,
-} from "@composio/ao-core";
+  getProjectSessionsDir,
+  readAgentReportAuditTrailAsync,
+} from "@aoagents/ao-core";
 import { git, getTmuxSessions, getTmuxActivity } from "../lib/shell.js";
 import {
   banner,
@@ -42,6 +48,7 @@ interface SessionInfo {
   reviewDecision: ReviewDecision | null;
   pendingThreads: number | null;
   activity: ActivityState | null;
+  reports: AgentReportAuditEntry[];
 }
 
 interface StatusOptions {
@@ -49,6 +56,19 @@ interface StatusOptions {
   json?: boolean;
   watch?: boolean;
   interval?: string;
+  includeTerminated?: boolean;
+  reports?: string;
+}
+
+/** Parse --reports value: "full" → Infinity, positive integer → N, undefined → 0 (off). */
+function parseReportsLimit(value: string | undefined): number {
+  if (value === undefined) return 0;
+  if (value === "full") return Infinity;
+  const n = Number.parseInt(value, 10);
+  if (Number.isNaN(n) || n <= 0) {
+    throw new Error('--reports must be "full" or a positive integer.');
+  }
+  return n;
 }
 
 const DEFAULT_WATCH_INTERVAL_SECONDS = 5;
@@ -73,6 +93,7 @@ async function gatherSessionInfo(
   agent: Agent,
   scm: SCM,
   projectConfig: ReturnType<typeof loadConfig>,
+  reportsLimit: number = 0,
 ): Promise<SessionInfo> {
   const sessionPrefix = projectConfig.projects[session.projectId]?.sessionPrefix ?? session.projectId;
   const allSessionPrefixes = Object.entries(projectConfig.projects).map(
@@ -146,6 +167,22 @@ async function gatherSessionInfo(
     }
   }
 
+  // Fetch agent report audit trail when --reports is active
+  let reports: AgentReportAuditEntry[] = [];
+  if (reportsLimit > 0) {
+    try {
+      const project = projectConfig.projects[session.projectId];
+      if (project) {
+        const sessionsDir = getProjectSessionsDir(session.projectId);
+        const trail = await readAgentReportAuditTrailAsync(sessionsDir, session.id);
+        // trail is already reverse-chronological (newest first)
+        reports = reportsLimit === Infinity ? trail : trail.slice(0, reportsLimit);
+      }
+    } catch {
+      // Audit trail read failed — not critical
+    }
+  }
+
   return {
     name: session.id,
     role: isOrchestratorSession(session, sessionPrefix, allSessionPrefixes) ? "orchestrator" : "worker",
@@ -162,7 +199,34 @@ async function gatherSessionInfo(
     reviewDecision,
     pendingThreads,
     activity,
+    reports,
   };
+}
+
+function formatReportTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "??:??";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function printReportRows(reports: AgentReportAuditEntry[], indent: string): void {
+  if (reports.length === 0) return;
+  // reports are newest-first from the audit trail; display oldest-first (chronological)
+  const chronological = [...reports].reverse();
+  console.log(`${indent}${chalk.dim("Reports:")}`);
+  for (const entry of chronological) {
+    const time = chalk.dim(formatReportTime(entry.timestamp));
+    const src = chalk.dim(entry.source === "acknowledge" ? "ack" : "rpt");
+    const state = entry.accepted ? chalk.cyan(entry.reportState) : chalk.red(entry.reportState);
+    const transition =
+      entry.before.sessionState === entry.after.sessionState
+        ? chalk.dim(`(${entry.after.sessionState})`)
+        : chalk.dim(`(${entry.before.sessionState} → ${entry.after.sessionState})`);
+    const rejected = entry.accepted ? "" : chalk.red(" REJECTED");
+    const note = entry.note ? chalk.dim(` "${entry.note}"`) : "";
+    const pr = entry.prNumber ? chalk.blue(` #${entry.prNumber}`) : "";
+    console.log(`${indent}  ${time} ${src} ${state} ${transition}${rejected}${pr}${note}`);
+  }
 }
 
 // Column widths for the table
@@ -218,6 +282,8 @@ function printSessionRow(info: SessionInfo): void {
   if (displaySummary) {
     console.log(`  ${" ".repeat(COL.session)}${chalk.dim(displaySummary.slice(0, 60))}`);
   }
+
+  printReportRows(info.reports, `  ${" ".repeat(COL.session)}`);
 }
 
 function printOrchestratorRow(info: SessionInfo): void {
@@ -230,6 +296,7 @@ function printOrchestratorRow(info: SessionInfo): void {
   if (displaySummary) {
     console.log(`                ${chalk.dim(displaySummary.slice(0, 60))}`);
   }
+  printReportRows(info.reports, "                ");
 }
 
 export function registerStatus(program: Command): void {
@@ -240,6 +307,14 @@ export function registerStatus(program: Command): void {
     .option("--json", "Output as JSON")
     .option("-w, --watch", "Refresh the status view continuously")
     .option("--interval <seconds>", "Refresh interval in seconds (default: 5)")
+    .option(
+      "--include-terminated",
+      "Include terminated sessions (killed/done/merged/terminated/errored/cleanup)",
+    )
+    .option(
+      "--reports <value>",
+      'Show agent report history per session. "full" for all entries, or a number for last N entries.',
+    )
     .action(async (opts: StatusOptions) => {
       if (opts.watch && opts.json) {
         console.error(chalk.red("--watch cannot be used with --json."));
@@ -254,6 +329,14 @@ export function registerStatus(program: Command): void {
           console.error(chalk.red(err instanceof Error ? err.message : String(err)));
           process.exit(1);
         }
+      }
+
+      let reportsLimit = 0;
+      try {
+        reportsLimit = parseReportsLimit(opts.reports);
+      } catch (err) {
+        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+        process.exit(1);
       }
 
       const renderStatus = async (refreshing = false): Promise<void> => {
@@ -279,7 +362,17 @@ export function registerStatus(program: Command): void {
         // Use session manager to list sessions (metadata-based, not tmux-based)
         const sm = await getSessionManager(config);
         const registry = await getPluginRegistry(config);
-        const sessions = await sm.list(opts.project);
+        const allSessions = await sm.list(opts.project);
+
+        // Count terminal sessions that would be hidden by default, then drop
+        // them unless --include-terminated is passed. Recomputed each render
+        // so --watch reflects transitions to terminal state live.
+        const hiddenTerminatedCount = opts.includeTerminated
+          ? 0
+          : allSessions.filter(isTerminalSession).length;
+        const sessions = opts.includeTerminated
+          ? allSessions
+          : allSessions.filter((s) => !isTerminalSession(s));
 
         if (!opts.json) {
           console.log(banner("AGENT ORCHESTRATOR STATUS"));
@@ -335,7 +428,7 @@ export function registerStatus(program: Command): void {
           }
 
           // Gather all session info in parallel
-          const infoPromises = projectSessions.map((s) => gatherSessionInfo(s, agent, scm, config));
+          const infoPromises = projectSessions.map((s) => gatherSessionInfo(s, agent, scm, config, reportsLimit));
           const sessionInfos = await Promise.all(infoPromises);
 
           const orchestrators = sessionInfos.filter((info) => info.role === "orchestrator");
@@ -374,7 +467,13 @@ export function registerStatus(program: Command): void {
         }
 
         if (opts.json) {
-          console.log(JSON.stringify(jsonOutput, null, 2));
+          console.log(
+            JSON.stringify(
+              { data: jsonOutput, meta: { hiddenTerminatedCount } },
+              null,
+              2,
+            ),
+          );
         } else {
           console.log(
             chalk.dim(
@@ -384,6 +483,14 @@ export function registerStatus(program: Command): void {
                   : ""),
             ),
           );
+
+          if (hiddenTerminatedCount > 0) {
+            console.log(
+              chalk.dim(
+                `  ${hiddenTerminatedCount} terminated session${hiddenTerminatedCount !== 1 ? "s" : ""} hidden. Use --include-terminated to show.`,
+              ),
+            );
+          }
 
           // Check for issues awaiting verification across all projects
           try {
@@ -474,17 +581,26 @@ async function showFallbackStatus(): Promise<void> {
   const details = await Promise.all(
     sortedSessions.map(async (session) => {
       const activityTsPromise = getTmuxActivity(session).catch(() => null);
+      const lifecycle = createInitialCanonicalLifecycle("worker", new Date());
+      lifecycle.session.state = "working";
+      lifecycle.session.reason = "task_in_progress";
+      lifecycle.session.startedAt = lifecycle.session.lastTransitionAt;
+      lifecycle.runtime.state = "alive";
+      lifecycle.runtime.reason = "process_running";
+      lifecycle.runtime.handle = { id: session, runtimeName: "tmux", data: {} };
 
       const sessionObj: Session = {
         id: session,
         projectId: "",
         status: "working",
         activity: null,
+        activitySignal: createActivitySignal("unavailable"),
+        lifecycle,
         branch: null,
         issueId: null,
         pr: null,
         workspacePath: null,
-        runtimeHandle: { id: session, runtimeName: "tmux", data: {} },
+        runtimeHandle: lifecycle.runtime.handle,
         agentInfo: null,
         createdAt: new Date(),
         lastActivityAt: new Date(),

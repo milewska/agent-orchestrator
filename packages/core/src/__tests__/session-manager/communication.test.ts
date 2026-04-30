@@ -43,7 +43,7 @@ describe("send", () => {
       branch: "main",
       status: "working",
       project: "my-app",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
     vi.mocked(mockRuntime.getOutput).mockResolvedValueOnce("before").mockResolvedValueOnce("after");
 
@@ -63,7 +63,7 @@ describe("send", () => {
       status: "working",
       project: "my-app",
       issue: "TEST-1",
-      runtimeHandle: JSON.stringify(makeHandle("rt-old")),
+      runtimeHandle: makeHandle("rt-old"),
     });
 
     vi.mocked(mockRuntime.isAlive).mockImplementation(async (handle) => handle.id !== "rt-old");
@@ -86,13 +86,50 @@ describe("send", () => {
     );
   });
 
+  it("throws when a killed session cannot be restored to a ready state for delivery", async () => {
+    vi.useFakeTimers();
+    try {
+      const wsPath = join(tmpDir, "ws-app-1");
+      mkdirSync(wsPath, { recursive: true });
+
+      writeMetadata(sessionsDir, "app-1", {
+        worktree: wsPath,
+        branch: "feat/TEST-1",
+        status: "killed",
+        project: "my-app",
+        issue: "TEST-1",
+        runtimeHandle: makeHandle("rt-old"),
+      });
+
+      vi.mocked(mockRuntime.isAlive).mockImplementation(async (handle) => handle.id !== "rt-restored");
+      vi.mocked(mockAgent.isProcessRunning).mockImplementation(
+        async (handle) => handle.id !== "rt-restored",
+      );
+      vi.mocked(mockRuntime.create).mockResolvedValue(makeHandle("rt-restored"));
+      vi.mocked(mockRuntime.getOutput).mockResolvedValue("");
+      vi.mocked(mockAgent.detectActivity).mockReturnValue("idle");
+
+      const sm = createSessionManager({ config, registry: mockRegistry });
+      const sendPromise = sm.send("app-1", "hello");
+      const rejection = expect(sendPromise).rejects.toThrow(
+        "Cannot send to session app-1: session is not running",
+      );
+
+      await vi.runAllTimersAsync();
+      await rejection;
+      expect(mockRuntime.sendMessage).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("waits for spawning sessions to become interactive before considering restore", async () => {
     writeMetadata(sessionsDir, "app-1", {
       worktree: "/tmp",
       branch: "main",
       status: "spawning",
       project: "my-app",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.isAlive).mockResolvedValue(true);
@@ -124,7 +161,7 @@ describe("send", () => {
       branch: "main",
       status: "working",
       project: "my-app",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
     vi.mocked(mockRuntime.getOutput).mockResolvedValue("steady output");
     vi.mocked(mockAgent.detectActivity).mockReturnValue("idle");
@@ -135,6 +172,42 @@ describe("send", () => {
     // to avoid duplicate dispatches on the next poll cycle.
     await expect(sm.send("app-1", "Fix the CI failures")).resolves.toBeUndefined();
     expect(mockRuntime.sendMessage).toHaveBeenCalled();
+  });
+
+  it("resolves on restored session when confirmation never flips (soft success)", async () => {
+    // Regression test: on a restored session (post-#1074 fix), if
+    // sendMessage fires but the confirmation heuristics never flip,
+    // send() must still resolve — otherwise the lifecycle-manager's
+    // dispatch-hash never updates and the message re-sends next poll,
+    // reintroducing the duplicate-message bug that 77685a5 removed.
+    const wsPath = join(tmpDir, "ws-app-1");
+    mkdirSync(wsPath, { recursive: true });
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: wsPath,
+      branch: "feat/TEST-1",
+      status: "working",
+      project: "my-app",
+      issue: "TEST-1",
+      runtimeHandle: makeHandle("rt-old"),
+    });
+
+    // rt-old is dead → restore kicks in → rt-restored is ready
+    vi.mocked(mockRuntime.isAlive).mockImplementation(async (handle) => handle.id !== "rt-old");
+    vi.mocked(mockAgent.isProcessRunning).mockImplementation(
+      async (handle) => handle.id !== "rt-old",
+    );
+    vi.mocked(mockRuntime.create).mockResolvedValue(makeHandle("rt-restored"));
+    // Steady output — confirmation heuristics will never flip
+    vi.mocked(mockRuntime.getOutput).mockResolvedValue("steady output");
+    vi.mocked(mockAgent.detectActivity).mockReturnValue("idle");
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    await expect(sm.send("app-1", "retry after restore")).resolves.toBeUndefined();
+    expect(mockRuntime.sendMessage).toHaveBeenCalledWith(
+      makeHandle("rt-restored"),
+      "retry after restore",
+    );
   });
 
   it("throws for nonexistent session", async () => {
@@ -180,7 +253,7 @@ describe("send", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.isAlive).mockResolvedValue(true);
@@ -215,7 +288,7 @@ describe("send", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses bad id",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.isAlive).mockResolvedValue(true);
@@ -262,7 +335,7 @@ describe("send", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses_send_confirmed",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.getOutput).mockResolvedValue("steady output");
@@ -308,7 +381,7 @@ describe("send", () => {
       project: "my-app",
       agent: "opencode",
       opencodeSessionId: "ses_send_visibility_only",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     vi.mocked(mockRuntime.getOutput).mockResolvedValue("steady output");
@@ -336,7 +409,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
       opencodeSessionId: "ses_remap",
     });
 
@@ -368,7 +441,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
       opencodeSessionId: "ses_stale",
     });
 
@@ -401,7 +474,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     const sm = createSessionManager({ config, registry: mockRegistry });
@@ -423,7 +496,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     const sm = createSessionManager({ config, registry: mockRegistry });
@@ -450,7 +523,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     const sm = createSessionManager({ config, registry: mockRegistry });
@@ -481,7 +554,7 @@ describe("remap", () => {
       status: "working",
       project: "my-app",
       agent: "opencode",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
       opencodeSessionId: "ses bad id",
     });
 
@@ -517,7 +590,7 @@ describe("remap", () => {
       branch: "main",
       status: "working",
       project: "my-app",
-      runtimeHandle: JSON.stringify(makeHandle("rt-1")),
+      runtimeHandle: makeHandle("rt-1"),
     });
 
     const sm = createSessionManager({ config, registry: mockRegistry });

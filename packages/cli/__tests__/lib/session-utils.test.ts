@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   escapeRegex,
   matchesPrefix,
+  stripHashPrefix,
   findProjectForSession,
   isOrchestratorSessionName,
 } from "../../src/lib/session-utils.js";
-import type { OrchestratorConfig } from "@composio/ao-core";
+import type { OrchestratorConfig } from "@aoagents/ao-core";
 
 describe("escapeRegex", () => {
   it("escapes dots, asterisks, plus, question marks", () => {
@@ -26,6 +27,24 @@ describe("escapeRegex", () => {
 
   it("escapes pipe and caret and dollar", () => {
     expect(escapeRegex("a|b^c$d")).toBe("a\\|b\\^c\\$d");
+  });
+});
+
+describe("stripHashPrefix", () => {
+  it("strips 12-char hex hash prefix", () => {
+    expect(stripHashPrefix("1686e4aaaeaa-ao-145")).toBe("ao-145");
+  });
+
+  it("returns plain session ID unchanged", () => {
+    expect(stripHashPrefix("ao-145")).toBe("ao-145");
+  });
+
+  it("returns orchestrator session name unchanged", () => {
+    expect(stripHashPrefix("app-orchestrator")).toBe("app-orchestrator");
+  });
+
+  it("handles hash prefix with orchestrator name", () => {
+    expect(stripHashPrefix("abcdef012345-app-orchestrator")).toBe("app-orchestrator");
   });
 });
 
@@ -106,6 +125,12 @@ describe("findProjectForSession", () => {
     });
     expect(findProjectForSession(config, "a-1")).toBe("alpha");
     expect(findProjectForSession(config, "b-2")).toBe("beta");
+  });
+
+  it("matches orchestrator session names to their project", () => {
+    const config = makeConfig({ "my-app": { sessionPrefix: "app" } });
+    expect(findProjectForSession(config, "app-orchestrator")).toBe("my-app");
+    expect(findProjectForSession(config, "app-orchestrator-2")).toBe("my-app");
   });
 });
 
