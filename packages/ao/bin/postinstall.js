@@ -10,15 +10,22 @@
  * 2. Verifies the prebuilt binary is compatible with the current Node.js version.
  *    If not (common with nvm/fnm/volta), rebuilds from source via npx node-gyp.
  *    See: https://github.com/ComposioHQ/agent-orchestrator/issues/987
+ *
+ * 3. Clears dashboard install cache and records the installed AO version so
+ *    stale Next.js artifacts do not survive global package updates.
  */
 
-import { chmodSync, existsSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { execSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-
-// No-op on Windows — different PTY mechanism
-if (process.platform === "win32") process.exit(0);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -33,6 +40,62 @@ function findPackageUp(startDir, ...segments) {
   }
   return null;
 }
+
+function resolveNodeModulesPackage(fromDir, ...segments) {
+  const packageDir = resolve(fromDir, "node_modules", ...segments);
+  return existsSync(resolve(packageDir, "package.json")) ? packageDir : null;
+}
+
+function findWebDir() {
+  const directWebDir = findPackageUp(__dirname, "@aoagents", "ao-web");
+  if (directWebDir) return directWebDir;
+
+  const cliDir = findPackageUp(__dirname, "@aoagents", "ao-cli");
+  if (!cliDir) return null;
+
+  return resolveNodeModulesPackage(cliDir, "@aoagents", "ao-web");
+}
+
+function getInstalledAoVersion() {
+  try {
+    const packageJson = JSON.parse(
+      readFileSync(resolve(__dirname, "..", "package.json"), "utf8"),
+    );
+    return typeof packageJson.version === "string" ? packageJson.version : null;
+  } catch {
+    return null;
+  }
+}
+
+function cleanDashboardInstallCache() {
+  const webDir = findWebDir();
+  if (!webDir) return;
+
+  const nextDir = resolve(webDir, ".next");
+  const cacheDir = resolve(nextDir, "cache");
+
+  try {
+    rmSync(cacheDir, { recursive: true, force: true });
+
+    const version = getInstalledAoVersion();
+    if (version) {
+      mkdirSync(nextDir, { recursive: true });
+      writeFileSync(resolve(nextDir, "AO_VERSION"), `${version}\n`);
+    }
+
+    console.log("\u2713 dashboard install cache refreshed");
+  } catch (error) {
+    const detail = error instanceof Error && error.message ? `: ${error.message}` : "";
+    console.warn(
+      `\u26a0\ufe0f  Could not refresh dashboard install cache (non-critical)${detail}`,
+    );
+  }
+}
+
+cleanDashboardInstallCache();
+
+// No-op on Windows for node-pty — different PTY mechanism.
+if (process.platform === "win32") process.exit(0);
 
 const nodePtyDir = findPackageUp(__dirname, "node-pty");
 if (!nodePtyDir) process.exit(0);
