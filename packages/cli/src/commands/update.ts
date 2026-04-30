@@ -188,20 +188,16 @@ interface RunnableAo {
 
 async function getRunnableAo(): Promise<RunnableAo> {
   const [path, version] = await Promise.all([
-    runCommand("command", ["-v", "ao"], { shell: true }),
-    runCommand("ao", ["--version"], { shell: true }),
+    runShellCommand(process.platform === "win32" ? "where ao" : "command -v ao"),
+    runShellCommand("ao --version"),
   ]);
   return { path, version: parseVersionOutput(version) };
 }
 
-function runCommand(
-  command: string,
-  args: string[],
-  opts?: { shell?: boolean },
-): Promise<string | null> {
+function runShellCommand(command: string): Promise<string | null> {
   return new Promise<string | null>((resolveOutput) => {
-    const spawnCommand = opts?.shell ? "sh" : command;
-    const spawnArgs = opts?.shell ? ["-lc", [command, ...args].join(" ")] : args;
+    const spawnCommand = process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "sh";
+    const spawnArgs = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-lc", command];
     const child = spawn(spawnCommand, spawnArgs, {
       stdio: ["ignore", "pipe", "ignore"],
     });

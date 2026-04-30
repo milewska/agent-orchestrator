@@ -96,6 +96,8 @@ describe("update command", () => {
   let program: Command;
   let origStdinTTY: boolean | undefined;
   let origStdoutTTY: boolean | undefined;
+  let origPlatform: NodeJS.Platform;
+  let origComSpec: string | undefined;
 
   beforeEach(() => {
     program = new Command();
@@ -114,6 +116,8 @@ describe("update command", () => {
     mockSpawn.mockReset();
     origStdinTTY = process.stdin.isTTY;
     origStdoutTTY = process.stdout.isTTY;
+    origPlatform = process.platform;
+    origComSpec = process.env.ComSpec;
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(process, "exit").mockImplementation((code) => {
@@ -125,6 +129,12 @@ describe("update command", () => {
     vi.restoreAllMocks();
     Object.defineProperty(process.stdin, "isTTY", { value: origStdinTTY, configurable: true });
     Object.defineProperty(process.stdout, "isTTY", { value: origStdoutTTY, configurable: true });
+    Object.defineProperty(process, "platform", { value: origPlatform, configurable: true });
+    if (origComSpec === undefined) {
+      delete process.env.ComSpec;
+    } else {
+      process.env.ComSpec = origComSpec;
+    }
   });
 
   // -----------------------------------------------------------------------
@@ -306,6 +316,34 @@ describe("update command", () => {
       );
       expect(mockSpawn).toHaveBeenCalledWith("sh", ["-lc", "command -v ao"], expect.anything());
       expect(mockSpawn).toHaveBeenCalledWith("sh", ["-lc", "ao --version"], expect.anything());
+      expect(mockInvalidateCache).toHaveBeenCalled();
+    });
+
+    it("verifies the runnable ao binary through cmd.exe on Windows", async () => {
+      Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+      Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
+      Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+      process.env.ComSpec = "C:\\Windows\\System32\\cmd.exe";
+      mockPromptConfirm.mockResolvedValue(true);
+      mockSpawn
+        .mockReturnValueOnce(createMockChild(0))
+        .mockReturnValueOnce(
+          createMockChild(0, undefined, "C:\\Users\\test\\AppData\\Roaming\\npm\\ao.cmd\n"),
+        )
+        .mockReturnValueOnce(createMockChild(0, undefined, "0.3.0\n"));
+
+      await program.parseAsync(["node", "test", "update"]);
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        "C:\\Windows\\System32\\cmd.exe",
+        ["/d", "/s", "/c", "where ao"],
+        expect.anything(),
+      );
+      expect(mockSpawn).toHaveBeenCalledWith(
+        "C:\\Windows\\System32\\cmd.exe",
+        ["/d", "/s", "/c", "ao --version"],
+        expect.anything(),
+      );
       expect(mockInvalidateCache).toHaveBeenCalled();
     });
 
