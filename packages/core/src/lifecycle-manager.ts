@@ -1472,11 +1472,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     // (getReviewThreads) consumes API quota on every poll.
     //
     // Exception: bypass throttle when a transition reaction just fired for a
-    // review reaction key. The transitionReaction branch records
-    // lastPendingReviewDispatchHash, which requires the current fingerprint from
-    // the API. If we throttle here, that metadata never gets written and the
-    // next unthrottled poll sees a "new" fingerprint, clears the reaction tracker,
-    // and fires a duplicate dispatch.
+    // review reaction key. The enriched dispatch needs the current fingerprint
+    // from the API so it can fire and record the hash in the same cycle. If we
+    // throttle here, the next unthrottled poll sees a "new" fingerprint, clears
+    // the reaction tracker, and fires a duplicate dispatch.
     const hasRelevantTransition =
       transitionReaction?.key === humanReactionKey ||
       transitionReaction?.key === automatedReactionKey;

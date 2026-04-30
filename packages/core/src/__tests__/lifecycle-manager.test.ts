@@ -2061,7 +2061,8 @@ describe("reactions", () => {
     expect(enrichedMessage).toContain("@reviewer");
     expect(enrichedMessage).toContain("Please add validation");
 
-    // Second check should not re-send — fingerprint matches.
+    // Second check is throttled (within REVIEW_BACKLOG_THROTTLE_MS window) and
+    // the fingerprint already matches — neither path re-sends.
     vi.mocked(mockSessionManager.send).mockClear();
     await lm.check("app-1");
     expect(mockSessionManager.send).not.toHaveBeenCalled();
