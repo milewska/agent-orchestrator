@@ -119,7 +119,7 @@ describe("useSessionEvents - mux", () => {
     );
 
     await waitFor(() => {
-      expect(result.current.sseAttentionLevels.s1).toBe("merge");
+      expect(result.current.attentionLevels.s1).toBe("merge");
     });
   });
 

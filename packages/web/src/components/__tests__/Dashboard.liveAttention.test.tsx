@@ -1,6 +1,8 @@
 import { act, render, screen, within } from "@testing-library/react";
+import { useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AttentionLevel, DashboardSession } from "@/lib/types";
+import type { SessionPatch } from "@/lib/mux-protocol";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
@@ -18,37 +20,45 @@ vi.mock("@/components/AttentionZone", () => ({
   ),
 }));
 
+let currentMuxSessions: SessionPatch[] = [];
+
+vi.mock("@/providers/MuxProvider", () => ({
+  useMuxOptional: () => ({
+    subscribeTerminal: () => () => {},
+    writeTerminal: () => {},
+    openTerminal: () => {},
+    closeTerminal: () => {},
+    resizeTerminal: () => {},
+    status: "connected" as const,
+    sessions: currentMuxSessions,
+  }),
+  MuxProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
 import { Dashboard } from "../Dashboard";
 import { makeSession } from "../../__tests__/helpers";
 
-describe("Dashboard live attention grouping", () => {
-  let eventSourceMock: {
-    onmessage: ((event: MessageEvent) => void) | null;
-    onerror: (() => void) | null;
-    close: () => void;
-  };
+let forceUpdate: () => void = () => {};
 
+function ControlledDashboard({ initialSessions }: { initialSessions: DashboardSession[] }) {
+  const [, tick] = useState(0);
+  forceUpdate = () => tick((n) => n + 1);
+  return <Dashboard initialSessions={initialSessions} attentionZones="simple" />;
+}
+
+describe("Dashboard live attention grouping", () => {
   beforeEach(() => {
-    eventSourceMock = {
-      onmessage: null,
-      onerror: null,
-      close: vi.fn(),
-    };
-    const eventSourceConstructor = vi.fn(() => eventSourceMock as unknown as EventSource);
-    global.EventSource = Object.assign(eventSourceConstructor, {
-      CONNECTING: 0,
-      OPEN: 1,
-      CLOSED: 2,
-    }) as unknown as typeof EventSource;
+    currentMuxSessions = [];
+    forceUpdate = () => {};
     global.fetch = vi.fn(
       () =>
         new Promise<Response>(() => {
-          // Keep refresh pending so this test observes the immediate SSE regroup.
+          // Keep refresh pending so this test observes the immediate mux regroup.
         }),
     );
   });
 
-  it("uses SSE attentionLevel to move a card when session fields are otherwise unchanged", async () => {
+  it("uses mux attentionLevel to move a card when session fields are otherwise unchanged", async () => {
     const lastActivityAt = new Date().toISOString();
     const initialSessions = [
       makeSession({
@@ -59,25 +69,21 @@ describe("Dashboard live attention grouping", () => {
       }),
     ];
 
-    render(<Dashboard initialSessions={initialSessions} attentionZones="simple" />);
+    render(<ControlledDashboard initialSessions={initialSessions} />);
 
     expect(within(screen.getByTestId("zone-action")).getByText("session-1")).toBeInTheDocument();
 
     await act(async () => {
-      eventSourceMock.onmessage?.({
-        data: JSON.stringify({
-          type: "snapshot",
-          sessions: [
-            {
-              id: "session-1",
-              status: "stuck",
-              activity: "active",
-              attentionLevel: "merge",
-              lastActivityAt,
-            },
-          ],
-        }),
-      } as MessageEvent);
+      currentMuxSessions = [
+        {
+          id: "session-1",
+          status: "stuck",
+          activity: "active",
+          attentionLevel: "merge",
+          lastActivityAt,
+        },
+      ];
+      forceUpdate();
     });
 
     expect(within(screen.getByTestId("zone-merge")).getByText("session-1")).toBeInTheDocument();
