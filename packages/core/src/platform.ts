@@ -2,7 +2,6 @@ import { execFile as execFileCb } from "node:child_process";
 import { promisify } from "node:util";
 import { homedir, userInfo } from "node:os";
 import { existsSync } from "node:fs";
-import { delimiter as pathDelimiter, join as joinPath } from "node:path";
 
 const execFileAsync = promisify(execFileCb);
 
@@ -50,7 +49,12 @@ function inferShellArgsFlag(cmd: string): (command: string) => string[] {
   return (c) => ["-Command", c];
 }
 
-/** Walk PATH looking for an executable. Returns the absolute path or null. */
+/**
+ * Walk PATH looking for an executable. Windows-only: only ever called from
+ * resolveWindowsShell. Hard-coded `;` separator and `\` path join regardless
+ * of host OS so unit tests that simulate Windows on a Linux CI runner produce
+ * canonical Windows paths.
+ */
 function findOnPath(name: string): string | null {
   const exts = process.env["PATHEXT"]?.split(";").filter(Boolean) ?? [
     ".COM",
@@ -58,10 +62,11 @@ function findOnPath(name: string): string | null {
     ".BAT",
     ".CMD",
   ];
-  const dirs = (process.env["PATH"] ?? "").split(pathDelimiter).filter(Boolean);
+  const dirs = (process.env["PATH"] ?? "").split(";").filter(Boolean);
   for (const dir of dirs) {
+    const base = dir.endsWith("\\") || dir.endsWith("/") ? dir.slice(0, -1) : dir;
     for (const ext of [...exts, ""]) {
-      const candidate = joinPath(dir, name + ext);
+      const candidate = `${base}\\${name}${ext}`;
       if (existsSync(candidate)) return candidate;
     }
   }
