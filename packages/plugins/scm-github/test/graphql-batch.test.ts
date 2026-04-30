@@ -898,14 +898,17 @@ describe("shouldRefreshPREnrichment - ETag Guard Strategy", () => {
       ];
 
       // Mock gh CLI error
-      const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const mockObserver = {
+        recordSuccess: vi.fn(),
+        recordFailure: vi.fn(),
+        log: vi.fn(),
+      };
       mockExecFileImpl.mockRejectedValueOnce(new Error("gh CLI failed"));
 
-      const result = await shouldRefreshPREnrichment(prs);
+      const result = await shouldRefreshPREnrichment(prs, [], mockObserver);
 
       expect(result.shouldRefresh).toBe(true); // Fail-safe: assume changed on error
-      expect(consoleWarnSpy).toHaveBeenCalled();
-      consoleWarnSpy.mockRestore();
+      expect(mockObserver.log).toHaveBeenCalledWith("warn", expect.stringContaining("[ETag Guard 1]"));
     });
   });
 
