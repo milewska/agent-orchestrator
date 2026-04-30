@@ -282,7 +282,12 @@ export function create(): Runtime {
           while (Date.now() < deadline) {
             try {
               process.kill(ptyHostPid, 0); // probe
-            } catch {
+            } catch (err: unknown) {
+              // EPERM: the process exists but we lack permission to signal it
+              // (cross-context on Windows). It is NOT gone — fall through to
+              // killProcessTree so the orphan is reaped. Any other error code
+              // (typically ESRCH) means the process is gone — clean exit.
+              if ((err as { code?: string }).code === "EPERM") break;
               processes.delete(handle.id);
               try {
                 unregisterWindowsPtyHost(handle.id);
