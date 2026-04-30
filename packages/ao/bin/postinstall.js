@@ -35,6 +35,21 @@ function findPackageUp(startDir, ...segments) {
   return null;
 }
 
+function resolveNodeModulesPackage(fromDir, ...segments) {
+  const packageDir = resolve(fromDir, "node_modules", ...segments);
+  return existsSync(resolve(packageDir, "package.json")) ? packageDir : null;
+}
+
+function findWebDir() {
+  const directWebDir = findPackageUp(__dirname, "@aoagents", "ao-web");
+  if (directWebDir) return directWebDir;
+
+  const cliDir = findPackageUp(__dirname, "@aoagents", "ao-cli");
+  if (!cliDir) return null;
+
+  return resolveNodeModulesPackage(cliDir, "@aoagents", "ao-web");
+}
+
 // --- 1 & 2. Fix node-pty spawn-helper permissions and verify ABI (non-Windows only) ---
 if (process.platform !== "win32") {
   const nodePtyDir = findPackageUp(__dirname, "node-pty");
@@ -87,7 +102,7 @@ if (process.platform !== "win32") {
 
 // --- 3. Clear stale Next.js runtime cache after version upgrade ---
 try {
-  const webDir = findPackageUp(__dirname, "@composio", "ao-web");
+  const webDir = findWebDir();
   if (webDir) {
     const pkgPath = resolve(webDir, "package.json");
     if (existsSync(pkgPath)) {
