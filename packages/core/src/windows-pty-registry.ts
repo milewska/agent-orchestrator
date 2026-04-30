@@ -30,12 +30,17 @@ export interface WindowsPtyHostEntry {
   registeredAt: string;
 }
 
-const REGISTRY_FILE = join(homedir(), ".agent-orchestrator", "windows-pty-hosts.json");
+// Resolved lazily so tests that mock node:os (vitest mock factories run after
+// module evaluation) can override `homedir()` before the first read/write.
+function getRegistryFile(): string {
+  return join(homedir(), ".agent-orchestrator", "windows-pty-hosts.json");
+}
 
 function readRaw(): WindowsPtyHostEntry[] {
-  if (!existsSync(REGISTRY_FILE)) return [];
+  const file = getRegistryFile();
+  if (!existsSync(file)) return [];
   try {
-    const parsed = JSON.parse(readFileSync(REGISTRY_FILE, "utf-8")) as unknown;
+    const parsed = JSON.parse(readFileSync(file, "utf-8")) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (e): e is WindowsPtyHostEntry =>
@@ -51,15 +56,16 @@ function readRaw(): WindowsPtyHostEntry[] {
 }
 
 function writeRaw(entries: WindowsPtyHostEntry[]): void {
+  const file = getRegistryFile();
   if (entries.length === 0) {
     try {
-      unlinkSync(REGISTRY_FILE);
+      unlinkSync(file);
     } catch {
       /* file may not exist */
     }
     return;
   }
-  atomicWriteFileSync(REGISTRY_FILE, JSON.stringify(entries, null, 2));
+  atomicWriteFileSync(file, JSON.stringify(entries, null, 2));
 }
 
 function isAlive(pid: number): boolean {
@@ -110,4 +116,6 @@ export function clearWindowsPtyHostRegistry(): void {
 }
 
 /** Exported for tests. */
-export const __WINDOWS_PTY_REGISTRY_FILE = REGISTRY_FILE;
+export function __getWindowsPtyRegistryFile(): string {
+  return getRegistryFile();
+}
