@@ -1439,7 +1439,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
 
   async function maybeDispatchReviewBacklog(
     session: Session,
-    oldStatus: SessionStatus,
+    _oldStatus: SessionStatus,
     newStatus: SessionStatus,
     transitionReaction?: { key: string; result: ReactionResult | null },
   ): Promise<void> {
@@ -1557,20 +1557,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           lastPendingReviewDispatchHash: "",
           lastPendingReviewDispatchAt: "",
         });
-      } else if (
-        transitionReaction?.key === humanReactionKey &&
-        transitionReaction.result?.success
-      ) {
-        if (lastPendingDispatchHash !== pendingFingerprint) {
-          updateSessionMetadata(session, {
-            lastPendingReviewDispatchHash: pendingFingerprint,
-            lastPendingReviewDispatchAt: new Date().toISOString(),
-          });
-        }
-      } else if (
-        !(oldStatus !== newStatus && newStatus === "changes_requested") &&
-        pendingFingerprint !== lastPendingDispatchHash
-      ) {
+      } else if (pendingFingerprint !== lastPendingDispatchHash) {
         const reactionConfig = getReactionConfigForSession(session, humanReactionKey);
         if (
           reactionConfig &&

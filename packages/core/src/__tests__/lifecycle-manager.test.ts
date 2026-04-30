@@ -1998,7 +1998,7 @@ describe("reactions", () => {
     expect(metadata?.["lastPendingReviewDispatchHash"]).toBe("c1");
   });
 
-  it("does not double-send when changes_requested transition already triggered the reaction", async () => {
+  it("sends enriched review content on changes_requested transition alongside the generic message", async () => {
     config.reactions = {
       "changes-requested": {
         auto: true,
@@ -2052,12 +2052,19 @@ describe("reactions", () => {
     });
 
     await lm.check("app-1");
-    await lm.check("app-1");
 
-    // First call is the transition reaction (static message), second would be
-    // the review backlog dispatch. But the changes_requested transition guard
-    // prevents double-send, so only 1 call total.
-    expect(mockSessionManager.send).toHaveBeenCalledTimes(1);
+    // First call is the transition reaction (generic message), second is
+    // the backlog dispatch with actual review comment content.
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(2);
+    const enrichedMessage = vi.mocked(mockSessionManager.send).mock.calls[1]![1] as string;
+    expect(enrichedMessage).toContain("src/route.ts:44");
+    expect(enrichedMessage).toContain("@reviewer");
+    expect(enrichedMessage).toContain("Please add validation");
+
+    // Second check should not re-send — fingerprint matches.
+    vi.mocked(mockSessionManager.send).mockClear();
+    await lm.check("app-1");
+    expect(mockSessionManager.send).not.toHaveBeenCalled();
   });
 
   it("dispatches detailed automated review comments when using the default sentinel message", async () => {
