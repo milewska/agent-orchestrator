@@ -186,14 +186,16 @@ export function registerEvents(program: Command): void {
 
       if (Object.keys(stats.byKind).length > 0) {
         console.log(chalk.bold("\nBy kind:"));
-        for (const [kind, count] of Object.entries(stats.byKind).sort((a, b) => b[1] - a[1])) {
+        const byKind = Object.entries(stats.byKind) as [string, number][];
+        for (const [kind, count] of byKind.sort((a, b) => b[1] - a[1])) {
           console.log(`  ${kind.padEnd(30)} ${count}`);
         }
       }
 
       if (Object.keys(stats.bySource).length > 0) {
         console.log(chalk.bold("\nBy source:"));
-        for (const [source, count] of Object.entries(stats.bySource).sort((a, b) => b[1] - a[1])) {
+        const bySource = Object.entries(stats.bySource) as [string, number][];
+        for (const [source, count] of bySource.sort((a, b) => b[1] - a[1])) {
           console.log(`  ${source.padEnd(30)} ${count}`);
         }
       }
