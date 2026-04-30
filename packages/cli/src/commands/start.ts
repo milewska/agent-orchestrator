@@ -48,6 +48,7 @@ import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 import { exec, execSilent, git } from "../lib/shell.js";
 import { getSessionManager } from "../lib/create-session-manager.js";
 import { ensureLifecycleWorker, stopAllLifecycleWorkers } from "../lib/lifecycle-service.js";
+import { startBunTmpJanitor, stopBunTmpJanitor } from "../lib/bun-tmp-janitor.js";
 import {
   findWebDir,
   buildDashboardEnv,
@@ -391,16 +392,29 @@ function ghInstallAttempts(): InstallAttempt[] {
   return [];
 }
 
-async function runInteractiveCommand(cmd: string, args: string[]): Promise<void> {
+async function runInteractiveCommand(
+  cmd: string,
+  args: string[],
+  options?: {
+    cwd?: string;
+    env?: Record<string, string>;
+    action?: string;
+    installHints?: string[];
+  },
+): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: "inherit" });
+    const child = spawn(cmd, args, {
+      cwd: options?.cwd,
+      env: options?.env ? { ...process.env, ...options.env } : process.env,
+      stdio: "inherit",
+    });
     child.once("error", (err) => {
       reject(
         formatCommandError(err, {
           cmd,
           args,
-          action: "run an interactive installer",
-          installHints: genericInstallHints(cmd),
+          action: options?.action ?? "run an interactive command",
+          installHints: options?.installHints ?? genericInstallHints(cmd),
         }),
       );
     });
@@ -421,7 +435,10 @@ async function tryInstallWithAttempts(
   for (const attempt of attempts) {
     try {
       console.log(chalk.dim(`  Running: ${attempt.label}`));
-      await runInteractiveCommand(attempt.cmd, attempt.args);
+      await runInteractiveCommand(attempt.cmd, attempt.args, {
+        action: "run an interactive installer",
+        installHints: genericInstallHints(attempt.cmd),
+      });
       if (await verify()) return true;
     } catch {
       // Try next installer
@@ -516,7 +533,10 @@ async function promptInstallAgentRuntime(available: DetectedAgent[]): Promise<De
 
   console.log(chalk.dim(`  Installing ${selected.label}...`));
   try {
-    await runInteractiveCommand(selected.cmd, selected.args);
+    await runInteractiveCommand(selected.cmd, selected.args, {
+      action: `install ${selected.label}`,
+      installHints: genericInstallHints(selected.cmd),
+    });
     const refreshed = await detectAvailableAgents();
     if (refreshed.length > 0) {
       console.log(chalk.green(`  ✓ ${selected.label} installed successfully`));
@@ -570,9 +590,11 @@ async function cloneRepo(parsed: ParsedRepoUrl, targetDir: string, cwd: string):
     const ghAvailable = (await execSilent("gh", ["auth", "status"])) !== null;
     if (ghAvailable) {
       try {
-        await exec("gh", ["repo", "clone", parsed.ownerRepo, targetDir, "--", "--depth", "1"], {
-          cwd,
-        });
+        await runInteractiveCommand(
+          "gh",
+          ["repo", "clone", parsed.ownerRepo, targetDir, "--", "--depth", "1"],
+          { cwd, action: "clone repository via gh" },
+        );
         return;
       } catch {
         // gh clone failed — fall through to git clone with SSH
@@ -580,17 +602,23 @@ async function cloneRepo(parsed: ParsedRepoUrl, targetDir: string, cwd: string):
     }
   }
 
-  // 2. Try git clone with SSH URL (works with SSH keys for private repos)
+  // 2. Try git clone with SSH URL (works for SSH keys, may prompt for host key)
   const sshUrl = `git@${parsed.host}:${parsed.ownerRepo}.git`;
   try {
-    await exec("git", ["clone", "--depth", "1", sshUrl, targetDir], { cwd });
+    await runInteractiveCommand("git", ["clone", "--depth", "1", sshUrl, targetDir], {
+      cwd,
+      action: "clone repository via git (ssh)",
+    });
     return;
   } catch {
     // SSH failed — fall through to HTTPS
   }
 
   // 3. Final fallback: HTTPS (works for public repos)
-  await exec("git", ["clone", "--depth", "1", parsed.cloneUrl, targetDir], { cwd });
+  await runInteractiveCommand("git", ["clone", "--depth", "1", parsed.cloneUrl, targetDir], {
+    cwd,
+    action: "clone repository via git (https)",
+  });
 }
 
 /**
@@ -621,6 +649,7 @@ async function handleUrlStart(
   } else {
     spinner.start(`Cloning ${parsed.ownerRepo}`);
     try {
+      spinner.stop(); // Clear spinner before interactive command
       await cloneRepo(parsed, targetDir, cwd);
       spinner.succeed(`Cloned to ${targetDir}`);
     } catch (err) {
@@ -1608,6 +1637,10 @@ export function registerStart(program: Command): void {
           // Non-TTY callers (scripts/agents) keep the old "AO is already
           // running" message and do NOT mutate config behind the user's back.
           if (running && projectArgIsUrlOrPath && isHumanCaller()) {
+            const requestedProjectArg = projectArg;
+            if (!requestedProjectArg) {
+              throw new Error("Expected project path or URL argument");
+            }
             // Always register against the GLOBAL config — never the cwd's
             // local config. Cross-project visibility lives in the global
             // registry, and addProjectToConfig only routes to global when
@@ -1618,9 +1651,9 @@ export function registerStart(program: Command): void {
               : loadConfig();
 
             let existingId: string | null = null;
-            if (isRepoUrl(projectArg!)) {
+            if (isRepoUrl(requestedProjectArg)) {
               try {
-                const parsed = parseRepoUrl(projectArg!);
+                const parsed = parseRepoUrl(requestedProjectArg);
                 for (const [id, p] of Object.entries(globalCfg.projects)) {
                   if (p.repo === parsed.ownerRepo) {
                     existingId = id;
@@ -1632,7 +1665,7 @@ export function registerStart(program: Command): void {
               }
             } else {
               const resolvedPath = resolve(
-                projectArg!.replace(/^~/, process.env["HOME"] || ""),
+                requestedProjectArg.replace(/^~/, process.env["HOME"] || ""),
               );
               let canonicalTarget: string;
               try {
@@ -1669,14 +1702,14 @@ export function registerStart(program: Command): void {
             let resolvedId: string;
             if (existingId) {
               resolvedId = existingId;
-            } else if (isRepoUrl(projectArg!)) {
+            } else if (isRepoUrl(requestedProjectArg)) {
               // Clone + register inline. We DO NOT call handleUrlStart —
               // that helper writes a legacy wrapped (`projects:`) local
               // config that the new resolver rejects, requiring a repair
               // pass after the fact. Instead, we write a flat local config
               // here so the global registry + repo can be loaded cleanly
               // on the very first read.
-              const parsed = parseRepoUrl(projectArg!);
+              const parsed = parseRepoUrl(requestedProjectArg);
               console.log(
                 chalk.bold.cyan(`\n  Cloning ${parsed.ownerRepo} (${parsed.host})\n`),
               );
@@ -1708,7 +1741,7 @@ export function registerStart(program: Command): void {
                 throw new Error(
                   `Repository "${parsed.ownerRepo}" appears to be empty (no commits or refs).\n` +
                     `  AO needs at least one commit on the default branch to spawn an orchestrator.\n` +
-                    `  Push an initial commit, then re-run \`ao start ${projectArg}\`.`,
+                    `  Push an initial commit, then re-run \`ao start ${requestedProjectArg}\`.`,
                 );
               }
 
@@ -1747,7 +1780,7 @@ export function registerStart(program: Command): void {
               }
             } else {
               const resolvedPath = resolve(
-                projectArg!.replace(/^~/, process.env["HOME"] || ""),
+                requestedProjectArg.replace(/^~/, process.env["HOME"] || ""),
               );
               resolvedId = await addProjectToConfig(globalCfg, resolvedPath);
             }
@@ -2193,6 +2226,25 @@ export function registerStart(program: Command): void {
           });
           unlockStartup();
 
+          // Start the Bun-extracted /tmp/.*.{so,dylib} janitor once per AO
+          // process. Single-instance is enforced by running.json + the
+          // startup lock above, so this call site is reached at most once
+          // per process. The janitor uses an unref'd interval timer, so it
+          // does not keep the event loop alive on its own and dies with the
+          // process on SIGTERM/SIGINT.
+          startBunTmpJanitor({
+            onSweep: ({ removed, freedBytes, errors }) => {
+              if (removed > 0) {
+                console.info(
+                  `[bun-tmp-janitor] reclaimed ${removed} file(s) / ${freedBytes} bytes`,
+                );
+              }
+              if (errors > 0) {
+                console.warn(`[bun-tmp-janitor] sweep had ${errors} error(s)`);
+              }
+            },
+          });
+
           // Install shutdown handlers so Ctrl+C and `ao stop` (which sends
           // SIGTERM) perform a full graceful shutdown: kill sessions, record
           // last-stop state for restore, unregister, then exit.
@@ -2262,11 +2314,22 @@ export function registerStart(program: Command): void {
               } catch {
                 // Best-effort — always exit even if cleanup fails
               }
+              try {
+                // Await any in-flight sweep so shutdown does not exit while
+                // unlink() calls are still mid-flight against the filesystem.
+                await stopBunTmpJanitor();
+              } catch {
+                // Best-effort cleanup.
+              }
               process.exit(exitCode);
             })();
           };
-          process.once("SIGINT", shutdown);
-          process.once("SIGTERM", shutdown);
+          process.once("SIGINT", (sig) => {
+            void shutdown(sig);
+          });
+          process.once("SIGTERM", (sig) => {
+            void shutdown(sig);
+          });
         } catch (err) {
           if (err instanceof Error) {
             console.error(chalk.red("\nError:"), err.message);
