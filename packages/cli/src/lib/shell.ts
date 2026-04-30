@@ -78,8 +78,11 @@ export function forwardSignalsToChild(pid: number, child: ChildProcess): void {
     process.off("SIGTERM", forward);
     void killProcessTree(pid, "SIGTERM");
     // If the child ignores SIGTERM, force-kill after 5 s so the parent exits.
+    // Exit 0: this path is reached on user-initiated Ctrl+C where the child is
+    // merely slow to drain (e.g. Next.js connections). Treating that as an
+    // error breaks shell scripts and CI pipelines that check the exit code.
     fallback = setTimeout(() => {
-      void killProcessTree(pid, "SIGKILL").finally(() => process.exit(1));
+      void killProcessTree(pid, "SIGKILL").finally(() => process.exit(0));
     }, 5000);
     fallback.unref();
   };
