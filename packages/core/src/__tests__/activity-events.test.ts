@@ -71,6 +71,25 @@ describe("recordActivityEvent", () => {
     ).not.toThrow();
   });
 
+  it("never throws even if data sanitization throws", () => {
+    const data = {};
+    Object.defineProperty(data, "bad", {
+      enumerable: true,
+      get: () => {
+        throw new Error("getter failed");
+      },
+    });
+
+    expect(() =>
+      recordActivityEvent({
+        source: "session-manager",
+        kind: "session.spawned",
+        summary: "spawned",
+        data,
+      }),
+    ).not.toThrow();
+  });
+
   it("sanitizes sensitive data keys", () => {
     let capturedData: unknown;
     const captureDb = {

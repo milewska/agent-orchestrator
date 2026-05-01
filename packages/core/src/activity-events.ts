@@ -122,18 +122,18 @@ function sanitizeSummary(summary: string): string {
  * Record an activity event. Synchronous, best-effort — never throws.
  */
 export function recordActivityEvent(event: ActivityEventInput): void {
-  const db = getDb();
-  if (!db) {
-    _droppedEventCount++;
-    return;
-  }
-
-  const now = Date.now();
-  const ts = new Date(now).toISOString();
-  const summary = sanitizeSummary(event.summary);
-  const data = event.data ? sanitizeData(event.data) : undefined;
-
   try {
+    const db = getDb();
+    if (!db) {
+      _droppedEventCount++;
+      return;
+    }
+
+    const now = Date.now();
+    const ts = new Date(now).toISOString();
+    const summary = sanitizeSummary(event.summary);
+    const data = event.data ? sanitizeData(event.data) : undefined;
+
     db.prepare(
       `INSERT INTO activity_events
         (ts_epoch, ts, project_id, session_id, source, type, log_level, summary, data)

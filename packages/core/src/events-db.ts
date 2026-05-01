@@ -84,6 +84,9 @@ function initFts(db: BetterSqlite3Database): void {
         VALUES (new.id, new.summary, new.data);
     END;
   `);
+
+  // Backfill rows written before FTS was available; triggers only cover future writes.
+  db.exec("INSERT INTO activity_events_fts(activity_events_fts) VALUES('rebuild')");
 }
 
 function pruneOldEvents(db: BetterSqlite3Database, cutoff: number): void {
