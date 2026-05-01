@@ -61,7 +61,6 @@ describe("recordActivityEvent", () => {
         throw new Error("disk full");
       },
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValueOnce(badDb as any);
     expect(() =>
       recordActivityEvent({
@@ -82,7 +81,6 @@ describe("recordActivityEvent", () => {
         all: () => [],
       }),
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValueOnce(captureDb as any);
     recordActivityEvent({
       source: "lifecycle",
@@ -93,6 +91,35 @@ describe("recordActivityEvent", () => {
     const parsed = JSON.parse(capturedData as string);
     expect(parsed["token"]).toBe("[redacted]");
     expect(parsed["agent"]).toBe("claude-code");
+  });
+
+  it("sanitizes nested sensitive data keys and credential URLs", () => {
+    let capturedData: unknown;
+    const captureDb = {
+      prepare: (_sql: string) => ({
+        run: (...args: unknown[]) => {
+          capturedData = args[8];
+        },
+        all: () => [],
+      }),
+    };
+    vi.mocked(eventsDb.getDb).mockReturnValueOnce(captureDb as any);
+    recordActivityEvent({
+      source: "lifecycle",
+      kind: "session.spawned",
+      summary: "spawned",
+      data: {
+        request: {
+          headers: {
+            authorization: "Bearer ghp_secret",
+            url: "HTTPS://token@example.com/path",
+          },
+        },
+      },
+    });
+    const parsed = JSON.parse(capturedData as string);
+    expect(parsed["request"]["headers"]["authorization"]).toBe("[redacted]");
+    expect(parsed["request"]["headers"]["url"]).toBe("https://[redacted]@example.com/path");
   });
 
   it("preserves error messages that mention sensitive words in values", () => {
@@ -108,7 +135,6 @@ describe("recordActivityEvent", () => {
         all: () => [],
       }),
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValueOnce(captureDb as any);
     recordActivityEvent({
       source: "session-manager",
@@ -136,14 +162,12 @@ describe("recordActivityEvent", () => {
         all: () => [],
       }),
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValueOnce(captureDb as any);
     expect(() =>
       recordActivityEvent({
         source: "lifecycle",
         kind: "session.spawned",
         summary: "spawned",
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         data: { big: BigInt(9007199254740991) as any },
       }),
     ).not.toThrow();
@@ -160,7 +184,6 @@ describe("recordActivityEvent", () => {
         all: () => [],
       }),
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValueOnce(captureDb as any);
     const longSummary = "x".repeat(600);
     recordActivityEvent({
@@ -169,5 +192,6 @@ describe("recordActivityEvent", () => {
       summary: longSummary,
     });
     expect((capturedSummary as string).length).toBe(500);
+    expect(capturedSummary).toMatch(/\.\.\.$/);
   });
 });

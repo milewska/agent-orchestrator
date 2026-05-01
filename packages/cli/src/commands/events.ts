@@ -4,16 +4,23 @@ import {
   queryActivityEvents,
   searchActivityEvents,
   getActivityEventStats,
-  loadConfig,
-  findConfigFile,
+  droppedEventCount,
+  isActivityEventsFtsEnabled,
   type ActivityEvent,
+  type ActivityEventLevel,
   type ActivityEventKind,
 } from "@aoagents/ao-core";
 
 interface JsonEnvelope {
   version: number;
   query: Record<string, unknown>;
-  meta: { count: number; ts: string };
+  meta: {
+    resultCount: number;
+    droppedEventCount: number;
+    ftsEnabled: boolean;
+    fallbackUsed: boolean;
+    ts: string;
+  };
   events: Record<string, unknown>[];
 }
 
@@ -53,14 +60,14 @@ function formatRow(ev: ActivityEvent): string {
   return `${chalk.dim(ts)}  ${kind}  ${level}  ${chalk.dim(session)}  ${ev.summary}`;
 }
 
-async function loadCfg() {
-  const cfgPath = findConfigFile();
-  if (!cfgPath) return null;
-  try {
-    return await loadConfig(cfgPath);
-  } catch {
-    return null;
-  }
+function jsonMeta(resultCount: number, fallbackUsed = false): JsonEnvelope["meta"] {
+  return {
+    resultCount,
+    droppedEventCount: droppedEventCount(),
+    ftsEnabled: isActivityEventsFtsEnabled(),
+    fallbackUsed,
+    ts: new Date().toISOString(),
+  };
 }
 
 export function registerEvents(program: Command): void {
@@ -74,12 +81,11 @@ export function registerEvents(program: Command): void {
     .option("-p, --project <id>", "Filter by project ID")
     .option("-s, --session <id>", "Filter by session ID")
     .option("-t, --type <kind>", "Filter by event kind (e.g. session.spawned, lifecycle.transition)")
+    .option("--log-level <level>", "Filter by log level (debug, info, warn, error)")
     .option("--since <duration>", "Show events from last N minutes/hours/days (e.g. 30m, 2h, 1d)")
     .option("-n, --limit <n>", "Max results", "50")
     .option("--json", "Output as JSON")
     .action(async (opts: Record<string, string | undefined>) => {
-      await loadCfg(); // warm up config (optional, events DB is global)
-
       const sinceRaw = opts["since"];
       let since: Date | undefined;
       if (sinceRaw) {
@@ -94,6 +100,7 @@ export function registerEvents(program: Command): void {
         projectId: opts["project"],
         sessionId: opts["session"],
         kind: opts["type"] as ActivityEventKind,
+        level: opts["logLevel"] as ActivityEventLevel,
         since,
         limit,
       });
@@ -105,10 +112,11 @@ export function registerEvents(program: Command): void {
             projectId: opts["project"] ?? null,
             sessionId: opts["session"] ?? null,
             kind: opts["type"] ?? null,
+            level: opts["logLevel"] ?? null,
             since: sinceRaw ?? null,
             limit,
           },
-          meta: { count: results.length, ts: new Date().toISOString() },
+          meta: jsonMeta(results.length),
           events: results.map(toJsonOutput),
         };
         console.log(JSON.stringify(envelope, null, 2));
@@ -140,12 +148,13 @@ export function registerEvents(program: Command): void {
     .action(async (query: string, opts: Record<string, string | undefined>) => {
       const limit = parseInt(opts["limit"] ?? "100", 10);
       const results = searchActivityEvents(query, opts["project"], limit);
+      const fallbackUsed = !isActivityEventsFtsEnabled();
 
       if (opts["json"]) {
         const envelope: JsonEnvelope = {
           version: 1,
           query: { q: query, projectId: opts["project"] ?? null, limit },
-          meta: { count: results.length, ts: new Date().toISOString() },
+          meta: jsonMeta(results.length, fallbackUsed),
           events: results.map(toJsonOutput),
         };
         console.log(JSON.stringify(envelope, null, 2));

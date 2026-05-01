@@ -6,7 +6,7 @@
  * getActivityEventStats: aggregate counts for `ao events stats`.
  */
 
-import { getDb } from "./events-db.js";
+import { getDb, isActivityEventsFtsEnabled } from "./events-db.js";
 import {
   droppedEventCount,
   type ActivityEvent,
@@ -47,7 +47,12 @@ function rowToEvent(row: Record<string, unknown>): ActivityEvent {
     level: row["log_level"] as string,
     summary: row["summary"] as string,
     data: (row["data"] as string | null) ?? null,
+    rank: typeof row["rank"] === "number" ? (row["rank"] as number) : undefined,
   };
+}
+
+function escapeLike(raw: string): string {
+  return raw.replace(/[\\%_]/g, "\\$&");
 }
 
 /**
@@ -119,14 +124,31 @@ export function searchActivityEvents(rawQuery: string, projectId?: string, limit
 
   const projectFilter = projectId ? "AND ae.project_id = ?" : "";
   const clampedLimit = Number.isFinite(limit) ? Math.max(1, Math.min(limit, 1000)) : 100;
-  const params: unknown[] = [ftsQuery];
+  const params: unknown[] = [];
   if (projectId) params.push(projectId);
   params.push(clampedLimit);
 
   try {
+    if (!isActivityEventsFtsEnabled()) {
+      const likePattern = `%${escapeLike(tokens.join(" "))}%`;
+      const fallbackParams: unknown[] = [likePattern, likePattern];
+      if (projectId) fallbackParams.push(projectId);
+      fallbackParams.push(clampedLimit);
+      const rows = db
+        .prepare(
+          `SELECT ae.*, NULL AS rank FROM activity_events ae
+           WHERE (ae.summary LIKE ? ESCAPE '\\' OR ae.data LIKE ? ESCAPE '\\') ${projectFilter}
+           ORDER BY ae.ts_epoch DESC
+           LIMIT ?`,
+        )
+        .all(...fallbackParams) as Record<string, unknown>[];
+      return rows.map(rowToEvent);
+    }
+
+    params.unshift(ftsQuery);
     const rows = db
       .prepare(
-        `SELECT ae.* FROM activity_events ae
+        `SELECT ae.*, activity_events_fts.rank AS rank FROM activity_events ae
          JOIN activity_events_fts ON activity_events_fts.rowid = ae.id
          WHERE activity_events_fts MATCH ? ${projectFilter}
          ORDER BY activity_events_fts.rank

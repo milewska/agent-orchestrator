@@ -46,6 +46,7 @@ export interface ActivityEvent {
   level: string;
   summary: string;
   data: string | null;
+  rank?: number;
 }
 
 let _droppedEventCount = 0;
@@ -58,30 +59,36 @@ export function droppedEventCount(): number {
   return _droppedEventCount;
 }
 
-// Patterns that indicate sensitive field names (top-level keys only)
+// Patterns that indicate sensitive field names
 const SENSITIVE_KEY_RE = /token|password|secret|authorization|cookie|api[-_]?key/i;
 // URL credentials: https://token@host or http://user:pass@host
-const CREDENTIAL_URL_RE = /https?:\/\/[^@\s]+@/g;
+const CREDENTIAL_URL_RE = /https?:\/\/[^@\s]+@/gi;
+
+function sanitizeValue(value: unknown, seen: WeakSet<object>): unknown {
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "string") return value.replace(CREDENTIAL_URL_RE, "https://[redacted]@");
+  if (value === null || typeof value !== "object") return value;
+
+  if (seen.has(value)) return "[circular]";
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeValue(item, seen));
+  }
+
+  const cleaned: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    cleaned[k] = SENSITIVE_KEY_RE.test(k) ? "[redacted]" : sanitizeValue(v, seen);
+  }
+  return cleaned;
+}
 
 function sanitizeData(data: Record<string, unknown>): string | undefined {
-  const cleaned: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(data)) {
-    if (SENSITIVE_KEY_RE.test(k)) {
-      cleaned[k] = "[redacted]";
-    } else if (typeof v === "string") {
-      cleaned[k] = v.replace(CREDENTIAL_URL_RE, "https://[redacted]@");
-    } else {
-      cleaned[k] = v;
-    }
-  }
+  const cleaned = sanitizeValue(data, new WeakSet<object>());
 
   let json: string;
   try {
-    json = JSON.stringify(cleaned, (_key, val) => {
-      // Prevent BigInt and circular reference throws
-      if (typeof val === "bigint") return val.toString();
-      return val;
-    });
+    json = JSON.stringify(cleaned);
   } catch {
     return undefined;
   }
@@ -94,7 +101,8 @@ function sanitizeData(data: Record<string, unknown>): string | undefined {
 }
 
 function sanitizeSummary(summary: string): string {
-  return summary.slice(0, 500);
+  if (summary.length <= 500) return summary;
+  return `${summary.slice(0, 497)}...`;
 }
 
 /**

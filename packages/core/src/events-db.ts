@@ -23,6 +23,7 @@ type BetterSqlite3Database = {
 
 let _db: BetterSqlite3Database | null = null;
 let _dbFailed = false;
+let _ftsEnabled = false;
 
 function getEventsDbPath(): string {
   return join(getAoBaseDir(), "activity-events.db");
@@ -43,6 +44,16 @@ function initSchema(db: BetterSqlite3Database): void {
       data       TEXT
     );
 
+    CREATE INDEX IF NOT EXISTS idx_ae_ts      ON activity_events(ts_epoch);
+    CREATE INDEX IF NOT EXISTS idx_ae_session ON activity_events(session_id);
+    CREATE INDEX IF NOT EXISTS idx_ae_project ON activity_events(project_id);
+    CREATE INDEX IF NOT EXISTS idx_ae_type    ON activity_events(type);
+    CREATE INDEX IF NOT EXISTS idx_ae_source  ON activity_events(source);
+  `);
+}
+
+function initFts(db: BetterSqlite3Database): void {
+  db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS activity_events_fts USING fts5(
       summary, data,
       content='activity_events',
@@ -63,14 +74,18 @@ function initSchema(db: BetterSqlite3Database): void {
         VALUES ('delete', old.id, old.summary, old.data);
     END;
 
-    CREATE INDEX IF NOT EXISTS idx_ae_ts      ON activity_events(ts_epoch);
-    CREATE INDEX IF NOT EXISTS idx_ae_session ON activity_events(session_id);
-    CREATE INDEX IF NOT EXISTS idx_ae_project ON activity_events(project_id);
+    CREATE TRIGGER IF NOT EXISTS activity_events_au
+      AFTER UPDATE ON activity_events
+    BEGIN
+      INSERT INTO activity_events_fts(activity_events_fts, rowid, summary, data)
+        VALUES ('delete', old.id, old.summary, old.data);
+      INSERT INTO activity_events_fts(rowid, summary, data)
+        VALUES (new.id, new.summary, new.data);
+    END;
   `);
 }
 
 function openDb(): BetterSqlite3Database {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const Database = _require("better-sqlite3") as new (path: string) => BetterSqlite3Database;
   mkdirSync(getAoBaseDir(), { recursive: true });
   const db = new Database(getEventsDbPath());
@@ -81,9 +96,21 @@ function openDb(): BetterSqlite3Database {
   db.pragma("synchronous = NORMAL");
 
   const version = db.pragma("user_version", { simple: true }) as number;
+  initSchema(db);
   if (version < 1) {
-    initSchema(db);
     db.pragma("user_version = 1");
+  }
+
+  try {
+    initFts(db);
+    _ftsEnabled = true;
+  } catch (err) {
+    _ftsEnabled = false;
+    // eslint-disable-next-line no-console
+    console.warn(
+      "[ao] activity-events FTS unavailable — writes will continue and search will use a bounded LIKE fallback:",
+      err instanceof Error ? err.message : String(err),
+    );
   }
 
   // 7-day retention using epoch comparison (no text/datetime ambiguity)
@@ -91,6 +118,11 @@ function openDb(): BetterSqlite3Database {
   db.prepare("DELETE FROM activity_events WHERE ts_epoch < ?").run(cutoff);
 
   return db;
+}
+
+/** Whether the current process has an initialized FTS5 search table. */
+export function isActivityEventsFtsEnabled(): boolean {
+  return _ftsEnabled;
 }
 
 /**

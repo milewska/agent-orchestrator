@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../events-db.js", () => ({
   getDb: vi.fn(),
+  isActivityEventsFtsEnabled: vi.fn(() => true),
 }));
 vi.mock("../activity-events.js", async (importOriginal) => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mod = await (importOriginal as () => Promise<any>)();
   return { ...mod, droppedEventCount: () => 0 };
 });
@@ -43,7 +43,6 @@ describe("queryActivityEvents", () => {
   });
 
   it("maps rows to ActivityEvent shape", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValue(makeDb() as any);
     const results = queryActivityEvents();
     expect(results).toHaveLength(1);
@@ -59,7 +58,6 @@ describe("queryActivityEvents", () => {
         return { all: () => [] };
       },
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValue(captureDb as any);
     queryActivityEvents({ limit: 9999 });
     expect(capturedSql).toContain("LIMIT ?");
@@ -73,7 +71,6 @@ describe("queryActivityEvents", () => {
         },
       }),
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValue(badDb as any);
     expect(queryActivityEvents()).toEqual([]);
   });
@@ -83,7 +80,6 @@ describe("searchActivityEvents", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns [] for empty query", () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValue(makeDb() as any);
     expect(searchActivityEvents("")).toEqual([]);
     expect(searchActivityEvents("   ")).toEqual([]);
@@ -99,7 +95,6 @@ describe("searchActivityEvents", () => {
         },
       }),
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValue(captureDb as any);
     searchActivityEvents("spawn; DROP TABLE activity_events--");
     // SQL injection stripped; only word tokens joined by AND
@@ -109,6 +104,31 @@ describe("searchActivityEvents", () => {
   it("returns [] when DB is null", () => {
     vi.mocked(eventsDb.getDb).mockReturnValue(null);
     expect(searchActivityEvents("spawned")).toEqual([]);
+  });
+
+  it("uses a bounded LIKE fallback when FTS is unavailable", () => {
+    let capturedSql = "";
+    let capturedArgs: unknown[] = [];
+    const captureDb = {
+      prepare: (sql: string) => {
+        capturedSql = sql;
+        return {
+          all: (...args: unknown[]) => {
+            capturedArgs = args;
+            return [sampleRow];
+          },
+        };
+      },
+    };
+    vi.mocked(eventsDb.getDb).mockReturnValue(captureDb as any);
+    vi.mocked(eventsDb.isActivityEventsFtsEnabled).mockReturnValueOnce(false);
+
+    const results = searchActivityEvents("spawn failed", "proj-1", 10);
+
+    expect(results).toHaveLength(1);
+    expect(capturedSql).toContain("LIKE");
+    expect(capturedSql).toContain("ae.project_id = ?");
+    expect(capturedArgs).toEqual(["%spawn failed%", "%spawn failed%", "proj-1", 10]);
   });
 });
 
@@ -141,7 +161,6 @@ describe("getActivityEventStats", () => {
         },
       }),
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValue(stubDb as any);
     const stats = getActivityEventStats();
     expect(stats).not.toBeNull();

@@ -3,15 +3,14 @@
  * Verifies that the FTS virtual table, triggers, and MATCH query actually work.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createRequire } from "node:module";
 
 // We need a real better-sqlite3 instance for this test.
 // If it's not available, skip.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let Database: (new (path: string) => any) | null = null;
 try {
-  const mod = await import("better-sqlite3");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  Database = mod.default as unknown as new (path: string) => any;
+  const require = createRequire(import.meta.url);
+  Database = require("better-sqlite3") as new (path: string) => any;
 } catch {
   // better-sqlite3 unavailable — integration tests will be skipped
 }
@@ -19,16 +18,15 @@ try {
 // Mock events-db to inject our real in-memory DB
 vi.mock("../events-db.js", () => ({
   getDb: vi.fn(),
+  isActivityEventsFtsEnabled: vi.fn(() => true),
 }));
 
 import * as eventsDb from "../events-db.js";
 import { recordActivityEvent } from "../activity-events.js";
 import { searchActivityEvents, queryActivityEvents } from "../query-activity-events.js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function openMemoryDb(): any {
   if (!Database) throw new Error("better-sqlite3 not available");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const db = new (Database as any)(":memory:");
   db.exec(`
     CREATE TABLE IF NOT EXISTS activity_events (
@@ -60,9 +58,19 @@ function openMemoryDb(): any {
       INSERT INTO activity_events_fts(activity_events_fts, rowid, summary, data)
         VALUES ('delete', old.id, old.summary, old.data);
     END;
+    CREATE TRIGGER IF NOT EXISTS activity_events_au
+      AFTER UPDATE ON activity_events
+    BEGIN
+      INSERT INTO activity_events_fts(activity_events_fts, rowid, summary, data)
+        VALUES ('delete', old.id, old.summary, old.data);
+      INSERT INTO activity_events_fts(rowid, summary, data)
+        VALUES (new.id, new.summary, new.data);
+    END;
     CREATE INDEX IF NOT EXISTS idx_ae_ts      ON activity_events(ts_epoch);
     CREATE INDEX IF NOT EXISTS idx_ae_session ON activity_events(session_id);
     CREATE INDEX IF NOT EXISTS idx_ae_project ON activity_events(project_id);
+    CREATE INDEX IF NOT EXISTS idx_ae_type    ON activity_events(type);
+    CREATE INDEX IF NOT EXISTS idx_ae_source  ON activity_events(source);
     PRAGMA user_version = 1;
   `);
   return db;
@@ -77,7 +85,6 @@ describe("FTS5 integration (real SQLite)", () => {
     vi.clearAllMocks();
     if (!Database) return;
     db = openMemoryDb();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     vi.mocked(eventsDb.getDb).mockReturnValue(db as any);
   });
 
