@@ -2103,8 +2103,6 @@ describe("stop command", () => {
 describe("start command — autoCreateConfig", () => {
   it("generates config with empty notifiers array (no desktop notifier added by default)", async () => {
     const globalConfigPath = join(tmpDir, "global-config.yaml");
-    const origGlobalEnv = process.env["AO_GLOBAL_CONFIG"];
-    process.env["AO_GLOBAL_CONFIG"] = globalConfigPath;
 
     const { detectEnvironment } = await import("../../src/lib/detect-env.js");
     vi.mocked(detectEnvironment).mockResolvedValue({
@@ -2139,38 +2137,33 @@ describe("start command — autoCreateConfig", () => {
     const callerContext = await import("../../src/lib/caller-context.js");
     vi.spyOn(callerContext, "isHumanCaller").mockReturnValue(false);
 
-    try {
-      await createConfigOnly();
+    await createConfigOnly();
 
-      const configPath = join(tmpDir, "agent-orchestrator.yaml");
-      expect(existsSync(configPath)).toBe(true);
-      expect(existsSync(globalConfigPath)).toBe(true);
+    const configPath = join(tmpDir, "agent-orchestrator.yaml");
+    expect(existsSync(configPath)).toBe(true);
+    expect(existsSync(globalConfigPath)).toBe(true);
 
-      const content = readFileSync(configPath, "utf-8");
-      const parsed = parseYaml(content) as {
-        $schema?: string;
-        defaults?: { notifiers?: unknown[] };
-      };
-      expect(parsed["$schema"]).toBe(
-        "https://raw.githubusercontent.com/ComposioHQ/agent-orchestrator/main/schema/config.schema.json",
-      );
-      expect(parsed.defaults?.notifiers).toEqual([]);
+    const content = readFileSync(configPath, "utf-8");
+    const parsed = parseYaml(content) as {
+      $schema?: string;
+      defaults?: { notifiers?: unknown[] };
+    };
+    expect(parsed["$schema"]).toBe(
+      "https://raw.githubusercontent.com/ComposioHQ/agent-orchestrator/main/schema/config.schema.json",
+    );
+    expect(parsed.defaults?.notifiers).toEqual([]);
 
-      const globalConfig = parseYaml(readFileSync(globalConfigPath, "utf-8")) as {
-        projects: Record<string, Record<string, unknown>>;
-      };
-      const registeredEntry = Object.values(globalConfig.projects).find(
-        (entry) => entry.path === realpathSync(tmpDir),
-      );
-      expect(registeredEntry).toMatchObject({
-        path: realpathSync(tmpDir),
-        defaultBranch: "main",
-      });
-      expect(registeredEntry?.sessionPrefix).toEqual(expect.any(String));
-    } finally {
-      if (origGlobalEnv === undefined) delete process.env["AO_GLOBAL_CONFIG"];
-      else process.env["AO_GLOBAL_CONFIG"] = origGlobalEnv;
-    }
+    const globalConfig = parseYaml(readFileSync(globalConfigPath, "utf-8")) as {
+      projects: Record<string, Record<string, unknown>>;
+    };
+    const registeredEntry = Object.values(globalConfig.projects).find(
+      (entry) => entry.path === realpathSync(tmpDir),
+    );
+    expect(registeredEntry).toMatchObject({
+      path: realpathSync(tmpDir),
+      defaultBranch: "main",
+    });
+    expect(registeredEntry?.sessionPrefix).toEqual(expect.any(String));
   });
 });
 

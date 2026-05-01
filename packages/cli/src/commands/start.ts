@@ -115,8 +115,38 @@ function writeProjectBehaviorConfig(projectPath: string, config: LocalProjectCon
   writeLocalProjectConfig(projectPath, config);
 }
 
+function isProjectRegisteredInGlobalConfig(projectPath: string): boolean {
+  const globalConfigPath = getGlobalConfigPath();
+  if (!existsSync(globalConfigPath)) {
+    return false;
+  }
+
+  let canonicalProjectPath: string;
+  try {
+    canonicalProjectPath = realpathSync(resolve(projectPath));
+  } catch {
+    canonicalProjectPath = resolve(projectPath);
+  }
+
+  try {
+    const globalConfig = loadConfig(globalConfigPath);
+    return Object.values(globalConfig.projects).some((project) => {
+      try {
+        return realpathSync(resolve(project.path)) === canonicalProjectPath;
+      } catch {
+        return resolve(project.path) === canonicalProjectPath;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
 function registerProjectForDashboard(projectId: string, project: ProjectConfig): string {
   if (!existsSync(project.path)) {
+    return projectId;
+  }
+  if (isProjectRegisteredInGlobalConfig(project.path)) {
     return projectId;
   }
 
@@ -1683,6 +1713,7 @@ export function registerStart(program: Command): void {
           let config: OrchestratorConfig;
           let projectId: string;
           let project: ProjectConfig;
+          let registeredProjectForDashboardThisStart = false;
 
           // ── Already-running detection (before any config mutation) ──
           const running = await isAlreadyRunning();
@@ -2133,6 +2164,7 @@ export function registerStart(program: Command): void {
                 // cwd is the target — auto-create config here
                 config = await autoCreateConfig(cwd());
               }
+              registeredProjectForDashboardThisStart = true;
               ({ projectId, project, config } = await resolveProject(config));
             } else {
               config = loadConfig(configPath);
@@ -2150,6 +2182,7 @@ export function registerStart(program: Command): void {
               } else {
                 // New project — add it to config
                 const addedId = await addProjectToConfig(config, resolvedPath);
+                registeredProjectForDashboardThisStart = true;
                 config = loadConfig(config.configPath);
                 projectId = addedId;
                 project = config.projects[projectId];
@@ -2164,6 +2197,7 @@ export function registerStart(program: Command): void {
               if (err instanceof ConfigNotFoundError) {
                 // First run — auto-create config
                 loadedConfig = await autoCreateConfig(cwd());
+                registeredProjectForDashboardThisStart = true;
               } else {
                 // A config file exists but failed to load — likely a flat local
                 // config whose project isn't registered in the global config yet.
@@ -2193,7 +2227,10 @@ export function registerStart(program: Command): void {
             ({ projectId, project, config } = await resolveProject(config, projectArg));
           }
 
-          if (!isCanonicalGlobalConfigPath(config.configPath)) {
+          if (
+            !registeredProjectForDashboardThisStart &&
+            !isCanonicalGlobalConfigPath(config.configPath)
+          ) {
             registerProjectForDashboard(projectId, project);
           }
 
