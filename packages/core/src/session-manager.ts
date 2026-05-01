@@ -1071,6 +1071,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
   // Define methods as local functions so `this` is not needed
   async function spawn(spawnConfig: SessionSpawnConfig): Promise<Session> {
+    recordActivityEvent({
+      projectId: spawnConfig.projectId,
+      source: "session-manager",
+      kind: "session.spawn_started",
+      summary: "spawn started",
+      data: { agent: spawnConfig.agent ?? undefined },
+    });
+
     try {
       return await _spawnInner(spawnConfig);
     } catch (err) {

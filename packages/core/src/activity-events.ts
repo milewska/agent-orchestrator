@@ -15,6 +15,7 @@ import { getDb } from "./events-db.js";
 export type ActivityEventSource = "lifecycle" | "session-manager" | "api" | "ui";
 
 export type ActivityEventKind =
+  | "session.spawn_started"
   | "session.spawned"
   | "session.spawn_failed"
   | "session.killed"

@@ -89,6 +89,13 @@ describe("activity event logging", () => {
 
     expect(recordActivityEvent).toHaveBeenCalledWith({
       projectId: "my-app",
+      source: "session-manager",
+      kind: "session.spawn_started",
+      summary: "spawn started",
+      data: { agent: undefined },
+    });
+    expect(recordActivityEvent).toHaveBeenCalledWith({
+      projectId: "my-app",
       sessionId: session.id,
       source: "session-manager",
       kind: "session.spawned",
@@ -104,6 +111,13 @@ describe("activity event logging", () => {
       "Unknown project: missing-project",
     );
 
+    expect(recordActivityEvent).toHaveBeenCalledWith({
+      projectId: "missing-project",
+      source: "session-manager",
+      kind: "session.spawn_started",
+      summary: "spawn started",
+      data: { agent: undefined },
+    });
     expect(recordActivityEvent).toHaveBeenCalledWith({
       projectId: "missing-project",
       source: "session-manager",
