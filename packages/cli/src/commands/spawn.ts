@@ -268,7 +268,7 @@ export function registerSpawn(program: Command): void {
           process.exit(1);
         }
 
-        // Resolve preset prompt (mutually exclusive with --prompt; issue allowed only if preset accepts it)
+        // Resolve preset prompt (mutually exclusive with --prompt; issue arg policy is per-preset)
         let finalPrompt = opts.prompt;
         let trustedPrompt = false;
         if (opts.preset) {
@@ -278,10 +278,19 @@ export function registerSpawn(program: Command): void {
           }
           try {
             const preset = resolvePreset(opts.preset);
-            if (issue && !preset.acceptsIssue) {
+            const policy = preset.issueArg ?? "forbidden";
+            if (policy === "forbidden" && issue) {
               console.error(
                 chalk.red(
                   `Preset "${preset.name}" does not accept an issue argument.`,
+                ),
+              );
+              process.exit(1);
+            }
+            if (policy === "required" && !issue) {
+              console.error(
+                chalk.red(
+                  `Preset "${preset.name}" requires an issue argument. Usage: ao spawn <issue> --preset ${preset.name}`,
                 ),
               );
               process.exit(1);

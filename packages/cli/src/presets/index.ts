@@ -1,8 +1,10 @@
 import type { Preset } from "./types.js";
 import { backlogPreset } from "./backlog.js";
+import { triagePreset } from "./triage.js";
 
 const PRESETS: ReadonlyMap<string, Preset> = new Map([
   [backlogPreset.name, backlogPreset],
+  [triagePreset.name, triagePreset],
 ]);
 
 /**
