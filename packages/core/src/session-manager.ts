@@ -1065,10 +1065,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           const metadataUpdates = info.metadata ?? {};
           if (sessionsDir && Object.keys(metadataUpdates).length > 0) {
             updateMetadata(sessionsDir, session.id, metadataUpdates);
-            const nextMetadata = { ...session.metadata };
+            let nextMetadata = { ...session.metadata };
             for (const [key, value] of Object.entries(metadataUpdates)) {
               if (value === "") {
-                delete nextMetadata[key];
+                nextMetadata = Object.fromEntries(
+                  Object.entries(nextMetadata).filter(([existingKey]) => existingKey !== key),
+                );
               } else {
                 nextMetadata[key] = value;
               }
