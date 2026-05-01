@@ -119,11 +119,57 @@ function detectWindowsBash(): string | null {
   return findBashOnPath();
 }
 
+// Windows: prefer PowerShell 7 (pwsh.exe), fall back to bundled Windows
+// PowerShell 5.1 (powershell.exe). Both can run our .ps1 scripts.
+function detectWindowsPowerShell(): string | null {
+  const candidates = ["pwsh.exe", "powershell.exe"];
+  const dirs = (process.env["PATH"] ?? "").split(";").filter(Boolean);
+  for (const exe of candidates) {
+    for (const dir of dirs) {
+      const candidate = resolve(dir, exe);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  // Fallback: powershell.exe ships in System32 on every supported Windows.
+  const sysRoot = process.env["SystemRoot"] ?? "C:\\Windows";
+  const fallback = resolve(sysRoot, "System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+  return existsSync(fallback) ? fallback : null;
+}
+
 export function hasRepoScript(scriptName: string): boolean {
   return existsSync(getScriptPath(scriptName));
 }
 
 export async function runRepoScript(scriptName: string, args: string[]): Promise<number> {
+  const repoRoot = resolveRepoRoot();
+  const scriptLayout = resolveScriptLayout();
+
+  // Windows: prefer the .ps1 sibling of the requested .sh script and run via
+  // PowerShell. .sh scripts can still be run if the user has installed Git Bash
+  // and we ship no .ps1 equivalent. Booth/WSL bash isn't supported (see comment
+  // on WINDOWS_BASH_CANDIDATES).
+  if (isWindows()) {
+    const ps1Name = scriptName.replace(/\.sh$/i, ".ps1");
+    if (ps1Name !== scriptName && hasRepoScript(ps1Name)) {
+      const ps = detectWindowsPowerShell();
+      if (!ps) {
+        throw new Error(
+          "Cannot run PowerShell scripts on Windows. " +
+            "Install PowerShell 7 (https://aka.ms/powershell) or ensure powershell.exe is in PATH.",
+        );
+      }
+      const scriptPath = resolveScriptPath(ps1Name);
+      // -File runs the script with positional args; -ExecutionPolicy Bypass
+      // avoids machine policy blocking unsigned bundled scripts.
+      return await spawnAndWait(
+        ps,
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", scriptPath, ...args],
+        repoRoot,
+        scriptLayout,
+      );
+    }
+  }
+
   let shellOverride = process.env["AO_BASH_PATH"];
   // Unix: always use bash — repo scripts have #!/bin/bash shebangs and bash-specific syntax.
   // Shebangs are only honoured by the kernel when a file is executed directly; when passed as
@@ -147,11 +193,18 @@ export async function runRepoScript(scriptName: string, args: string[]): Promise
 
   const shell = shellOverride ?? "bash";
   const scriptPath = resolveScriptPath(scriptName);
-  const repoRoot = resolveRepoRoot();
-  const scriptLayout = resolveScriptLayout();
 
-  return await new Promise<number>((resolveExit, reject) => {
-    const child = spawn(shell, [scriptPath, ...args], {
+  return await spawnAndWait(shell, [scriptPath, ...args], repoRoot, scriptLayout);
+}
+
+function spawnAndWait(
+  shell: string,
+  shellArgs: string[],
+  repoRoot: string,
+  scriptLayout: ScriptLayout,
+): Promise<number> {
+  return new Promise<number>((resolveExit, reject) => {
+    const child = spawn(shell, shellArgs, {
       cwd: repoRoot,
       env: { ...process.env, AO_REPO_ROOT: repoRoot, AO_SCRIPT_LAYOUT: scriptLayout },
       stdio: "inherit",
