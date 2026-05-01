@@ -116,7 +116,7 @@ export async function startProjectSupervisor(
   let stopped = false;
   let waiters: Array<() => void> = [];
 
-  const run = async (): Promise<void> => {
+  const run = async (options: { swallowErrors?: boolean } = {}): Promise<void> => {
     if (stopped) return;
     if (reconciling) {
       pending = true;
@@ -131,7 +131,8 @@ export async function startProjectSupervisor(
         pending = false;
         try {
           await reconcileProjectSupervisor({ intervalMs });
-        } catch {
+        } catch (error) {
+          if (!options.swallowErrors) throw error;
           // Best-effort background loop: transient config/state errors should not crash ao start.
         }
       } while (pending && !stopped);
@@ -144,7 +145,7 @@ export async function startProjectSupervisor(
   };
 
   const timer = setInterval(() => {
-    void run();
+    void run({ swallowErrors: true });
   }, intervalMs);
   timer.unref?.();
 
@@ -158,7 +159,12 @@ export async function startProjectSupervisor(
   };
   activeSupervisor = handle;
 
-  await run();
+  try {
+    await run();
+  } catch (error) {
+    handle.stop();
+    throw error;
+  }
   return handle;
 }
 

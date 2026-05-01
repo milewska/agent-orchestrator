@@ -2200,9 +2200,8 @@ export function registerStart(program: Command): void {
           const actualPort = await runStartup(config, projectId, project, opts);
 
           // ── Register in running.json (Step 11) ──
-          // Only record the project this invocation actually polls. Other
-          // configured projects are not covered by this lifecycle loop, and
-          // `ao spawn` relies on this list to decide whether to warn users.
+          // During daemon startup, the project supervisor is the authoritative
+          // writer for lifecycle polling coverage across all active projects.
           await register({
             pid: process.pid,
             configPath: config.configPath,

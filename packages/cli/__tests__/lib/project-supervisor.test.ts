@@ -237,18 +237,12 @@ describe("project-supervisor", () => {
     });
   });
 
-  it("does not reject when the initial supervisor reconcile fails", async () => {
+  it("rejects when the initial supervisor reconcile fails", async () => {
     mockLoadConfig.mockImplementation(() => {
       throw new Error("bad config");
     });
 
-    const handle = await startProjectSupervisor(1_000);
-
-    expect(handle).toEqual({
-      stop: expect.any(Function),
-      reconcileNow: expect.any(Function),
-    });
-    handle.stop();
+    await expect(startProjectSupervisor(1_000)).rejects.toThrow("bad config");
   });
 
   it("forwards the supervisor interval to lifecycle workers it starts", async () => {
