@@ -428,6 +428,15 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     return isOrchestratorSessionRecord(sessionId, metadata ?? {}, project.sessionPrefix);
   }
 
+  function requiresNativeRestore(agentName: string): boolean {
+    return (
+      agentName === "claude-code" ||
+      agentName === "codex" ||
+      agentName === "kimicode" ||
+      agentName === "opencode"
+    );
+  }
+
   function applyMetadataUpdatesToRaw(
     raw: Record<string, string>,
     updates: Partial<Record<string, string>>,
@@ -2901,10 +2910,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         launchCommand = restoreCmd;
         updateMetadata(sessionsDir, sessionId, { restoreFallbackReason: "" });
       } else {
-        launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
+        const reason = `${plugins.agent.name}.getRestoreCommand returned null`;
         updateMetadata(sessionsDir, sessionId, {
-          restoreFallbackReason: `${plugins.agent.name}.getRestoreCommand returned null`,
+          restoreFallbackReason: reason,
         });
+        if (requiresNativeRestore(plugins.agent.name)) {
+          throw new SessionNotRestorableError(sessionId, reason);
+        }
+        launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
       }
     } else {
       launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);

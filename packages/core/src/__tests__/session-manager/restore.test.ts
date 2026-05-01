@@ -552,6 +552,42 @@ describe("restore", () => {
     expect(meta!["restoreFallbackReason"]).toBe("mock-agent.getRestoreCommand returned null");
   });
 
+  it("does not launch a fresh chat when a native-restore agent cannot build restore command", async () => {
+    const wsPath = join(tmpDir, "ws-app-native-restore-missing");
+    mkdirSync(wsPath, { recursive: true });
+
+    const mockNativeRestoreAgent: Agent = {
+      ...mockAgent,
+      name: "codex",
+      getRestoreCommand: vi.fn().mockResolvedValue(null),
+    };
+
+    const registryWithNativeRestoreAgent: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockNativeRestoreAgent;
+        if (slot === "workspace") return mockWorkspace;
+        return null;
+      }),
+    };
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: wsPath,
+      branch: "feat/TEST-1",
+      status: "killed",
+      project: "my-app",
+      runtimeHandle: makeHandle("rt-old"),
+    });
+
+    const sm = createSessionManager({ config, registry: registryWithNativeRestoreAgent });
+
+    await expect(sm.restore("app-1")).rejects.toThrow(SessionNotRestorableError);
+    expect(mockRuntime.create).not.toHaveBeenCalled();
+    const meta = readMetadataRaw(sessionsDir, "app-1");
+    expect(meta!["restoreFallbackReason"]).toBe("codex.getRestoreCommand returned null");
+  });
+
   it("clears restore fallback reason when getRestoreCommand succeeds", async () => {
     const wsPath = join(tmpDir, "ws-app-restore-clears-fallback");
     mkdirSync(wsPath, { recursive: true });
