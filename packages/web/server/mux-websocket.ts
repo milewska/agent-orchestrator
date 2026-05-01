@@ -439,14 +439,26 @@ export interface PipeRelayDeps {
  * Extracted from the WebSocket connection handler for testability.
  */
 export function handleWindowsPipeMessage(
-  msg: { id: string; type: string; data?: string; cols?: number; rows?: number },
+  msg: {
+    id: string;
+    type: string;
+    data?: string;
+    cols?: number;
+    rows?: number;
+    projectId?: string;
+  },
   ws: WsSink,
   winPipes: Map<string, Socket>,
   winPipeBuffers: Map<string, Buffer>,
   deps: PipeRelayDeps,
 ): void {
   const WS_OPEN = 1; // WebSocket.OPEN
-  const { id, type } = msg;
+  const { id, type, projectId } = msg;
+  // MuxProvider keys subscribers under `${projectId}:${id}` when projectId is
+  // provided, so every outbound terminal message must echo projectId back —
+  // otherwise the client routes by id alone and the subscriber bucket
+  // mismatches, leaving the xterm pane blank on /projects/[id]/sessions/[id].
+  const echo = projectId ? { projectId } : {};
 
   // The Unix path validates inside TerminalManager.open(). The Windows pipe
   // relay bypasses TerminalManager entirely, so validate here too — `id`
@@ -454,7 +466,13 @@ export function handleWindowsPipeMessage(
   if (!validateSessionId(id)) {
     if (ws.readyState === WS_OPEN) {
       ws.send(
-        JSON.stringify({ ch: "terminal", id, type: "error", message: "invalid session id" }),
+        JSON.stringify({
+          ch: "terminal",
+          id,
+          type: "error",
+          message: "invalid session id",
+          ...echo,
+        }),
       );
     }
     return;
@@ -462,7 +480,7 @@ export function handleWindowsPipeMessage(
 
   if (type === "open") {
     if (winPipes.has(id)) {
-      ws.send(JSON.stringify({ ch: "terminal", id, type: "opened" }));
+      ws.send(JSON.stringify({ ch: "terminal", id, type: "opened", ...echo }));
     } else {
       const pipePath = deps.resolvePipePath(id);
       if (!pipePath) {
@@ -482,6 +500,7 @@ export function handleWindowsPipeMessage(
               id,
               type: "error",
               message: `PTY host not available: ${err.message}`,
+              ...echo,
             }),
           );
         }
@@ -489,7 +508,7 @@ export function handleWindowsPipeMessage(
 
       pipeSocket.on("connect", () => {
         if (ws.readyState === WS_OPEN) {
-          ws.send(JSON.stringify({ ch: "terminal", id, type: "opened" }));
+          ws.send(JSON.stringify({ ch: "terminal", id, type: "opened", ...echo }));
         }
 
         pipeSocket.on("data", (chunk: Buffer) => {
@@ -512,6 +531,7 @@ export function handleWindowsPipeMessage(
                   id,
                   type: "data",
                   data: payload.toString("utf-8"),
+                  ...echo,
                 }),
               );
             }
@@ -519,7 +539,9 @@ export function handleWindowsPipeMessage(
               try {
                 const status = JSON.parse(payload.toString("utf-8")) as { alive: boolean };
                 if (!status.alive && ws.readyState === WS_OPEN) {
-                  ws.send(JSON.stringify({ ch: "terminal", id, type: "exited", code: 0 }));
+                  ws.send(
+                    JSON.stringify({ ch: "terminal", id, type: "exited", code: 0, ...echo }),
+                  );
                 }
               } catch {
                 /* ignore parse errors */
@@ -532,7 +554,7 @@ export function handleWindowsPipeMessage(
           winPipes.delete(id);
           winPipeBuffers.delete(id);
           if (ws.readyState === WS_OPEN) {
-            ws.send(JSON.stringify({ ch: "terminal", id, type: "exited", code: 0 }));
+            ws.send(JSON.stringify({ ch: "terminal", id, type: "exited", code: 0, ...echo }));
           }
         });
       });
@@ -639,7 +661,7 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
             if (type === "open") {
               if (process.platform === "win32") {
                 handleWindowsPipeMessage(
-                  msg as { id: string; type: string },
+                  msg as { id: string; type: string; projectId?: string; data?: string; cols?: number; rows?: number },
                   ws,
                   winPipes,
                   winPipeBuffers,
@@ -733,7 +755,7 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
             } else if (type === "close") {
               if (process.platform === "win32") {
                 handleWindowsPipeMessage(
-                  msg as { id: string; type: string },
+                  msg as { id: string; type: string; projectId?: string; data?: string; cols?: number; rows?: number },
                   ws,
                   winPipes,
                   winPipeBuffers,
