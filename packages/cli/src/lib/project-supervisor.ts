@@ -2,7 +2,10 @@ import {
   loadConfig,
   getGlobalConfigPath,
   isTerminalSession,
+  createCorrelationId,
+  createProjectObserver,
   type OrchestratorConfig,
+  type ProjectObserver,
 } from "@aoagents/ao-core";
 import { getSessionManager } from "./create-session-manager.js";
 import {
@@ -25,6 +28,25 @@ export interface ReconcileProjectSupervisorOptions {
   intervalMs?: number;
 }
 
+function reportProjectSupervisorError(
+  observer: ProjectObserver,
+  projectId: string,
+  reason: string,
+  error: unknown,
+): void {
+  observer.setHealth({
+    surface: "project-supervisor.reconcile",
+    status: "warn",
+    projectId,
+    correlationId: createCorrelationId("project-supervisor"),
+    reason,
+    details: {
+      projectId,
+      error: error instanceof Error ? error.message : String(error),
+    },
+  });
+}
+
 async function projectHasNonTerminalSession(
   config: OrchestratorConfig,
   projectId: string,
@@ -38,13 +60,23 @@ export async function reconcileProjectSupervisor(
   options: ReconcileProjectSupervisorOptions = {},
 ): Promise<void> {
   const config = loadConfig(getGlobalConfigPath());
+  const observer = createProjectObserver(config, "project-supervisor");
   const configuredProjectIds = new Set(Object.keys(config.projects));
   const activeProjectIds = new Set(listLifecycleWorkers());
 
   for (const projectId of activeProjectIds) {
     if (!configuredProjectIds.has(projectId)) {
-      stopLifecycleWorker(projectId);
-      await removeProjectFromRunning(projectId);
+      try {
+        stopLifecycleWorker(projectId);
+        await removeProjectFromRunning(projectId);
+      } catch (error) {
+        reportProjectSupervisorError(
+          observer,
+          projectId,
+          "Failed to detach lifecycle worker for removed project",
+          error,
+        );
+      }
     }
   }
 
@@ -53,14 +85,22 @@ export async function reconcileProjectSupervisor(
       const hasNonTerminalSession = await projectHasNonTerminalSession(config, projectId);
       const isAttached = listLifecycleWorkers().includes(projectId);
 
-      if (hasNonTerminalSession && !isAttached) {
-        await ensureLifecycleWorker(config, projectId, options.intervalMs);
+      if (hasNonTerminalSession) {
+        if (!isAttached) {
+          await ensureLifecycleWorker(config, projectId, options.intervalMs);
+        }
         await addProjectToRunning(projectId);
-      } else if (!hasNonTerminalSession && isAttached) {
+      } else if (isAttached) {
         stopLifecycleWorker(projectId);
         await removeProjectFromRunning(projectId);
       }
-    } catch {
+    } catch (error) {
+      reportProjectSupervisorError(
+        observer,
+        projectId,
+        "Failed to reconcile lifecycle worker for project",
+        error,
+      );
       // Best-effort per project: a broken project must not block others from reconciling.
     }
   }
@@ -74,22 +114,32 @@ export async function startProjectSupervisor(
   let reconciling = false;
   let pending = false;
   let stopped = false;
+  let waiters: Array<() => void> = [];
 
   const run = async (): Promise<void> => {
     if (stopped) return;
     if (reconciling) {
       pending = true;
-      return;
+      return new Promise<void>((resolve) => {
+        waiters.push(resolve);
+      });
     }
 
     reconciling = true;
     try {
       do {
         pending = false;
-        await reconcileProjectSupervisor();
+        try {
+          await reconcileProjectSupervisor({ intervalMs });
+        } catch {
+          // Best-effort background loop: transient config/state errors should not crash ao start.
+        }
       } while (pending && !stopped);
     } finally {
       reconciling = false;
+      const pendingWaiters = waiters;
+      waiters = [];
+      for (const resolve of pendingWaiters) resolve();
     }
   };
 
@@ -98,7 +148,7 @@ export async function startProjectSupervisor(
   }, intervalMs);
   timer.unref?.();
 
-  activeSupervisor = {
+  const handle: SupervisorHandle = {
     stop: () => {
       stopped = true;
       clearInterval(timer);
@@ -106,9 +156,10 @@ export async function startProjectSupervisor(
     },
     reconcileNow: run,
   };
+  activeSupervisor = handle;
 
   await run();
-  return activeSupervisor;
+  return handle;
 }
 
 export function stopProjectSupervisor(): void {

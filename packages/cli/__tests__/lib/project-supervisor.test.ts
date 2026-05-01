@@ -5,14 +5,38 @@ const mockGetSessionManager = vi.fn();
 const mockEnsureLifecycleWorker = vi.fn();
 const mockAddProjectToRunning = vi.fn();
 const mockRemoveProjectFromRunning = vi.fn();
+const mockSetHealth = vi.fn();
 const activeWorkers = new Set<string>();
 
 vi.mock("@aoagents/ao-core", () => ({
+  createCorrelationId: () => "correlation-id",
+  createProjectObserver: () => ({ setHealth: (...args: unknown[]) => mockSetHealth(...args) }),
   getGlobalConfigPath: () => "/tmp/global-config.yaml",
   loadConfig: (...args: unknown[]) => mockLoadConfig(...args),
-  isTerminalSession: (session: { status: string; activity: string | null }) =>
-    ["done", "killed", "terminated", "errored", "merged", "cleanup"].includes(session.status) ||
-    session.activity === "exited",
+  isTerminalSession: (session: {
+    status: string;
+    activity: string | null;
+    lifecycle?: {
+      session: { state: string };
+      pr: { state: string };
+      runtime: { state: string };
+    };
+  }) => {
+    if (session.lifecycle) {
+      return (
+        session.lifecycle.session.state === "done" ||
+        session.lifecycle.session.state === "terminated" ||
+        session.lifecycle.pr.state === "merged" ||
+        session.lifecycle.runtime.state === "missing" ||
+        session.lifecycle.runtime.state === "exited"
+      );
+    }
+    return (
+      ["done", "killed", "terminated", "errored", "merged", "cleanup"].includes(
+        session.status,
+      ) || session.activity === "exited"
+    );
+  },
 }));
 
 vi.mock("../../src/lib/create-session-manager.js", () => ({
@@ -37,7 +61,11 @@ vi.mock("../../src/lib/running-state.js", () => ({
   removeProjectFromRunning: (...args: unknown[]) => mockRemoveProjectFromRunning(...args),
 }));
 
-import { reconcileProjectSupervisor } from "../../src/lib/project-supervisor.js";
+import {
+  reconcileProjectSupervisor,
+  startProjectSupervisor,
+  stopProjectSupervisor,
+} from "../../src/lib/project-supervisor.js";
 
 function makeConfig(projectIds: string[]) {
   return {
@@ -54,6 +82,7 @@ describe("project-supervisor", () => {
   let sessionsByProject: Map<string, unknown[]>;
 
   beforeEach(() => {
+    stopProjectSupervisor();
     activeWorkers.clear();
     sessionsByProject = new Map();
     mockLoadConfig.mockReset();
@@ -61,6 +90,7 @@ describe("project-supervisor", () => {
     mockEnsureLifecycleWorker.mockReset();
     mockAddProjectToRunning.mockReset();
     mockRemoveProjectFromRunning.mockReset();
+    mockSetHealth.mockReset();
     mockLoadConfig.mockReturnValue(makeConfig(["app"]));
     mockGetSessionManager.mockResolvedValue({
       list: async (projectId: string) => sessionsByProject.get(projectId) ?? [],
@@ -84,6 +114,24 @@ describe("project-supervisor", () => {
 
   it("does not attach for a registered project with no non-terminal sessions", async () => {
     sessionsByProject.set("app", [makeSession("app", "done")]);
+
+    await reconcileProjectSupervisor();
+
+    expect(mockEnsureLifecycleWorker).not.toHaveBeenCalled();
+    expect(mockAddProjectToRunning).not.toHaveBeenCalled();
+  });
+
+  it("treats lifecycle-terminal sessions as terminal even when legacy status is working", async () => {
+    sessionsByProject.set("app", [
+      {
+        ...makeSession("app", "working"),
+        lifecycle: {
+          session: { state: "done" },
+          pr: { state: "none" },
+          runtime: { state: "running" },
+        },
+      },
+    ]);
 
     await reconcileProjectSupervisor();
 
@@ -142,6 +190,118 @@ describe("project-supervisor", () => {
       "healthy",
       undefined,
     );
+    expect(mockSetHealth).toHaveBeenCalledWith(
+      expect.objectContaining({
+        surface: "project-supervisor.reconcile",
+        status: "warn",
+        projectId: "broken",
+      }),
+    );
     expect(activeWorkers.has("healthy")).toBe(true);
+  });
+
+  it("retries running-state registration for already-attached active projects", async () => {
+    sessionsByProject.set("app", [makeSession("app")]);
+    mockAddProjectToRunning.mockRejectedValueOnce(new Error("lock timeout"));
+
+    await reconcileProjectSupervisor();
+    await reconcileProjectSupervisor();
+
+    expect(mockEnsureLifecycleWorker).toHaveBeenCalledTimes(1);
+    expect(mockAddProjectToRunning).toHaveBeenCalledTimes(2);
+    expect(activeWorkers.has("app")).toBe(true);
+  });
+
+  it("returns its handle even if stopped during the initial reconcile", async () => {
+    let releaseList: (() => void) | undefined;
+    mockGetSessionManager.mockResolvedValue({
+      list: async () => {
+        await new Promise<void>((resolve) => {
+          releaseList = resolve;
+        });
+        return [];
+      },
+    });
+
+    const startPromise = startProjectSupervisor(1_000);
+    await vi.waitFor(() => expect(releaseList).toBeDefined());
+
+    stopProjectSupervisor();
+    releaseList?.();
+
+    const handle = await startPromise;
+
+    expect(handle).toEqual({
+      stop: expect.any(Function),
+      reconcileNow: expect.any(Function),
+    });
+  });
+
+  it("does not reject when the initial supervisor reconcile fails", async () => {
+    mockLoadConfig.mockImplementation(() => {
+      throw new Error("bad config");
+    });
+
+    const handle = await startProjectSupervisor(1_000);
+
+    expect(handle).toEqual({
+      stop: expect.any(Function),
+      reconcileNow: expect.any(Function),
+    });
+    handle.stop();
+  });
+
+  it("forwards the supervisor interval to lifecycle workers it starts", async () => {
+    sessionsByProject.set("app", [makeSession("app")]);
+
+    const handle = await startProjectSupervisor(1_234);
+
+    expect(mockEnsureLifecycleWorker).toHaveBeenCalledWith(
+      expect.objectContaining({ configPath: "/tmp/global-config.yaml" }),
+      "app",
+      1_234,
+    );
+    handle.stop();
+  });
+
+  it("reconcileNow waits for a queued reconcile when one is already running", async () => {
+    const handle = await startProjectSupervisor(1_000);
+    let firstRelease: (() => void) | undefined;
+    let secondRelease: (() => void) | undefined;
+    let listCalls = 0;
+    mockGetSessionManager.mockResolvedValue({
+      list: async () => {
+        listCalls++;
+        if (listCalls === 1) {
+          await new Promise<void>((resolve) => {
+            firstRelease = resolve;
+          });
+        } else if (listCalls === 2) {
+          await new Promise<void>((resolve) => {
+            secondRelease = resolve;
+          });
+        }
+        return [];
+      },
+    });
+
+    const firstReconcile = handle.reconcileNow();
+    await vi.waitFor(() => expect(firstRelease).toBeDefined());
+
+    let secondResolved = false;
+    const secondReconcile = handle.reconcileNow().then(() => {
+      secondResolved = true;
+    });
+
+    firstRelease?.();
+    await vi.waitFor(() => expect(secondRelease).toBeDefined());
+    expect(secondResolved).toBe(false);
+
+    secondRelease?.();
+    await firstReconcile;
+    await secondReconcile;
+
+    expect(secondResolved).toBe(true);
+    handle.stop();
   });
 });

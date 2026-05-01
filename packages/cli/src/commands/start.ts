@@ -1449,7 +1449,13 @@ async function runStartup(
   }
 
   if (shouldStartLifecycle) {
-    console.log(chalk.cyan("Lifecycle:"), "supervised");
+    const supervisedProjects = listLifecycleWorkers().sort();
+    const projectSummary =
+      supervisedProjects.length > 0 ? `: ${supervisedProjects.join(", ")}` : "";
+    console.log(
+      chalk.cyan("Lifecycle:"),
+      `supervised (polling ${supervisedProjects.length} project(s)${projectSummary})`,
+    );
   }
 
   if (opts?.orchestrator !== false && selectedOrchestratorId) {
