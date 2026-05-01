@@ -18,19 +18,19 @@ import { getEnvDefaults } from "@aoagents/ao-core";
 
 // ── Client → Server ──
 type ClientMessage =
-  | { ch: "terminal"; id: string; type: "data"; data: string }
-  | { ch: "terminal"; id: string; type: "resize"; cols: number; rows: number }
-  | { ch: "terminal"; id: string; type: "open"; tmuxName?: string }
-  | { ch: "terminal"; id: string; type: "close" }
+  | { ch: "terminal"; id: string; type: "data"; data: string; projectId?: string }
+  | { ch: "terminal"; id: string; type: "resize"; cols: number; rows: number; projectId?: string }
+  | { ch: "terminal"; id: string; type: "open"; projectId?: string; tmuxName?: string }
+  | { ch: "terminal"; id: string; type: "close"; projectId?: string }
   | { ch: "system"; type: "ping" }
   | { ch: "subscribe"; topics: "sessions"[] };
 
 // ── Server → Client ──
 type ServerMessage =
-  | { ch: "terminal"; id: string; type: "data"; data: string }
-  | { ch: "terminal"; id: string; type: "exited"; code: number }
-  | { ch: "terminal"; id: string; type: "opened" }
-  | { ch: "terminal"; id: string; type: "error"; message: string }
+  | { ch: "terminal"; id: string; type: "data"; data: string; projectId?: string }
+  | { ch: "terminal"; id: string; type: "exited"; code: number; projectId?: string }
+  | { ch: "terminal"; id: string; type: "opened"; projectId?: string }
+  | { ch: "terminal"; id: string; type: "error"; message: string; projectId?: string }
   | { ch: "sessions"; type: "snapshot"; sessions: SessionPatch[] }
   | { ch: "sessions"; type: "error"; error: string }
   | { ch: "system"; type: "pong" }
@@ -209,25 +209,33 @@ class TerminalManager {
     this.TMUX = resolved;
   }
 
+  private terminalKey(id: string, projectId?: string): string {
+    return projectId ? `${projectId}:${id}` : id;
+  }
+
   /**
    * Open/attach to a terminal. If already open, just return.
    * If has subscribers but PTY crashed, re-attach.
    */
-  open(id: string, tmuxName?: string): string {
+  open(id: string, projectId?: string, tmuxName?: string): string {
     // Validate and resolve
     if (!validateSessionId(id)) {
       throw new Error(`Invalid session ID: ${id}`);
     }
 
     // Use provided tmuxName, or reuse from existing terminal entry, or resolve
-    const existing = this.terminals.get(id);
-    const tmuxSessionId = tmuxName ?? existing?.tmuxSessionId ?? resolveTmuxSession(id, this.TMUX);
+    const key = this.terminalKey(id, projectId);
+    const existing = this.terminals.get(key);
+    const tmuxSessionId =
+      tmuxName ??
+      existing?.tmuxSessionId ??
+      resolveTmuxSession(id, this.TMUX, undefined, undefined, projectId);
     if (!tmuxSessionId) {
       throw new Error(`Session not found: ${id}`);
     }
 
     // Get or create terminal entry
-    let terminal = this.terminals.get(id);
+    let terminal = this.terminals.get(key);
     if (!terminal) {
       terminal = {
         id,
@@ -239,7 +247,7 @@ class TerminalManager {
         bufferBytes: 0,
         reattachAttempts: 0,
       };
-      this.terminals.set(id, terminal);
+      this.terminals.set(key, terminal);
     }
 
     // If PTY is already attached, we're done
@@ -324,7 +332,7 @@ class TerminalManager {
           `[MuxServer] Re-attaching to ${id} (attempt ${terminal.reattachAttempts}/${MAX_REATTACH_ATTEMPTS})`,
         );
         try {
-          this.open(id);
+          this.open(id, projectId);
           terminal.reattachAttempts = 0; // reset on successful attach
           return; // re-attached — don't notify exit
         } catch (err) {
@@ -347,8 +355,8 @@ class TerminalManager {
   /**
    * Write data to the PTY if attached
    */
-  write(id: string, data: string): void {
-    const terminal = this.terminals.get(id);
+  write(id: string, data: string, projectId?: string): void {
+    const terminal = this.terminals.get(this.terminalKey(id, projectId));
     if (terminal?.pty) {
       terminal.pty.write(data);
     }
@@ -357,8 +365,8 @@ class TerminalManager {
   /**
    * Resize the PTY if attached
    */
-  resize(id: string, cols: number, rows: number): void {
-    const terminal = this.terminals.get(id);
+  resize(id: string, cols: number, rows: number, projectId?: string): void {
+    const terminal = this.terminals.get(this.terminalKey(id, projectId));
     if (terminal?.pty) {
       terminal.pty.resize(cols, rows);
     }
@@ -371,12 +379,14 @@ class TerminalManager {
    */
   subscribe(
     id: string,
+    projectId: string | undefined,
     callback: (data: string) => void,
     onExit?: (exitCode: number) => void,
   ): () => void {
     // Ensure terminal is open
-    this.open(id);
-    const terminal = this.terminals.get(id);
+    this.open(id, projectId);
+    const key = this.terminalKey(id, projectId);
+    const terminal = this.terminals.get(key);
     if (!terminal) {
       throw new Error(`Failed to open terminal: ${id}`);
     }
@@ -395,7 +405,7 @@ class TerminalManager {
           terminal.pty.kill();
           terminal.pty = null;
         }
-        this.terminals.delete(id);
+        this.terminals.delete(key);
       }
     };
   }
@@ -403,8 +413,8 @@ class TerminalManager {
   /**
    * Get buffered data for a terminal
    */
-  getBuffer(id: string): string {
-    const terminal = this.terminals.get(id);
+  getBuffer(id: string, projectId?: string): string {
+    const terminal = this.terminals.get(this.terminalKey(id, projectId));
     if (!terminal) return "";
     return terminal.buffer.join("");
   }
@@ -622,6 +632,8 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
           }
         } else if (msg.ch === "terminal") {
           const { id, type } = msg;
+          const projectId = "projectId" in msg ? msg.projectId : undefined;
+          const subscriptionKey = projectId ? `${projectId}:${id}` : id;
 
           try {
             if (type === "open") {
@@ -634,38 +646,45 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
                   { connect: netConnect, resolvePipePath },
                 );
               } else {
-                // --- Unix: existing tmux path (unchanged) ---
-                // Validate session exists
+                // --- Unix: tmux path with project scoping ---
                 if (!terminalManager) throw new Error("Terminal manager not available");
-                terminalManager.open(id, "tmuxName" in msg ? msg.tmuxName : undefined);
+                terminalManager.open(id, projectId, "tmuxName" in msg ? msg.tmuxName : undefined);
 
                 // Send opened confirmation (idempotent — safe to send on re-open)
-                const openedMsg: ServerMessage = { ch: "terminal", id, type: "opened" };
+                const openedMsg: ServerMessage = {
+                  ch: "terminal",
+                  id,
+                  type: "opened",
+                  ...(projectId && { projectId }),
+                };
                 ws.send(JSON.stringify(openedMsg));
 
                 // Subscribe and send history buffer only for new subscribers.
                 // Skipping the buffer on re-open prevents duplicate output when
                 // MuxProvider re-sends open for all terminals on reconnect.
-                if (!subscriptions.has(id)) {
+                if (!subscriptions.has(subscriptionKey)) {
                   // Send buffered history to catch up the new subscriber
-                  const buffer = terminalManager.getBuffer(id);
+                  const buffer = terminalManager.getBuffer(id, projectId);
                   if (buffer) {
                     const bufferMsg: ServerMessage = {
                       ch: "terminal",
                       id,
                       type: "data",
                       data: buffer,
+                      ...(projectId && { projectId }),
                     };
                     ws.send(JSON.stringify(bufferMsg));
                   }
                   const unsub = terminalManager.subscribe(
                     id,
+                    projectId,
                     (data) => {
                       const dataMsg: ServerMessage = {
                         ch: "terminal",
                         id,
                         type: "data",
                         data,
+                        ...(projectId && { projectId }),
                       };
                       if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify(dataMsg));
@@ -677,13 +696,14 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
                         id,
                         type: "exited",
                         code: exitCode,
+                        ...(projectId && { projectId }),
                       };
                       if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify(exitedMsg));
                       }
                     },
                   );
-                  subscriptions.set(id, unsub);
+                  subscriptions.set(subscriptionKey, unsub);
                 }
               }
             } else if (type === "data" && "data" in msg) {
@@ -696,7 +716,7 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
                   { connect: netConnect, resolvePipePath },
                 );
               } else {
-                terminalManager?.write(id, msg.data);
+                terminalManager?.write(id, msg.data, projectId);
               }
             } else if (type === "resize" && "cols" in msg && "rows" in msg) {
               if (process.platform === "win32") {
@@ -708,7 +728,7 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
                   { connect: netConnect, resolvePipePath },
                 );
               } else {
-                terminalManager?.resize(id, msg.cols, msg.rows);
+                terminalManager?.resize(id, msg.cols, msg.rows, projectId);
               }
             } else if (type === "close") {
               if (process.platform === "win32") {
@@ -722,10 +742,10 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
               } else {
                 // Unsubscribe this client only — TerminalManager is shared across
                 // all mux connections so we must not kill the PTY here.
-                const unsub = subscriptions.get(id);
+                const unsub = subscriptions.get(subscriptionKey);
                 if (unsub) {
                   unsub();
-                  subscriptions.delete(id);
+                  subscriptions.delete(subscriptionKey);
                 }
               }
             }
@@ -736,6 +756,7 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
                 id,
                 type: "error",
                 message: err instanceof Error ? err.message : String(err),
+                ...(projectId && { projectId }),
               };
               ws.send(JSON.stringify(errorMsg));
             }

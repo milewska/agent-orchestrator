@@ -386,3 +386,20 @@ export {
   clearWindowsPtyHostRegistry,
   type WindowsPtyHostEntry,
 } from "./windows-pty-registry.js";
+
+// Activity event logging — structured diagnostic event trail
+export { recordActivityEvent, droppedEventCount } from "./activity-events.js";
+export { isActivityEventsFtsEnabled } from "./events-db.js";
+export type {
+  ActivityEventInput,
+  ActivityEventKind,
+  ActivityEventSource,
+  ActivityEventLevel,
+  ActivityEvent,
+} from "./activity-events.js";
+export {
+  queryActivityEvents,
+  searchActivityEvents,
+  getActivityEventStats,
+} from "./query-activity-events.js";
+export type { ActivityEventFilter, ActivityEventStats } from "./query-activity-events.js";

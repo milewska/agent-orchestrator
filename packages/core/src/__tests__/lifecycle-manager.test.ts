@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createLifecycleManager } from "../lifecycle-manager.js";
+import { recordActivityEvent } from "../activity-events.js";
 import { DEFAULT_BUGBOT_COMMENTS_MESSAGE } from "../config.js";
 import {
   resolvePREnrichmentDecision,
@@ -34,6 +35,10 @@ import {
   type MockPlugins,
 } from "./test-utils.js";
 
+vi.mock("../activity-events.js", () => ({
+  recordActivityEvent: vi.fn(),
+}));
+
 let env: TestEnvironment;
 let plugins: MockPlugins;
 let mockRegistry: PluginRegistry;
@@ -46,6 +51,7 @@ beforeEach(() => {
   mockRegistry = createMockRegistry({ runtime: plugins.runtime, agent: plugins.agent });
   mockSessionManager = createMockSessionManager();
   config = env.config;
+  vi.mocked(recordActivityEvent).mockClear();
 });
 
 afterEach(() => {
@@ -276,6 +282,44 @@ describe("check (single session)", () => {
     expect(lm.getStates().get("app-1")).toBe("working");
     const meta = readMetadataRaw(env.sessionsDir, "app-1");
     expect(meta!["status"]).toBe("working");
+  });
+
+  it("records lifecycle.transition when status changes", async () => {
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "spawning" }),
+    });
+
+    await lm.check("app-1");
+
+    expect(recordActivityEvent).toHaveBeenCalledWith({
+      projectId: "my-app",
+      sessionId: "app-1",
+      source: "lifecycle",
+      kind: "lifecycle.transition",
+      level: "info",
+      summary: "spawning → working",
+      data: { from: "spawning", to: "working" },
+    });
+  });
+
+  it("records activity.transition after observed activity changes", async () => {
+    const session = makeSession({ id: "app-activity", status: "working" });
+    const lm = setupCheck("app-activity", { session });
+
+    await lm.check("app-activity");
+    vi.mocked(recordActivityEvent).mockClear();
+    vi.mocked(plugins.agent.getActivityState).mockResolvedValue({ state: "idle" });
+
+    await lm.check("app-activity");
+
+    expect(recordActivityEvent).toHaveBeenCalledWith({
+      projectId: "my-app",
+      sessionId: "app-activity",
+      source: "lifecycle",
+      kind: "activity.transition",
+      summary: "active → idle",
+      data: { from: "active", to: "idle" },
+    });
   });
 
   it("records split lifecycle observability for transitions", async () => {
@@ -2492,6 +2536,7 @@ describe("reactions", () => {
     const mockSCM = createMockSCM({
       getPRState: vi.fn().mockResolvedValue("closed"),
       getMergeability,
+      enrichSessionsPRBatch: mockBatchEnrichment({ state: "closed" }),
     });
     const registry = createMockRegistry({
       runtime: plugins.runtime,
@@ -3879,5 +3924,145 @@ describe("auto-cleanup on merge (#1309)", () => {
     const meta = readMetadataRaw(env.sessionsDir, "app-1");
     expect(meta?.["status"]).toBe("merged");
     expect(meta?.["mergedPendingCleanupSince"]).toMatch(/\d{4}-\d{2}-\d{2}T/);
+  });
+});
+
+describe("event enrichment", () => {
+  it("includes PR context in event data when session has PR", async () => {
+    const notifier = createMockNotifier();
+    const mockSCM = createMockSCM({ getPRState: vi.fn().mockResolvedValue("closed") });
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: mockSCM,
+      notifier,
+    });
+
+    const session = makeSession({
+      status: "pr_open",
+      pr: makePR({ number: 42, url: "https://github.com/org/repo/pull/42" }),
+      branch: "feat/test-123",
+    });
+    const lm = setupCheck("app-1", {
+      session,
+      registry,
+      configOverride: {
+        ...config,
+        notificationRouting: {
+          ...config.notificationRouting,
+          info: ["desktop"],
+        },
+      },
+    });
+
+    await lm.check("app-1");
+
+    expect(notifier.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "pr.closed",
+        data: expect.objectContaining({
+          context: expect.objectContaining({
+            pr: expect.objectContaining({
+              url: "https://github.com/org/repo/pull/42",
+              number: 42,
+            }),
+            branch: "feat/test-123",
+          }),
+          schemaVersion: 2,
+        }),
+      }),
+    );
+  });
+
+  it("includes issue context in event data when session has issue", async () => {
+    const notifier = createMockNotifier();
+    const mockSCM = createMockSCM({ getPRState: vi.fn().mockResolvedValue("closed") });
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: mockSCM,
+      notifier,
+    });
+
+    const session = makeSession({
+      status: "pr_open",
+      pr: makePR(),
+      issueId: "INT-123",
+      metadata: { issueTitle: "Fix login bug" },
+    });
+    const lm = setupCheck("app-1", {
+      session,
+      registry,
+      configOverride: {
+        ...config,
+        notificationRouting: {
+          ...config.notificationRouting,
+          info: ["desktop"],
+        },
+      },
+    });
+
+    await lm.check("app-1");
+
+    expect(notifier.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "pr.closed",
+        data: expect.objectContaining({
+          context: expect.objectContaining({
+            issueId: "INT-123",
+            issueTitle: "Fix login bug",
+          }),
+          schemaVersion: 2,
+        }),
+      }),
+    );
+  });
+
+  it("gracefully omits PR context when session has no PR", async () => {
+    const notifier = createMockNotifier();
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      notifier,
+    });
+
+    // Create a session without PR that will transition to needs_input
+    const session = makeSession({
+      status: "working",
+      pr: null,
+      issueId: "INT-456",
+    });
+    // Mock activity detection to return waiting_input
+    vi.mocked(plugins.agent.getActivityState).mockResolvedValue({
+      state: "waiting_input",
+      timestamp: new Date(),
+    });
+
+    const lm = setupCheck("app-1", {
+      session,
+      registry,
+      configOverride: {
+        ...config,
+        notificationRouting: {
+          ...config.notificationRouting,
+          urgent: ["desktop"],
+        },
+      },
+    });
+
+    await lm.check("app-1");
+
+    expect(notifier.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "session.needs_input",
+        data: expect.objectContaining({
+          context: expect.objectContaining({
+            pr: null,
+            issueId: "INT-456",
+          }),
+          schemaVersion: 2,
+        }),
+      }),
+    );
   });
 });
