@@ -9,6 +9,7 @@ import { resolve, dirname } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { killProcessTree } from "@aoagents/ao-core";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -37,6 +38,7 @@ function spawnProcess(
       cwd: pkgRoot,
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
+      detached: process.platform !== "win32",
     });
 
     child.stdout?.on("data", (data: Buffer) => {
@@ -140,7 +142,14 @@ function cleanup(): void {
         process.exit(0);
       }
     });
-    child.kill("SIGTERM");
+    const pid = child.pid;
+    if (pid) {
+      void killProcessTree(pid, "SIGTERM").catch(() => {
+        child.kill("SIGTERM");
+      });
+    } else {
+      child.kill("SIGTERM");
+    }
   }
 }
 
