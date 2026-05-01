@@ -632,6 +632,26 @@ describe("restore", () => {
     expect(meta!["restoreFallbackReason"]).toBeUndefined();
   });
 
+  it("clears restore fallback reason when agent has no restore command", async () => {
+    const wsPath = join(tmpDir, "ws-app-no-restore-clears-fallback");
+    mkdirSync(wsPath, { recursive: true });
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: wsPath,
+      branch: "feat/TEST-1",
+      status: "killed",
+      project: "my-app",
+      runtimeHandle: makeHandle("rt-old"),
+      restoreFallbackReason: "previous fallback",
+    });
+
+    const sm = createSessionManager({ config, registry: mockRegistry });
+    await sm.restore("app-1");
+
+    const meta = readMetadataRaw(sessionsDir, "app-1");
+    expect(meta!["restoreFallbackReason"]).toBeUndefined();
+  });
+
   it("does not inject OPENCODE_CONFIG when restoring OpenCode orchestrators", async () => {
     const wsPath = join(tmpDir, "ws-app-orchestrator-opencode-restore");
     mkdirSync(wsPath, { recursive: true });

@@ -52,6 +52,7 @@ import {
   readMetadataRaw,
   writeMetadata,
   updateMetadata,
+  applyMetadataUpdates,
   mutateMetadata,
   deleteMetadata,
   listMetadata,
@@ -984,7 +985,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     session: Session,
     plugins: ReturnType<typeof resolvePlugins>,
     handleFromMetadata: boolean,
-    sessionsDir?: string,
+    sessionsDir: string,
   ): Promise<void> {
     // Check runtime liveness first — for all statuses except "spawning".
     // Skip spawning sessions because tmux may not be fully initialized yet,
@@ -1058,29 +1059,26 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
 
       // Enrich with live agent session info (summary, cost).
+      let info: Awaited<ReturnType<Agent["getSessionInfo"]>>;
       try {
-        const info = await plugins.agent.getSessionInfo(session);
-        if (info) {
-          session.agentInfo = info;
-          const metadataUpdates = info.metadata ?? {};
-          if (sessionsDir && Object.keys(metadataUpdates).length > 0) {
-            updateMetadata(sessionsDir, session.id, metadataUpdates);
-            let nextMetadata = { ...session.metadata };
-            for (const [key, value] of Object.entries(metadataUpdates)) {
-              if (value === "") {
-                nextMetadata = Object.fromEntries(
-                  Object.entries(nextMetadata).filter(([existingKey]) => existingKey !== key),
-                );
-              } else {
-                nextMetadata[key] = value;
-              }
-            }
-            session.metadata = nextMetadata;
-            invalidateCache();
-          }
-        }
+        info = await plugins.agent.getSessionInfo(session);
       } catch {
         // Can't get session info — keep existing values
+        info = null;
+      }
+
+      if (info) {
+        session.agentInfo = info;
+        const metadataUpdates = info.metadata ?? {};
+        if (Object.keys(metadataUpdates).length > 0) {
+          try {
+            updateMetadata(sessionsDir, session.id, metadataUpdates);
+            session.metadata = applyMetadataUpdates(session.metadata, metadataUpdates);
+            invalidateCache();
+          } catch {
+            // Persisting agent metadata is best-effort; keep live agent info.
+          }
+        }
       }
     }
   }
@@ -2910,6 +2908,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
     } else {
       launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
+      updateMetadata(sessionsDir, sessionId, { restoreFallbackReason: "" });
     }
 
     const environment = plugins.agent.getEnvironment(agentLaunchConfig);
