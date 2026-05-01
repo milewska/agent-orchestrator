@@ -53,10 +53,22 @@ let _droppedEventCount = 0;
 let _lastPruneMs = 0;
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const PRUNE_BATCH_SIZE = 1000;
 
 /** Number of events dropped due to DB errors in this process. */
 export function droppedEventCount(): number {
   return _droppedEventCount;
+}
+
+function pruneOldEvents(db: ReturnType<typeof getDb>, cutoff: number): void {
+  db
+    ?.prepare(
+      `DELETE FROM activity_events
+       WHERE rowid IN (
+         SELECT rowid FROM activity_events WHERE ts_epoch < ? LIMIT ?
+       )`,
+    )
+    .run(cutoff, PRUNE_BATCH_SIZE);
 }
 
 // Patterns that indicate sensitive field names
@@ -139,7 +151,7 @@ export function recordActivityEvent(event: ActivityEventInput): void {
     // Periodically purge old events so long-lived processes don't grow the DB indefinitely
     if (now - _lastPruneMs >= PRUNE_INTERVAL_MS) {
       _lastPruneMs = now;
-      db.prepare("DELETE FROM activity_events WHERE ts_epoch < ?").run(now - RETENTION_MS);
+      pruneOldEvents(db, now - RETENTION_MS);
     }
   } catch {
     _droppedEventCount++;

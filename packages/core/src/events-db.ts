@@ -24,6 +24,7 @@ type BetterSqlite3Database = {
 let _db: BetterSqlite3Database | null = null;
 let _dbFailed = false;
 let _ftsEnabled = false;
+const PRUNE_BATCH_SIZE = 1000;
 
 function getEventsDbPath(): string {
   return join(getAoBaseDir(), "activity-events.db");
@@ -85,6 +86,17 @@ function initFts(db: BetterSqlite3Database): void {
   `);
 }
 
+function pruneOldEvents(db: BetterSqlite3Database, cutoff: number): void {
+  db
+    .prepare(
+      `DELETE FROM activity_events
+       WHERE rowid IN (
+         SELECT rowid FROM activity_events WHERE ts_epoch < ? LIMIT ?
+       )`,
+    )
+    .run(cutoff, PRUNE_BATCH_SIZE);
+}
+
 function openDb(): BetterSqlite3Database {
   const Database = _require("better-sqlite3") as new (path: string) => BetterSqlite3Database;
   mkdirSync(getAoBaseDir(), { recursive: true });
@@ -115,7 +127,7 @@ function openDb(): BetterSqlite3Database {
 
   // 7-day retention using epoch comparison (no text/datetime ambiguity)
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  db.prepare("DELETE FROM activity_events WHERE ts_epoch < ?").run(cutoff);
+  pruneOldEvents(db, cutoff);
 
   return db;
 }
