@@ -3,13 +3,15 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-const { mockExec, mockFindPidByPort } = vi.hoisted(() => ({
+const { mockExec, mockExecSilent, mockFindPidByPort } = vi.hoisted(() => ({
   mockExec: vi.fn(),
+  mockExecSilent: vi.fn(),
   mockFindPidByPort: vi.fn(),
 }));
 
 vi.mock("../../src/lib/shell.js", () => ({
   exec: mockExec,
+  execSilent: mockExecSilent,
 }));
 
 vi.mock("@aoagents/ao-core", async (importOriginal) => {
@@ -36,6 +38,7 @@ let tmpDir: string;
 beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), "ao-dashboard-test-"));
   mockExec.mockReset();
+  mockExecSilent.mockReset();
   mockFindPidByPort.mockReset();
   mockExec.mockResolvedValue({ stdout: "", stderr: "" });
 });
