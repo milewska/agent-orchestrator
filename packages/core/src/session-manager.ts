@@ -971,7 +971,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         data: {},
       };
     }
-    await enrichSessionWithRuntimeState(session, plugins, handleFromMetadata);
+    await enrichSessionWithRuntimeState(session, plugins, handleFromMetadata, sessionsDir);
   }
 
   /**
@@ -984,6 +984,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     session: Session,
     plugins: ReturnType<typeof resolvePlugins>,
     handleFromMetadata: boolean,
+    sessionsDir?: string,
   ): Promise<void> {
     // Check runtime liveness first — for all statuses except "spawning".
     // Skip spawning sessions because tmux may not be fully initialized yet,
@@ -1061,6 +1062,12 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         const info = await plugins.agent.getSessionInfo(session);
         if (info) {
           session.agentInfo = info;
+          const metadataUpdates = info.metadata ?? {};
+          if (sessionsDir && Object.keys(metadataUpdates).length > 0) {
+            updateMetadata(sessionsDir, session.id, metadataUpdates);
+            session.metadata = { ...session.metadata, ...metadataUpdates };
+            invalidateCache();
+          }
         }
       } catch {
         // Can't get session info — keep existing values
@@ -2769,7 +2776,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     //    and isRestorable would reject it.
     const session = metadataToSession(sessionId, raw, projectId, project.sessionPrefix);
     const plugins = resolvePlugins(project, selection.agentName);
-    await enrichSessionWithRuntimeState(session, plugins, true);
+    await enrichSessionWithRuntimeState(session, plugins, true, sessionsDir);
 
     // 3. Validate restorability
     if (!isRestorable(session)) {
@@ -2882,7 +2889,15 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     if (plugins.agent.getRestoreCommand) {
       const restoreCmd = await plugins.agent.getRestoreCommand(session, projectConfigForLaunch);
-      launchCommand = restoreCmd ?? plugins.agent.getLaunchCommand(agentLaunchConfig);
+      if (restoreCmd) {
+        launchCommand = restoreCmd;
+        updateMetadata(sessionsDir, sessionId, { restoreFallbackReason: "" });
+      } else {
+        launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
+        updateMetadata(sessionsDir, sessionId, {
+          restoreFallbackReason: `${plugins.agent.name}.getRestoreCommand returned null`,
+        });
+      }
     } else {
       launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
     }

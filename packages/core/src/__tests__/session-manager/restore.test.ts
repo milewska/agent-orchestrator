@@ -547,6 +547,44 @@ describe("restore", () => {
     expect(mockAgent.getLaunchCommand).toHaveBeenCalled();
     const createCall = (mockRuntime.create as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(createCall.launchCommand).toBe("mock-agent --start");
+
+    const meta = readMetadataRaw(sessionsDir, "app-1");
+    expect(meta!["restoreFallbackReason"]).toBe("mock-agent.getRestoreCommand returned null");
+  });
+
+  it("clears restore fallback reason when getRestoreCommand succeeds", async () => {
+    const wsPath = join(tmpDir, "ws-app-restore-clears-fallback");
+    mkdirSync(wsPath, { recursive: true });
+
+    const mockAgentWithRestore: Agent = {
+      ...mockAgent,
+      getRestoreCommand: vi.fn().mockResolvedValue("claude --resume abc123"),
+    };
+
+    const registryWithAgentRestore: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgentWithRestore;
+        if (slot === "workspace") return mockWorkspace;
+        return null;
+      }),
+    };
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: wsPath,
+      branch: "feat/TEST-1",
+      status: "killed",
+      project: "my-app",
+      runtimeHandle: makeHandle("rt-old"),
+      restoreFallbackReason: "previous fallback",
+    });
+
+    const sm = createSessionManager({ config, registry: registryWithAgentRestore });
+    await sm.restore("app-1");
+
+    const meta = readMetadataRaw(sessionsDir, "app-1");
+    expect(meta!["restoreFallbackReason"]).toBeUndefined();
   });
 
   it("does not inject OPENCODE_CONFIG when restoring OpenCode orchestrators", async () => {
