@@ -245,6 +245,27 @@ describe("project-supervisor", () => {
     await expect(startProjectSupervisor(1_000)).rejects.toThrow("bad config");
   });
 
+  it("allows startup when the global config does not exist yet", async () => {
+    const error = Object.assign(
+      new Error("ENOENT: no such file or directory, open '/tmp/global-config.yaml'"),
+      {
+        code: "ENOENT",
+        path: "/tmp/global-config.yaml",
+      },
+    );
+    mockLoadConfig.mockImplementation(() => {
+      throw error;
+    });
+
+    const handle = await startProjectSupervisor(1_000);
+
+    expect(handle).toEqual({
+      stop: expect.any(Function),
+      reconcileNow: expect.any(Function),
+    });
+    handle.stop();
+  });
+
   it("forwards the supervisor interval to lifecycle workers it starts", async () => {
     sessionsByProject.set("app", [makeSession("app")]);
 

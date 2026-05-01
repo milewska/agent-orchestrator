@@ -28,6 +28,16 @@ export interface ReconcileProjectSupervisorOptions {
   intervalMs?: number;
 }
 
+function isMissingGlobalConfigError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ENOENT" &&
+    "path" in error &&
+    error.path === getGlobalConfigPath()
+  );
+}
+
 function reportProjectSupervisorError(
   observer: ProjectObserver,
   projectId: string,
@@ -132,6 +142,7 @@ export async function startProjectSupervisor(
         try {
           await reconcileProjectSupervisor({ intervalMs });
         } catch (error) {
+          if (isMissingGlobalConfigError(error)) return;
           if (!options.swallowErrors) throw error;
           // Best-effort background loop: transient config/state errors should not crash ao start.
         }
