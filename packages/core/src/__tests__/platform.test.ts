@@ -71,7 +71,7 @@ describe("platform adapter", () => {
       setPlatform("linux");
       const mod = await import("../platform.js");
       const env = mod.getEnvDefaults();
-      expect(env.TMPDIR).toBe("/tmp");
+      expect(env.TMPDIR).toBe(process.env.TMPDIR || "/tmp");
     });
 
     it("returns Windows-style defaults on win32", async () => {
