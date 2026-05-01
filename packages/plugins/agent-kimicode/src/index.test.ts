@@ -1150,6 +1150,90 @@ describe("getSessionInfo", () => {
     expect(info?.agentSessionId).toBe("hash-found-uuid");
   });
 
+  // Regression: a stale kimi.json last_session_id pointing at a baseline
+  // UUID (e.g. left over from a prior manual `kimi` run) used to bypass
+  // the baseline filter and get pinned permanently. The pin file is
+  // long-lived, so this would route every subsequent getActivityState /
+  // getSessionInfo / getRestoreCommand call at the wrong conversation
+  // with no self-healing path. The soft-pin candidate must pass the same
+  // baseline + createdAt filters as the recency contest.
+  it("rejects kimi.json soft-pin when it points at a baseline UUID", async () => {
+    const realWorkspace = join(fakeHome, "workspace-kimijson-stale");
+    mkdirSync(join(realWorkspace, ".ao"), { recursive: true });
+
+    // "stale-uuid" was left in the bucket and in kimi.json by an earlier
+    // manual run. "ao-spawned" is the UUID kimi created for this AO session.
+    writeKimiSession(realWorkspace, "stale-uuid");
+    writeKimiSession(realWorkspace, "ao-spawned");
+
+    // Baseline (captured by preLaunchSetup) flags "stale-uuid" as pre-AO.
+    writeFileSync(
+      join(realWorkspace, ".ao", "kimi-baseline.json"),
+      JSON.stringify({
+        preExistingUuids: ["stale-uuid"],
+        capturedAt: new Date().toISOString(),
+      }),
+    );
+
+    // kimi.json still points at the stale UUID — kimi-cli hasn't yet
+    // updated last_session_id for the new AO-spawned session.
+    writeFileSync(
+      join(fakeHome, ".kimi", "kimi.json"),
+      JSON.stringify({
+        work_dirs: [
+          { path: realWorkspace, kaos: "local", last_session_id: "stale-uuid" },
+        ],
+      }),
+    );
+
+    const info = await agent.getSessionInfo(
+      makeSession({ workspacePath: realWorkspace }),
+    );
+    expect(info?.agentSessionId).toBe("ao-spawned");
+
+    // And the AO pin file must record "ao-spawned", not "stale-uuid" —
+    // otherwise every later call would resolve to the wrong conversation.
+    const pin = JSON.parse(
+      readFileSync(join(realWorkspace, ".ao", "kimi-session-id.json"), "utf-8"),
+    );
+    expect(pin.sessionId).toBe("ao-spawned");
+  });
+
+  // Companion case: kimi.json points at a UUID older than the AO session's
+  // createdAt. The soft-pin must be filtered by the createdAt floor too.
+  it("rejects kimi.json soft-pin when its UUID predates session.createdAt", async () => {
+    const realWorkspace = join(fakeHome, "workspace-kimijson-old");
+    mkdirSync(join(realWorkspace, ".ao"), { recursive: true });
+
+    // "old-uuid" exists with mtime far before session.createdAt; nothing
+    // is in the baseline file, but the createdAt floor should still
+    // reject it. "fresh-uuid" is the legitimate post-launch session.
+    writeKimiSession(realWorkspace, "old-uuid", {
+      contextAgeMs: 30 * 60 * 1000,
+      wireAgeMs: 30 * 60 * 1000,
+    });
+    writeKimiSession(realWorkspace, "fresh-uuid");
+
+    writeFileSync(
+      join(fakeHome, ".kimi", "kimi.json"),
+      JSON.stringify({
+        work_dirs: [
+          { path: realWorkspace, kaos: "local", last_session_id: "old-uuid" },
+        ],
+      }),
+    );
+
+    const info = await agent.getSessionInfo(
+      makeSession({
+        workspacePath: realWorkspace,
+        // createdAt 5 minutes ago — old-uuid (30 min) is well below the
+        // createdAt - 60s floor; fresh-uuid is well above.
+        createdAt: new Date(Date.now() - 5 * 60 * 1000),
+      }),
+    );
+    expect(info?.agentSessionId).toBe("fresh-uuid");
+  });
+
   it("skips malformed wire.jsonl lines without crashing", async () => {
     writeKimiSession(workspace, "sess-abc", {
       wireContent:

@@ -386,18 +386,26 @@ async function findKimiSessionMatchUncached(
       return { dir, sessionId: entry, mtime: liveMtime };
     }
 
+    // Baseline filter — UUIDs present at launch never count as "ours".
+    // Applied BEFORE the kimi.json soft-pin check: kimi.json's
+    // last_session_id can lag the live bucket (e.g. a manual `kimi`
+    // run earlier left a stale pointer, or AO polls before kimi has
+    // updated kimi.json). Without this guard, the soft-pin would
+    // capture a baseline UUID and persist it to the AO pin file
+    // permanently, with no self-healing path.
+    if (baseline?.has(entry)) continue;
+
+    if (liveMtime.getTime() < minAgeMs) continue;
+
     // kimi.json soft-pin candidate — record it but keep scanning so we
     // can still return a recency winner if the soft-pin UUID has no live
     // files (rare but possible if kimi.json points at a stale entry).
+    // Reaches here only after passing the baseline + createdAt filters,
+    // so a stale last_session_id pointing at a pre-AO UUID is rejected.
     if (kimiJsonSessionId && entry === kimiJsonSessionId) {
       kimiJsonMatch = { dir, sessionId: entry, mtime: liveMtime };
       continue;
     }
-
-    // Baseline filter — UUIDs present at launch never count as "ours".
-    if (baseline?.has(entry)) continue;
-
-    if (liveMtime.getTime() < minAgeMs) continue;
 
     const mtimeMs = liveMtime.getTime();
     if (!best || mtimeMs > best.mtimeMs) {
