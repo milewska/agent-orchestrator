@@ -1698,6 +1698,7 @@ export interface SessionMetadata {
   opencodeSessionId?: string;
   claudeSessionUuid?: string;
   codexThreadId?: string;
+  codexModel?: string;
   restoreFallbackReason?: string;
   pinnedSummary?: string; // First quality summary, pinned for display stability
   userPrompt?: string; // Prompt used when spawning without a tracker issue

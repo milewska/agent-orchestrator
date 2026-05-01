@@ -703,14 +703,19 @@ function createCodexAgent(): Agent {
         summary: data.model ? `Codex session (${data.model})` : null,
         summaryIsFallback: true,
         agentSessionId,
-        metadata: data.threadId ? { codexThreadId: data.threadId } : undefined,
+        metadata: data.threadId
+          ? {
+              codexThreadId: data.threadId,
+              ...(data.model ? { codexModel: data.model } : {}),
+            }
+          : undefined,
         cost,
       };
     },
 
     async getRestoreCommand(session: Session, project: ProjectConfig): Promise<string | null> {
       let threadId = session.metadata?.["codexThreadId"]?.trim();
-      let model: string | null = null;
+      let model: string | null = session.metadata?.["codexModel"]?.trim() || null;
       if (!threadId) {
         if (!session.workspacePath) return null;
 

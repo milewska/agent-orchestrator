@@ -587,6 +587,51 @@ describe("restore", () => {
     expect(meta!["restoreFallbackReason"]).toBeUndefined();
   });
 
+  it("normalizes agent metadata empty strings in memory like metadata persistence", async () => {
+    const wsPath = join(tmpDir, "ws-app-agent-metadata-normalize");
+    mkdirSync(wsPath, { recursive: true });
+
+    const mockAgentWithMetadata: Agent = {
+      ...mockAgent,
+      getSessionInfo: vi.fn().mockResolvedValue({
+        summary: null,
+        agentSessionId: "native-1",
+        metadata: {
+          codexThreadId: "thread-1",
+          restoreFallbackReason: "",
+        },
+      }),
+    };
+
+    const registryWithAgentMetadata: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string) => {
+        if (slot === "runtime") return mockRuntime;
+        if (slot === "agent") return mockAgentWithMetadata;
+        if (slot === "workspace") return mockWorkspace;
+        return null;
+      }),
+    };
+
+    writeMetadata(sessionsDir, "app-1", {
+      worktree: wsPath,
+      branch: "feat/TEST-1",
+      status: "killed",
+      project: "my-app",
+      runtimeHandle: makeHandle("rt-old"),
+      restoreFallbackReason: "previous fallback",
+    });
+
+    const sm = createSessionManager({ config, registry: registryWithAgentMetadata });
+    const restored = await sm.restore("app-1");
+
+    expect(restored.metadata["codexThreadId"]).toBe("thread-1");
+    expect(restored.metadata["restoreFallbackReason"]).toBeUndefined();
+    const meta = readMetadataRaw(sessionsDir, "app-1");
+    expect(meta!["codexThreadId"]).toBe("thread-1");
+    expect(meta!["restoreFallbackReason"]).toBeUndefined();
+  });
+
   it("does not inject OPENCODE_CONFIG when restoring OpenCode orchestrators", async () => {
     const wsPath = join(tmpDir, "ws-app-orchestrator-opencode-restore");
     mkdirSync(wsPath, { recursive: true });
