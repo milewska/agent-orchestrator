@@ -115,6 +115,48 @@ function writeProjectBehaviorConfig(projectPath: string, config: LocalProjectCon
   writeLocalProjectConfig(projectPath, config);
 }
 
+function registerProjectForDashboard(projectId: string, project: ProjectConfig): string {
+  if (!existsSync(project.path)) {
+    return projectId;
+  }
+
+  const localConfig = {
+    ...(project.repo ? { repo: project.repo } : {}),
+    defaultBranch: project.defaultBranch,
+    sessionPrefix: project.sessionPrefix,
+  };
+
+  try {
+    return registerProjectInGlobalConfig(
+      projectId,
+      project.name ?? projectId,
+      project.path,
+      localConfig,
+      getGlobalConfigPath(),
+    );
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("is already registered at")) {
+      console.log(
+        chalk.dim(`  Project path already registered globally — skipping registry update.`),
+      );
+      return projectId;
+    }
+    if (error instanceof Error && error.message.includes("Duplicate session prefix")) {
+      return registerProjectInGlobalConfig(
+        projectId,
+        project.name ?? projectId,
+        project.path,
+        {
+          ...(project.repo ? { repo: project.repo } : {}),
+          defaultBranch: project.defaultBranch,
+        },
+        getGlobalConfigPath(),
+      );
+    }
+    throw error;
+  }
+}
+
 /**
  * Register a flat local config (agent-orchestrator.yaml without `projects:`)
  * into the global config so loadConfig can resolve it.
@@ -750,6 +792,7 @@ async function autoCreateConfig(workingDir: string): Promise<OrchestratorConfig>
   let repo: string | undefined = env.ownerRepo ?? undefined;
   const path = workingDir;
   const defaultBranch = env.defaultBranch || "main";
+  const sessionPrefix = generateSessionPrefix(projectId);
 
   // If no repo detected, inform the user and ask
   /* c8 ignore start -- interactive prompt, tested via onboarding integration */
@@ -780,6 +823,15 @@ async function autoCreateConfig(workingDir: string): Promise<OrchestratorConfig>
     console.log(chalk.yellow(`  ⚠ Port ${DEFAULT_PORT} is busy — using ${port} instead.`));
   }
 
+  const projectConfig: ProjectConfig = {
+    name: projectId,
+    sessionPrefix,
+    ...(repo ? { repo } : {}),
+    path,
+    defaultBranch,
+    ...(agentRules ? { agentRules } : {}),
+  };
+
   const config: Record<string, unknown> = {
     port: port ?? DEFAULT_PORT,
     defaults: {
@@ -789,14 +841,7 @@ async function autoCreateConfig(workingDir: string): Promise<OrchestratorConfig>
       notifiers: [],
     },
     projects: {
-      [projectId]: {
-        name: projectId,
-        sessionPrefix: generateSessionPrefix(projectId),
-        ...(repo ? { repo } : {}),
-        path,
-        defaultBranch,
-        ...(agentRules ? { agentRules } : {}),
-      },
+      [projectId]: projectConfig,
     },
   };
 
@@ -808,6 +853,8 @@ async function autoCreateConfig(workingDir: string): Promise<OrchestratorConfig>
   }
   const yamlContent = configToYaml(config);
   writeFileSync(outputPath, yamlContent);
+
+  registerProjectForDashboard(projectId, projectConfig);
 
   console.log(chalk.green(`✓ Config created: ${outputPath}\n`));
 
@@ -989,6 +1036,7 @@ async function addProjectToConfig(
     };
 
     writeFileSync(config.configPath, configToYaml(rawConfig as Record<string, unknown>));
+    registerProjectForDashboard(projectId, rawConfig.projects[projectId] as ProjectConfig);
     console.log(chalk.green(`\n✓ Added "${projectId}" to ${config.configPath}\n`));
   }
 
@@ -1352,7 +1400,9 @@ async function runStartup(
         const currentProjectSessions = lastStop.projectId === projectId ? lastStop.sessionIds : [];
         if (currentProjectSessions.length > 0) {
           console.log(
-            chalk.yellow(`\n  ${currentProjectSessions.length} session(s) were active before last ao stop (${stoppedAgo}):`),
+            chalk.yellow(
+              `\n  ${currentProjectSessions.length} session(s) were active before last ao stop (${stoppedAgo}):`,
+            ),
           );
           console.log(chalk.dim(`  ${currentProjectSessions.join(", ")}\n`));
         }
@@ -1400,9 +1450,13 @@ async function runStartup(
               }
             }
             if (restoredCount === allRestoreSessions.length) {
-              restoreSpinner.succeed(`Restored ${restoredCount}/${allRestoreSessions.length} session(s)`);
+              restoreSpinner.succeed(
+                `Restored ${restoredCount}/${allRestoreSessions.length} session(s)`,
+              );
             } else {
-              restoreSpinner.warn(`Restored ${restoredCount}/${allRestoreSessions.length} session(s)`);
+              restoreSpinner.warn(
+                `Restored ${restoredCount}/${allRestoreSessions.length} session(s)`,
+              );
             }
             for (const w of warnings) {
               console.log(chalk.yellow(w));
@@ -1414,9 +1468,7 @@ async function runStartup(
             // and the remaining sessions would never be retryable. When
             // every session restored (or was skipped), clear the file.
             if (failedSessionIds.size > 0) {
-              const remainingTarget = lastStop.sessionIds.filter((id) =>
-                failedSessionIds.has(id),
-              );
+              const remainingTarget = lastStop.sessionIds.filter((id) => failedSessionIds.has(id));
               const remainingOther = otherProjects
                 .map((p) => ({
                   projectId: p.projectId,
@@ -1639,8 +1691,7 @@ export function registerStart(program: Command): void {
           // running.json projects list, it was stopped via `ao stop <project>`.
           // Skip the "already running" menu and go straight to orchestrator
           // creation — the dashboard and lifecycle worker are still up.
-          const isProjectId =
-            projectArg && !isRepoUrl(projectArg) && !isLocalPath(projectArg);
+          const isProjectId = projectArg && !isRepoUrl(projectArg) && !isLocalPath(projectArg);
           const projectArgIsUrlOrPath =
             !!projectArg && (isRepoUrl(projectArg) || isLocalPath(projectArg));
 
@@ -1726,9 +1777,7 @@ export function registerStart(program: Command): void {
               // here so the global registry + repo can be loaded cleanly
               // on the very first read.
               const parsed = parseRepoUrl(requestedProjectArg);
-              console.log(
-                chalk.bold.cyan(`\n  Cloning ${parsed.ownerRepo} (${parsed.host})\n`),
-              );
+              console.log(chalk.bold.cyan(`\n  Cloning ${parsed.ownerRepo} (${parsed.host})\n`));
               await ensureGit("repository cloning");
 
               const cwdDir = cwd();
@@ -1878,9 +1927,7 @@ export function registerStart(program: Command): void {
           // leaving the original parent process orphaned.
           if (running && isProjectId) {
             const globalConfigPath = getGlobalConfigPath();
-            const cfg = existsSync(globalConfigPath)
-              ? loadConfig(globalConfigPath)
-              : loadConfig();
+            const cfg = existsSync(globalConfigPath) ? loadConfig(globalConfigPath) : loadConfig();
             const project = cfg.projects[projectArg];
             if (!project) {
               throw new Error(
@@ -1901,11 +1948,11 @@ export function registerStart(program: Command): void {
               systemPrompt,
             });
 
+            console.log(chalk.green(`✓ Orchestrator session ready: ${session.id}`));
             console.log(
-              chalk.green(`✓ Orchestrator session ready: ${session.id}`),
-            );
-            console.log(
-              chalk.green(`✓ Project "${projectArg}" reattached to running daemon (PID ${running.pid}).`),
+              chalk.green(
+                `✓ Project "${projectArg}" reattached to running daemon (PID ${running.pid}).`,
+              ),
             );
 
             // Invalidate the dashboard's cached services so the project page
@@ -2144,6 +2191,10 @@ export function registerStart(program: Command): void {
               }
             }
             ({ projectId, project, config } = await resolveProject(config, projectArg));
+          }
+
+          if (!isCanonicalGlobalConfigPath(config.configPath)) {
+            registerProjectForDashboard(projectId, project);
           }
 
           // ── Handle "new orchestrator" choice (deferred from already-running check) ──
@@ -2438,7 +2489,9 @@ export function registerStop(program: Command): void {
             if (killedSessionIds.length === 0) {
               spinner.fail("Failed to stop any sessions");
             } else if (killedSessionIds.length < activeSessions.length) {
-              spinner.warn(`Stopped ${killedSessionIds.length}/${activeSessions.length} session(s)`);
+              spinner.warn(
+                `Stopped ${killedSessionIds.length}/${activeSessions.length} session(s)`,
+              );
             } else {
               spinner.succeed(`Stopped ${killedSessionIds.length} session(s)`);
             }
@@ -2475,9 +2528,7 @@ export function registerStop(program: Command): void {
             await writeLastStop({
               stoppedAt: new Date().toISOString(),
               projectId: _projectId,
-              sessionIds: killedSessionIds.filter((id) =>
-                targetActive.some((s) => s.id === id),
-              ),
+              sessionIds: killedSessionIds.filter((id) => targetActive.some((s) => s.id === id)),
               otherProjects: otherProjects.length > 0 ? otherProjects : undefined,
             });
           }

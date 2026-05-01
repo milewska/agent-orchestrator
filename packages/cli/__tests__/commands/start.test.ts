@@ -266,6 +266,7 @@ import { registerStart, registerStop, createConfigOnly } from "../../src/command
 let tmpDir: string;
 let program: Command;
 let cwdSpy: ReturnType<typeof vi.spyOn>;
+let originalGlobalConfigEnv: string | undefined;
 
 function createSpawnChild(options?: {
   /** Emit `error` instead of `close`. */
@@ -303,6 +304,8 @@ function createSpawnChild(options?: {
 
 beforeEach(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), "ao-start-test-"));
+  originalGlobalConfigEnv = process.env["AO_GLOBAL_CONFIG"];
+  process.env["AO_GLOBAL_CONFIG"] = join(tmpDir, "global-config.yaml");
 
   program = new Command();
   program.exitOverride();
@@ -328,7 +331,11 @@ beforeEach(async () => {
   vi.mocked(webDir.findFreePort).mockResolvedValue(3000);
   vi.mocked(webDir.buildDashboardEnv).mockResolvedValue({});
   const projectDetection = await import("../../src/lib/project-detection.js");
-  vi.mocked(projectDetection.detectProjectType).mockReturnValue({ languages: [], frameworks: [], tools: [] });
+  vi.mocked(projectDetection.detectProjectType).mockReturnValue({
+    languages: [],
+    frameworks: [],
+    tools: [],
+  });
   vi.mocked(projectDetection.generateRulesFromTemplates).mockReturnValue(null);
   vi.mocked(projectDetection.formatProjectTypeForDisplay).mockReturnValue("");
 
@@ -412,6 +419,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   if (cwdSpy) cwdSpy.mockRestore();
+  if (originalGlobalConfigEnv === undefined) delete process.env["AO_GLOBAL_CONFIG"];
+  else process.env["AO_GLOBAL_CONFIG"] = originalGlobalConfigEnv;
   rmSync(tmpDir, { recursive: true, force: true });
   vi.restoreAllMocks();
 });
@@ -647,17 +656,13 @@ describe("start command — URL argument", () => {
     mockExecSilent.mockResolvedValue("Logged in");
 
     mockSpawn.mockImplementation(
-      (
-        cmd: string,
-        args: string[],
-        _opts?: { cwd?: string; env?: NodeJS.ProcessEnv },
-      ) => {
-      if (cmd === "gh" && args[0] === "repo" && args[1] === "clone") {
-        createFakeRepo(repoDir, "https://github.com/owner/my-app.git", {
-          "Cargo.toml": "",
-        });
-      }
-      return createSpawnChild({ closeCode: 0 });
+      (cmd: string, args: string[], _opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) => {
+        if (cmd === "gh" && args[0] === "repo" && args[1] === "clone") {
+          createFakeRepo(repoDir, "https://github.com/owner/my-app.git", {
+            "Cargo.toml": "",
+          });
+        }
+        return createSpawnChild({ closeCode: 0 });
       },
     );
 
@@ -696,25 +701,21 @@ describe("start command — URL argument", () => {
     });
 
     mockSpawn.mockImplementation(
-      (
-        cmd: string,
-        args: string[],
-        _opts?: { cwd?: string; env?: NodeJS.ProcessEnv },
-      ) => {
-      if (cmd === "git" && args[0] === "clone") {
-        const url = String(args[3] ?? "");
-        // SSH attempt fails (simulate non-zero exit)
-        if (url.startsWith("git@")) {
-          return createSpawnChild({ closeCode: 1 });
+      (cmd: string, args: string[], _opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) => {
+        if (cmd === "git" && args[0] === "clone") {
+          const url = String(args[3] ?? "");
+          // SSH attempt fails (simulate non-zero exit)
+          if (url.startsWith("git@")) {
+            return createSpawnChild({ closeCode: 1 });
+          }
+
+          // HTTPS fallback succeeds
+          createFakeRepo(repoDir, "https://github.com/owner/my-app.git", {
+            "Cargo.toml": "",
+          });
         }
 
-        // HTTPS fallback succeeds
-        createFakeRepo(repoDir, "https://github.com/owner/my-app.git", {
-          "Cargo.toml": "",
-        });
-      }
-
-      return createSpawnChild({ closeCode: 0 });
+        return createSpawnChild({ closeCode: 0 });
       },
     );
 
@@ -1229,10 +1230,10 @@ describe("start command — orchestrator session strategy display", () => {
 
     await program.parseAsync(["node", "test", "start", "--rebuild", "--no-orchestrator"]);
 
-    expect(dashboardRebuild.rebuildDashboardProductionArtifacts).toHaveBeenCalledWith(tmpDir, [
-      3000,
-      3001,
-    ]);
+    expect(dashboardRebuild.rebuildDashboardProductionArtifacts).toHaveBeenCalledWith(
+      tmpDir,
+      [3000, 3001],
+    );
   });
 
   it("opens the most recent orchestrator session page when multiple existing orchestrators found with dashboard enabled and reuse is explicit", async () => {
@@ -2101,6 +2102,10 @@ describe("stop command", () => {
 
 describe("start command — autoCreateConfig", () => {
   it("generates config with empty notifiers array (no desktop notifier added by default)", async () => {
+    const globalConfigPath = join(tmpDir, "global-config.yaml");
+    const origGlobalEnv = process.env["AO_GLOBAL_CONFIG"];
+    process.env["AO_GLOBAL_CONFIG"] = globalConfigPath;
+
     const { detectEnvironment } = await import("../../src/lib/detect-env.js");
     vi.mocked(detectEnvironment).mockResolvedValue({
       isGitRepo: true,
@@ -2134,20 +2139,38 @@ describe("start command — autoCreateConfig", () => {
     const callerContext = await import("../../src/lib/caller-context.js");
     vi.spyOn(callerContext, "isHumanCaller").mockReturnValue(false);
 
-    await createConfigOnly();
+    try {
+      await createConfigOnly();
 
-    const configPath = join(tmpDir, "agent-orchestrator.yaml");
-    expect(existsSync(configPath)).toBe(true);
+      const configPath = join(tmpDir, "agent-orchestrator.yaml");
+      expect(existsSync(configPath)).toBe(true);
+      expect(existsSync(globalConfigPath)).toBe(true);
 
-    const content = readFileSync(configPath, "utf-8");
-    const parsed = parseYaml(content) as {
-      $schema?: string;
-      defaults?: { notifiers?: unknown[] };
-    };
-    expect(parsed["$schema"]).toBe(
-      "https://raw.githubusercontent.com/ComposioHQ/agent-orchestrator/main/schema/config.schema.json",
-    );
-    expect(parsed.defaults?.notifiers).toEqual([]);
+      const content = readFileSync(configPath, "utf-8");
+      const parsed = parseYaml(content) as {
+        $schema?: string;
+        defaults?: { notifiers?: unknown[] };
+      };
+      expect(parsed["$schema"]).toBe(
+        "https://raw.githubusercontent.com/ComposioHQ/agent-orchestrator/main/schema/config.schema.json",
+      );
+      expect(parsed.defaults?.notifiers).toEqual([]);
+
+      const globalConfig = parseYaml(readFileSync(globalConfigPath, "utf-8")) as {
+        projects: Record<string, Record<string, unknown>>;
+      };
+      const registeredEntry = Object.values(globalConfig.projects).find(
+        (entry) => entry.path === realpathSync(tmpDir),
+      );
+      expect(registeredEntry).toMatchObject({
+        path: realpathSync(tmpDir),
+        defaultBranch: "main",
+      });
+      expect(registeredEntry?.sessionPrefix).toEqual(expect.any(String));
+    } finally {
+      if (origGlobalEnv === undefined) delete process.env["AO_GLOBAL_CONFIG"];
+      else process.env["AO_GLOBAL_CONFIG"] = origGlobalEnv;
+    }
   });
 });
 
@@ -2313,8 +2336,7 @@ describe("start command — already-running detection", () => {
         ) {
           return "https://github.com/org/new-repo.git";
         }
-        if (args[0] === "symbolic-ref" && workingDir === repoDir)
-          return "refs/remotes/origin/main";
+        if (args[0] === "symbolic-ref" && workingDir === repoDir) return "refs/remotes/origin/main";
         if (args[0] === "rev-parse" && args[1] === "--verify" && workingDir === repoDir)
           return "abc";
         return null;
@@ -2660,6 +2682,177 @@ describe("start command — path-based deduplication in addProjectToConfig", () 
     } finally {
       if (origEnv === undefined) delete process.env["AO_CONFIG_PATH"];
       else process.env["AO_CONFIG_PATH"] = origEnv;
+    }
+  });
+
+  it("registers projects in the global registry when adding to a non-global local config", async () => {
+    const currentRepoDir = join(tmpDir, "current-project");
+    const addedRepoDir = join(tmpDir, "added-project");
+    createFakeRepo(currentRepoDir, "https://github.com/org/current-project.git");
+    createFakeRepo(addedRepoDir, "https://github.com/org/added-project.git");
+
+    const localConfigPath = join(currentRepoDir, "agent-orchestrator.yaml");
+    const globalConfigPath = join(tmpDir, "global-config.yaml");
+    const { stringify: yamlStringify } = await import("yaml");
+    writeFileSync(
+      localConfigPath,
+      yamlStringify(
+        {
+          defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+          projects: {
+            current: {
+              name: "Current",
+              repo: "org/current-project",
+              path: currentRepoDir,
+              defaultBranch: "main",
+              sessionPrefix: "cur",
+            },
+          },
+        },
+        { indent: 2 },
+      ),
+    );
+
+    const origConfigEnv = process.env["AO_CONFIG_PATH"];
+    const origGlobalEnv = process.env["AO_GLOBAL_CONFIG"];
+    process.env["AO_CONFIG_PATH"] = localConfigPath;
+    process.env["AO_GLOBAL_CONFIG"] = globalConfigPath;
+
+    const shell = await import("../../src/lib/shell.js");
+    vi.mocked(shell.git).mockImplementation(async (args: string[], workingDir?: string) => {
+      if (args[0] === "rev-parse" && args[1] === "--git-dir" && workingDir === addedRepoDir)
+        return ".git";
+      if (
+        args[0] === "remote" &&
+        args[1] === "get-url" &&
+        args[2] === "origin" &&
+        workingDir === addedRepoDir
+      ) {
+        return "https://github.com/org/added-project.git";
+      }
+      if (args[0] === "symbolic-ref" && workingDir === addedRepoDir)
+        return "refs/remotes/origin/main";
+      if (args[0] === "rev-parse" && args[1] === "--verify" && workingDir === addedRepoDir)
+        return "abc";
+      return null;
+    });
+
+    try {
+      await program.parseAsync([
+        "node",
+        "test",
+        "start",
+        addedRepoDir,
+        "--no-dashboard",
+        "--no-orchestrator",
+      ]);
+
+      const localConfig = parseYaml(readFileSync(localConfigPath, "utf-8")) as {
+        projects: Record<string, Record<string, unknown>>;
+      };
+      expect(localConfig.projects["added-project"]).toMatchObject({
+        path: addedRepoDir,
+        defaultBranch: "main",
+      });
+
+      const globalConfig = parseYaml(readFileSync(globalConfigPath, "utf-8")) as {
+        projects: Record<string, Record<string, unknown>>;
+      };
+      const registeredEntry = Object.values(globalConfig.projects).find(
+        (entry) => entry.path === realpathSync(addedRepoDir),
+      );
+      expect(registeredEntry).toMatchObject({
+        path: realpathSync(addedRepoDir),
+        defaultBranch: "main",
+        sessionPrefix: "ap",
+      });
+    } finally {
+      if (origConfigEnv === undefined) delete process.env["AO_CONFIG_PATH"];
+      else process.env["AO_CONFIG_PATH"] = origConfigEnv;
+      if (origGlobalEnv === undefined) delete process.env["AO_GLOBAL_CONFIG"];
+      else process.env["AO_GLOBAL_CONFIG"] = origGlobalEnv;
+    }
+  });
+
+  it("registers a local-yaml-only cwd project when a global registry already exists", async () => {
+    const projectADir = join(tmpDir, "project-a");
+    const projectBDir = join(tmpDir, "project-b");
+    createFakeRepo(projectADir, "https://github.com/org/project-a.git");
+    createFakeRepo(projectBDir, "https://github.com/org/project-b.git");
+
+    const localConfigPath = join(projectBDir, "agent-orchestrator.yaml");
+    const globalConfigPath = join(tmpDir, "global-config.yaml");
+    const { stringify: yamlStringify } = await import("yaml");
+
+    writeFileSync(
+      localConfigPath,
+      yamlStringify(
+        {
+          defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+          projects: {
+            "project-b": {
+              name: "Project B",
+              repo: "org/project-b",
+              path: projectBDir,
+              defaultBranch: "main",
+              sessionPrefix: "pb",
+            },
+          },
+        },
+        { indent: 2 },
+      ),
+    );
+    writeFileSync(
+      globalConfigPath,
+      yamlStringify(
+        {
+          defaults: { runtime: "tmux", agent: "claude-code", workspace: "worktree", notifiers: [] },
+          projects: {
+            "project-a": {
+              projectId: "project-a",
+              path: realpathSync(projectADir),
+              defaultBranch: "main",
+              displayName: "Project A",
+              sessionPrefix: "pa",
+            },
+          },
+        },
+        { indent: 2 },
+      ),
+    );
+
+    const origConfigEnv = process.env["AO_CONFIG_PATH"];
+    const origGlobalEnv = process.env["AO_GLOBAL_CONFIG"];
+    process.env["AO_CONFIG_PATH"] = localConfigPath;
+    process.env["AO_GLOBAL_CONFIG"] = globalConfigPath;
+    const core = await import("@aoagents/ao-core");
+    mockConfigRef.current = core.loadConfig(localConfigPath) as unknown as Record<string, unknown>;
+
+    try {
+      await program.parseAsync(["node", "test", "start", "--no-dashboard", "--no-orchestrator"]);
+
+      const globalConfig = parseYaml(readFileSync(globalConfigPath, "utf-8")) as {
+        projects: Record<string, Record<string, unknown>>;
+      };
+      expect(
+        Object.values(globalConfig.projects).some(
+          (entry) =>
+            typeof entry.path === "string" &&
+            realpathSync(entry.path) === realpathSync(projectADir),
+        ),
+      ).toBe(true);
+      expect(
+        Object.values(globalConfig.projects).some(
+          (entry) =>
+            typeof entry.path === "string" &&
+            realpathSync(entry.path) === realpathSync(projectBDir),
+        ),
+      ).toBe(true);
+    } finally {
+      if (origConfigEnv === undefined) delete process.env["AO_CONFIG_PATH"];
+      else process.env["AO_CONFIG_PATH"] = origConfigEnv;
+      if (origGlobalEnv === undefined) delete process.env["AO_GLOBAL_CONFIG"];
+      else process.env["AO_GLOBAL_CONFIG"] = origGlobalEnv;
     }
   });
 });
