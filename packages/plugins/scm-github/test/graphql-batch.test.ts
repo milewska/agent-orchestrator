@@ -910,6 +910,58 @@ describe("shouldRefreshPREnrichment - ETag Guard Strategy", () => {
       expect(result.shouldRefresh).toBe(true); // Fail-safe: assume changed on error
       expect(mockObserver.log).toHaveBeenCalledWith("warn", expect.stringContaining("[ETag Guard 1]"));
     });
+
+    it("should treat error message with HTTP 304 status line as cache hit", async () => {
+      const prs = [
+        {
+          owner: "owner",
+          repo: "repo",
+          number: 123,
+          url: "https://github.com/owner/repo/pull/123",
+          title: "Test PR",
+          branch: "feature",
+          baseBranch: "main",
+          isDraft: false,
+        },
+      ];
+
+      // Error where stdout/stderr extraction fails but message contains HTTP 304 status
+      const err = new Error("HTTP/1.1 304 Not Modified");
+      mockExecFileImpl.mockRejectedValueOnce(err);
+
+      const result = await shouldRefreshPREnrichment(prs);
+
+      expect(result.shouldRefresh).toBe(false); // Treated as cache hit
+    });
+
+    it("should NOT treat error message with '304' in a URL path as cache hit", async () => {
+      const prs = [
+        {
+          owner: "owner",
+          repo: "repo",
+          number: 304,
+          url: "https://github.com/owner/repo/pull/304",
+          title: "Test PR",
+          branch: "feature",
+          baseBranch: "main",
+          isDraft: false,
+        },
+      ];
+
+      const mockObserver = {
+        recordSuccess: vi.fn(),
+        recordFailure: vi.fn(),
+        log: vi.fn(),
+      };
+      // Error message contains "304" in URL path but not as HTTP status
+      const err = new Error("failed to fetch pulls/304/comments");
+      mockExecFileImpl.mockRejectedValueOnce(err);
+
+      const result = await shouldRefreshPREnrichment(prs, [], mockObserver);
+
+      expect(result.shouldRefresh).toBe(true); // Not a cache hit — real error
+      expect(mockObserver.log).toHaveBeenCalledWith("warn", expect.stringContaining("[ETag Guard 1]"));
+    });
   });
 
   describe("Guard 2: Commit Status ETag - Pending CI PRs", () => {
@@ -1045,6 +1097,65 @@ describe("shouldRefreshPREnrichment - ETag Guard Strategy", () => {
       expect(result.details).toContain("First time seeing PR #123 (Guard 2: no cached head SHA)");
       // Guard 1 called for PR list, Guard 2 skipped (no head SHA to check)
       expect(mockExecFileImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it("should refresh on Guard 2 error and log warning", async () => {
+      setPRMetadata("owner/repo#123", { headSha: "abc123", ciStatus: "pending" });
+
+      const prs = [
+        {
+          owner: "owner",
+          repo: "repo",
+          number: 123,
+          url: "https://github.com/owner/repo/pull/123",
+          title: "Test PR",
+          branch: "feature",
+          baseBranch: "main",
+          isDraft: false,
+        },
+      ];
+
+      const mockObserver = {
+        recordSuccess: vi.fn(),
+        recordFailure: vi.fn(),
+        log: vi.fn(),
+      };
+
+      // Guard 1: 304 (no change), Guard 2: error
+      mockExecFileImpl
+        .mockResolvedValueOnce({ stdout: "HTTP/2 304", stderr: "" })
+        .mockRejectedValueOnce(new Error("gh CLI failed on commit status"));
+
+      const result = await shouldRefreshPREnrichment(prs, [], mockObserver);
+
+      expect(result.shouldRefresh).toBe(true);
+      expect(mockObserver.log).toHaveBeenCalledWith("warn", expect.stringContaining("[ETag Guard 2]"));
+    });
+
+    it("should treat Guard 2 error with HTTP 304 status line as cache hit", async () => {
+      setPRMetadata("owner/repo#123", { headSha: "abc123", ciStatus: "pending" });
+
+      const prs = [
+        {
+          owner: "owner",
+          repo: "repo",
+          number: 123,
+          url: "https://github.com/owner/repo/pull/123",
+          title: "Test PR",
+          branch: "feature",
+          baseBranch: "main",
+          isDraft: false,
+        },
+      ];
+
+      // Guard 1: 304, Guard 2: error with HTTP 304 in message
+      mockExecFileImpl
+        .mockResolvedValueOnce({ stdout: "HTTP/2 304", stderr: "" })
+        .mockRejectedValueOnce(new Error("HTTP/1.1 304 Not Modified"));
+
+      const result = await shouldRefreshPREnrichment(prs);
+
+      expect(result.shouldRefresh).toBe(false);
     });
   });
 

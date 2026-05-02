@@ -460,8 +460,9 @@ async function checkPRListETag(
 
     const errorMsg = err instanceof Error ? err.message : String(err);
     // HTTP 304 may surface as an error message without stdout/stderr (e.g. gh cli versions
-    // that don't populate stdout on non-zero exit). Treat as cache hit.
-    if (/\b304\b/.test(errorMsg)) {
+    // that don't populate stdout on non-zero exit). Use is304() anchored to the HTTP status
+    // line to avoid false positives from URL paths like "pulls/304/comments".
+    if (is304(errorMsg)) {
       return false;
     }
     observer?.log("warn", `[ETag Guard 1] PR list check failed for ${repoKey}: ${errorMsg}`);
@@ -529,7 +530,7 @@ async function checkCommitStatusETag(
     }
 
     const errorMsg = err instanceof Error ? err.message : String(err);
-    if (/\b304\b/.test(errorMsg)) {
+    if (is304(errorMsg)) {
       return false;
     }
     observer?.log("warn", `[ETag Guard 2] Commit status check failed for ${commitKey}: ${errorMsg}`);
@@ -592,7 +593,7 @@ export async function checkReviewCommentsETag(
     }
 
     const errorMsg = err instanceof Error ? err.message : String(err);
-    if (/\b304\b/.test(errorMsg)) {
+    if (is304(errorMsg)) {
       return false;
     }
     observer?.log("warn", `[ETag Guard 3] Review comments check failed for ${cacheKey}: ${errorMsg}`);
@@ -1163,7 +1164,7 @@ export async function enrichSessionsPRBatch(
       });
 
       // Log error for observability but don't fail entirely
-      observer?.log("warn", `[GraphQL Batch Warning] Batch enrichment partially failed: ${errorMsg}`);
+      observer?.log("error", `[GraphQL Batch] Batch enrichment partially failed: ${errorMsg}`);
 
       // Don't add placeholder entries to result or cache.
       // This allows lifecycle-manager to fall back to individual API calls
