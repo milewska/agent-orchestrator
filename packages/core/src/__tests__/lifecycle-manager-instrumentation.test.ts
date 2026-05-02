@@ -372,6 +372,125 @@ describe("agent.process_probe_failed", () => {
 });
 
 // ---------------------------------------------------------------------------
+// reaction.escalated / reaction.send_to_agent_failed / reaction.action_succeeded
+// ---------------------------------------------------------------------------
+
+/** Build an SCM mock whose batch enrichment drives the session to ci_failed. */
+function makeCiFailedScm(overrides: Partial<Parameters<typeof createMockSCM>[0]> = {}) {
+  return createMockSCM({
+    enrichSessionsPRBatch: vi.fn().mockImplementation(async (prs: PRInfo[]) => {
+      const result = new Map();
+      for (const pr of prs) {
+        result.set(`${pr.owner}/${pr.repo}#${pr.number}`, {
+          state: "open",
+          ciStatus: "failing",
+          reviewDecision: "none",
+          mergeable: false,
+          ciChecks: [{ name: "test", status: "failed" }],
+        });
+      }
+      return result;
+    }),
+    ...overrides,
+  });
+}
+
+describe("reaction.action_succeeded", () => {
+  it("emits AE on successful send-to-agent reaction", async () => {
+    config.reactions = {
+      "ci-failed": { auto: true, action: "send-to-agent", message: "fix CI", retries: 5 },
+    };
+    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: makeCiFailedScm(),
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "pr_open", pr: makeMatchingPR() });
+    persistSession("app-1", session);
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "reaction.action_succeeded");
+    expect(events.length).toBeGreaterThan(0);
+
+    const ev = events[0]!;
+    expect(ev.source).toBe("reaction");
+    expect(ev.data).toMatchObject({
+      reactionKey: "ci-failed",
+      action: "send-to-agent",
+    });
+  });
+});
+
+describe("reaction.send_to_agent_failed", () => {
+  it("emits AE when sessionManager.send throws inside a send-to-agent reaction", async () => {
+    config.reactions = {
+      "ci-failed": { auto: true, action: "send-to-agent", message: "fix CI", retries: 5 },
+    };
+    vi.mocked(mockSessionManager.send).mockRejectedValue(new Error("agent unreachable"));
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: makeCiFailedScm(),
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "pr_open", pr: makeMatchingPR() });
+    persistSession("app-1", session);
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "reaction.send_to_agent_failed");
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toMatchObject({
+      reactionKey: "ci-failed",
+      errorMessage: "agent unreachable",
+    });
+  });
+});
+
+describe("reaction.escalated", () => {
+  it("emits AE with escalationCause=max_retries when attempts exceed retries", async () => {
+    // retries: 0 → first attempt escalates (attempts=1 > 0)
+    config.reactions = {
+      "ci-failed": { auto: true, action: "send-to-agent", message: "fix CI", retries: 0, priority: "urgent" },
+    };
+    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: makeCiFailedScm(),
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "pr_open", pr: makeMatchingPR() });
+    persistSession("app-1", session);
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "reaction.escalated");
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toMatchObject({
+      reactionKey: "ci-failed",
+      attempts: 1,
+      escalationCause: "max_retries",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // B2 invariant: emits never break the lifecycle flow
 // ---------------------------------------------------------------------------
 

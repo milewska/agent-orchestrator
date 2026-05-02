@@ -40,7 +40,11 @@ export type ActivityEventKind =
   | "scm.poll_pr_failed"
   | "runtime.probe_failed"
   | "agent.process_probe_failed"
-  | "agent.activity_probe_failed";
+  | "agent.activity_probe_failed"
+  // Reaction lifecycle
+  | "reaction.escalated"
+  | "reaction.send_to_agent_failed"
+  | "reaction.action_succeeded";
 
 export type ActivityEventLevel = "debug" | "info" | "warn" | "error";
 

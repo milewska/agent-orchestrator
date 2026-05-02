@@ -1397,6 +1397,22 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     }
 
     if (shouldEscalate) {
+      const escalationCause: "max_retries" | "max_duration" =
+        tracker.attempts > maxRetries ? "max_retries" : "max_duration";
+      recordActivityEvent({
+        projectId,
+        sessionId,
+        source: "reaction",
+        kind: "reaction.escalated",
+        level: "warn",
+        summary: `reaction ${reactionKey} escalated after ${tracker.attempts} attempts`,
+        data: {
+          reactionKey,
+          attempts: tracker.attempts,
+          durationSinceFirstMs: Date.now() - tracker.firstTriggered.getTime(),
+          escalationCause,
+        },
+      });
       // Escalate to human
       const context = buildEventContext(session, prEnrichmentCache);
       const event = createEvent("reaction.escalated", {
@@ -1427,7 +1443,14 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         if (reactionConfig.message) {
           try {
             await sessionManager.send(sessionId, reactionConfig.message);
-
+            recordActivityEvent({
+              projectId,
+              sessionId,
+              source: "reaction",
+              kind: "reaction.action_succeeded",
+              summary: `send-to-agent ${reactionKey}`,
+              data: { reactionKey, action: "send-to-agent", attempts: tracker.attempts },
+            });
             return {
               reactionType: reactionKey,
               success: true,
@@ -1435,8 +1458,21 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
               message: reactionConfig.message,
               escalated: false,
             };
-          } catch {
+          } catch (err) {
             // Send failed — allow retry on next poll cycle (don't escalate immediately)
+            recordActivityEvent({
+              projectId,
+              sessionId,
+              source: "reaction",
+              kind: "reaction.send_to_agent_failed",
+              level: "warn",
+              summary: `send-to-agent failed for ${sessionId}`,
+              data: {
+                reactionKey,
+                attempts: tracker.attempts,
+                errorMessage: err instanceof Error ? err.message : String(err),
+              },
+            });
             return {
               reactionType: reactionKey,
               success: false,
@@ -1457,6 +1493,14 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           data: { reactionKey, context, schemaVersion: 2 },
         });
         await notifyHuman(event, reactionConfig.priority ?? "info");
+        recordActivityEvent({
+          projectId,
+          sessionId,
+          source: "reaction",
+          kind: "reaction.action_succeeded",
+          summary: `notify ${reactionKey}`,
+          data: { reactionKey, action: "notify", attempts: tracker.attempts },
+        });
         return {
           reactionType: reactionKey,
           success: true,
@@ -1476,6 +1520,14 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           data: { reactionKey, context, schemaVersion: 2 },
         });
         await notifyHuman(event, "action");
+        recordActivityEvent({
+          projectId,
+          sessionId,
+          source: "reaction",
+          kind: "reaction.action_succeeded",
+          summary: `auto-merge ${reactionKey}`,
+          data: { reactionKey, action: "auto-merge", attempts: tracker.attempts },
+        });
         return {
           reactionType: reactionKey,
           success: true,
