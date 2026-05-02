@@ -1131,8 +1131,23 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
               }),
             );
           }
-        } catch {
-          // Best-effort — batch will retry next cycle
+        } catch (err) {
+          // Best-effort — batch will retry next cycle. Record AE evidence so
+          // RCA can answer "why didn't AO transition to merged/closed in time?"
+          recordActivityEvent({
+            projectId: session.projectId,
+            sessionId: session.id,
+            source: "scm",
+            kind: "scm.poll_pr_failed",
+            level: "warn",
+            summary: `getPRState failed for PR #${session.pr.number}`,
+            data: {
+              plugin: project.scm?.plugin,
+              prNumber: session.pr.number,
+              prUrl: session.pr.url,
+              errorMessage: err instanceof Error ? err.message : String(err),
+            },
+          });
         }
       } catch (error) {
         observer?.recordOperation?.({
@@ -1498,8 +1513,23 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         // Fallback for SCM plugins that don't implement getReviewThreads yet
         allThreads = await scm.getPendingComments(session.pr);
       }
-    } catch {
-      // Failed to fetch — preserve existing metadata.
+    } catch (err) {
+      // Failed to fetch — preserve existing metadata; record AE evidence so
+      // RCA can answer "why aren't review comments being dispatched?"
+      recordActivityEvent({
+        projectId: session.projectId,
+        sessionId: session.id,
+        source: "scm",
+        kind: "scm.review_fetch_failed",
+        level: "warn",
+        summary: `review fetch failed for PR #${session.pr.number}`,
+        data: {
+          plugin: project.scm?.plugin,
+          prNumber: session.pr.number,
+          prUrl: session.pr.url,
+          errorMessage: err instanceof Error ? err.message : String(err),
+        },
+      });
       // Don't update the throttle timestamp so the next poll retries immediately
       // instead of being blocked for 2 minutes with the agent left on a bare notification.
       return;
