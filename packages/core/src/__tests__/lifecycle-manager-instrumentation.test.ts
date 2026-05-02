@@ -185,6 +185,193 @@ describe("scm.poll_pr_failed", () => {
 });
 
 // ---------------------------------------------------------------------------
+// scm.batch_enrich_failed
+// ---------------------------------------------------------------------------
+
+describe("scm.batch_enrich_failed", () => {
+  it("records an AE event when scm.enrichSessionsPRBatch throws", async () => {
+    const mockSCM = createMockSCM({
+      enrichSessionsPRBatch: vi.fn().mockRejectedValue(new Error("rate limited")),
+    });
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: mockSCM,
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "pr_open", pr: makeMatchingPR() });
+    persistSession("app-1", session);
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const batchFailures = calls.filter((c) => c.kind === "scm.batch_enrich_failed");
+    expect(batchFailures.length).toBeGreaterThan(0);
+
+    const ev = batchFailures[0]!;
+    expect(ev.source).toBe("scm");
+    expect(ev.level).toBe("warn");
+    expect(ev.summary).toContain("batch_enrich failed");
+    expect(ev.data).toMatchObject({
+      plugin: "github",
+      prCount: 1,
+      errorMessage: "rate limited",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scm.detect_pr_succeeded / scm.detect_pr_failed
+// ---------------------------------------------------------------------------
+
+describe("scm.detect_pr", () => {
+  it("emits scm.detect_pr_succeeded when scm.detectPR finds a PR for a previously-PR-less session", async () => {
+    const detectedPR = makeMatchingPR({ number: 99, url: "https://github.com/org/my-app/pull/99" });
+    const mockSCM = createMockSCM({
+      detectPR: vi.fn().mockResolvedValue(detectedPR),
+    });
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: mockSCM,
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "working" });
+    persistSession("app-1", session);
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "scm.detect_pr_succeeded");
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toMatchObject({ prNumber: 99 });
+  });
+
+  it("emits scm.detect_pr_failed when scm.detectPR throws", async () => {
+    const mockSCM = createMockSCM({
+      detectPR: vi.fn().mockRejectedValue(new Error("403 forbidden")),
+    });
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: mockSCM,
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "working" });
+    persistSession("app-1", session);
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "scm.detect_pr_failed");
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toMatchObject({ errorMessage: "403 forbidden" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runtime.probe_failed
+// ---------------------------------------------------------------------------
+
+describe("runtime.probe_failed", () => {
+  it("records an AE event when runtime.isAlive throws", async () => {
+    vi.mocked(plugins.runtime.isAlive).mockRejectedValue(new Error("kill -0 EPERM"));
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: createMockSCM(),
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "working" });
+    persistSession("app-1", session);
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "runtime.probe_failed");
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0]!.source).toBe("runtime");
+    expect(events[0]!.data).toMatchObject({ errorMessage: "kill -0 EPERM" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agent.activity_probe_failed
+// ---------------------------------------------------------------------------
+
+describe("agent.activity_probe_failed", () => {
+  it("records an AE event when the activity probing block throws", async () => {
+    vi.mocked(plugins.agent.getActivityState).mockRejectedValue(new Error("native probe died"));
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: createMockSCM(),
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "working" });
+    persistSession("app-1", session);
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "agent.activity_probe_failed");
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0]!.source).toBe("agent");
+    expect(events[0]!.data).toMatchObject({ errorMessage: "native probe died" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// agent.process_probe_failed (standalone path)
+// ---------------------------------------------------------------------------
+
+describe("agent.process_probe_failed", () => {
+  it("records an AE event with where=standalone when isProcessRunning throws on the standalone probe", async () => {
+    // Drive activity probe to return null + force standalone path:
+    // - getActivityState resolves null → falls into terminal-output fallback
+    // - getOutput returns empty → no terminal-fallback isProcessRunning call
+    // - then standalone isProcessRunning at line ~1132 fires (processProbe still unknown)
+    vi.mocked(plugins.agent.getActivityState).mockResolvedValue(null);
+    vi.mocked(plugins.runtime.getOutput).mockResolvedValue("");
+    vi.mocked(plugins.agent.isProcessRunning).mockRejectedValue(new Error("ps lookup failed"));
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: createMockSCM(),
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "working" });
+    persistSession("app-1", session);
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "agent.process_probe_failed");
+    expect(events.length).toBeGreaterThan(0);
+    expect(events[0]!.source).toBe("agent");
+    expect(events[0]!.data).toMatchObject({
+      where: "standalone",
+      errorMessage: "ps lookup failed",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // B2 invariant: emits never break the lifecycle flow
 // ---------------------------------------------------------------------------
 

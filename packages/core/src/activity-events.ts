@@ -33,8 +33,14 @@ export type ActivityEventKind =
   | "ci.failing"
   | "review.pending"
   // Lifecycle-manager plugin-call failures
+  | "scm.batch_enrich_failed"
+  | "scm.detect_pr_succeeded"
+  | "scm.detect_pr_failed"
   | "scm.review_fetch_failed"
-  | "scm.poll_pr_failed";
+  | "scm.poll_pr_failed"
+  | "runtime.probe_failed"
+  | "agent.process_probe_failed"
+  | "agent.activity_probe_failed";
 
 export type ActivityEventLevel = "debug" | "info" | "warn" | "error";
 

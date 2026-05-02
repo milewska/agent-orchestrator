@@ -627,6 +627,17 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           level: "warn",
           data: { plugin: pluginKey, prCount: pluginPRs.length },
         });
+        recordActivityEvent({
+          source: "scm",
+          kind: "scm.batch_enrich_failed",
+          level: "warn",
+          summary: `batch_enrich failed for ${pluginPRs.length} PR(s)`,
+          data: {
+            plugin: pluginKey,
+            prCount: pluginPRs.length,
+            errorMessage: errorMsg,
+          },
+        });
       }
     }
 
@@ -660,8 +671,23 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           session.pr = detectedPR;
           const sessionsDir = getProjectSessionsDir(session.projectId);
           updateMetadata(sessionsDir, session.id, { pr: detectedPR.url });
+          recordActivityEvent({
+            projectId: session.projectId,
+            sessionId: session.id,
+            source: "scm",
+            kind: "scm.detect_pr_succeeded",
+            summary: `PR #${detectedPR.number} detected`,
+            data: {
+              plugin: project.scm.plugin,
+              prNumber: detectedPR.number,
+              prUrl: detectedPR.url,
+              prOwner: detectedPR.owner,
+              prRepo: detectedPR.repo,
+            },
+          });
         }
       } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
         observer?.recordOperation?.({
           metric: "lifecycle_poll",
           operation: "scm.detect_pr",
@@ -669,8 +695,20 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           correlationId: createCorrelationId("detect-pr"),
           projectId: session.projectId,
           sessionId: session.id,
-          reason: error instanceof Error ? error.message : String(error),
+          reason: errorMsg,
           level: "warn",
+        });
+        recordActivityEvent({
+          projectId: session.projectId,
+          sessionId: session.id,
+          source: "scm",
+          kind: "scm.detect_pr_failed",
+          level: "warn",
+          summary: `detect_pr failed for ${session.id}`,
+          data: {
+            plugin: project.scm.plugin,
+            errorMessage: errorMsg,
+          },
         });
       }
     }
@@ -897,11 +935,23 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
             lifecycle.runtime.reason =
               session.runtimeHandle.runtimeName === "tmux" ? "tmux_missing" : "process_missing";
           }
-        } catch {
+        } catch (err) {
           lifecycle.runtime.state = "probe_failed";
           lifecycle.runtime.reason = "probe_error";
           lifecycle.runtime.lastObservedAt = nowIso;
           runtimeProbe = { state: "unknown", failed: true };
+          recordActivityEvent({
+            projectId: session.projectId,
+            sessionId: session.id,
+            source: "runtime",
+            kind: "runtime.probe_failed",
+            level: "warn",
+            summary: `runtime.isAlive probe failed for ${session.id}`,
+            data: {
+              runtimeName: session.runtimeHandle.runtimeName,
+              errorMessage: err instanceof Error ? err.message : String(err),
+            },
+          });
         }
       }
     }
@@ -1013,17 +1063,42 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
                 lifecycle.runtime.reason = "process_missing";
                 lifecycle.runtime.lastObservedAt = nowIso;
               }
-            } catch {
+            } catch (err) {
               processProbe = { state: "unknown", failed: true };
+              recordActivityEvent({
+                projectId: session.projectId,
+                sessionId: session.id,
+                source: "agent",
+                kind: "agent.process_probe_failed",
+                level: "warn",
+                summary: `agent.isProcessRunning failed for ${session.id}`,
+                data: {
+                  agentName,
+                  where: "fallback",
+                  errorMessage: err instanceof Error ? err.message : String(err),
+                },
+              });
             }
           }
         } else {
           activitySignal = createActivitySignal("null", { source: "native" });
           activityEvidence = formatActivitySignalEvidence(activitySignal);
         }
-      } catch {
+      } catch (err) {
         activitySignal = createActivitySignal("probe_failure", { source: "native" });
         activityEvidence = formatActivitySignalEvidence(activitySignal);
+        recordActivityEvent({
+          projectId: session.projectId,
+          sessionId: session.id,
+          source: "agent",
+          kind: "agent.activity_probe_failed",
+          level: "warn",
+          summary: `activity probing failed for ${session.id}`,
+          data: {
+            agentName,
+            errorMessage: err instanceof Error ? err.message : String(err),
+          },
+        });
         if (
           lifecycle.session.state === "stuck" ||
           lifecycle.session.state === "needs_input" ||
@@ -1061,8 +1136,21 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           lifecycle.runtime.reason = "process_missing";
           lifecycle.runtime.lastObservedAt = nowIso;
         }
-      } catch {
+      } catch (err) {
         processProbe = { state: "unknown", failed: true };
+        recordActivityEvent({
+          projectId: session.projectId,
+          sessionId: session.id,
+          source: "agent",
+          kind: "agent.process_probe_failed",
+          level: "warn",
+          summary: `agent.isProcessRunning failed for ${session.id}`,
+          data: {
+            agentName,
+            where: "standalone",
+            errorMessage: err instanceof Error ? err.message : String(err),
+          },
+        });
       }
     }
 
