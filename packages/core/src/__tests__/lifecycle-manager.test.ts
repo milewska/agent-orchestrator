@@ -2061,11 +2061,89 @@ describe("reactions", () => {
     expect(enrichedMessage).toContain("@reviewer");
     expect(enrichedMessage).toContain("Please add validation");
 
-    // Second check is throttled (within REVIEW_BACKLOG_THROTTLE_MS window) and
-    // the fingerprint already matches — neither path re-sends.
+    // Second check: throttled (within REVIEW_BACKLOG_THROTTLE_MS window) and
+    // fingerprint already matches dispatch hash — neither path re-sends.
     vi.mocked(mockSessionManager.send).mockClear();
     await lm.check("app-1");
     expect(mockSessionManager.send).not.toHaveBeenCalled();
+  });
+
+  it("does not double-bill reaction attempts on changes_requested transition with retries:1", async () => {
+    const notifier = createMockNotifier();
+
+    config.reactions = {
+      "changes-requested": {
+        auto: true,
+        action: "send-to-agent",
+        message: "Handle requested changes.",
+        retries: 1,
+      },
+    };
+
+    const mockSCM = createMockSCM({
+      getReviewDecision: vi.fn().mockResolvedValue("changes_requested"),
+      enrichSessionsPRBatch: vi.fn().mockImplementation(async (prs: PRInfo[]) => {
+        const result = new Map();
+        for (const pr of prs) {
+          result.set(`${pr.owner}/${pr.repo}#${pr.number}`, {
+            state: "open",
+            ciStatus: "passing",
+            reviewDecision: "changes_requested",
+            mergeable: false,
+          });
+        }
+        return result;
+      }),
+      getReviewThreads: vi.fn().mockResolvedValue({
+        threads: [
+          {
+            id: "c1",
+            author: "reviewer",
+            body: "Needs validation",
+            path: "src/handler.ts",
+            line: 10,
+            isResolved: false,
+            createdAt: new Date(),
+            url: "https://example.com/comment/retries",
+            isBot: false,
+          },
+        ],
+        reviews: [],
+      }),
+    });
+
+    const registry: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string, name: string) => {
+        if (slot === "runtime") return plugins.runtime;
+        if (slot === "agent") return plugins.agent;
+        if (slot === "scm") return mockSCM;
+        if (slot === "notifier" && name === "desktop") return notifier;
+        return null;
+      }),
+    };
+
+    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "pr_open", pr: makePR() }),
+      registry,
+    });
+
+    await lm.check("app-1");
+
+    // Transition handler sends the generic message (attempt 1), and the backlog
+    // dispatch sends the enriched message directly (no attempt increment).
+    // Total sends = 2 but reaction attempts = 1, so no escalation.
+    expect(mockSessionManager.send).toHaveBeenCalledTimes(2);
+    expect(notifier.notify).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "reaction.escalated" }),
+    );
+
+    // The enriched message should contain the actual review content
+    const enrichedMessage = vi.mocked(mockSessionManager.send).mock.calls[1]![1] as string;
+    expect(enrichedMessage).toContain("src/handler.ts:10");
+    expect(enrichedMessage).toContain("Needs validation");
   });
 
   it("dispatches detailed automated review comments when using the default sentinel message", async () => {
