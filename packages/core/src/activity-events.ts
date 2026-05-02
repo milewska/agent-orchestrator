@@ -44,7 +44,13 @@ export type ActivityEventKind =
   // Reaction lifecycle
   | "reaction.escalated"
   | "reaction.send_to_agent_failed"
-  | "reaction.action_succeeded";
+  | "reaction.action_succeeded"
+  // Auto-cleanup + poll cycle
+  | "session.auto_cleanup_deferred"
+  | "session.auto_cleanup_completed"
+  | "session.auto_cleanup_failed"
+  | "lifecycle.poll_failed"
+  | "detecting.escalated";
 
 export type ActivityEventLevel = "debug" | "info" | "warn" | "error";
 

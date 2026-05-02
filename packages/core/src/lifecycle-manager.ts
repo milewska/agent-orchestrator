@@ -2186,6 +2186,20 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         data: { activity, pendingSince, graceMs },
         level: "info",
       });
+      recordActivityEvent({
+        projectId: session.projectId,
+        sessionId: session.id,
+        source: "lifecycle",
+        kind: "session.auto_cleanup_deferred",
+        summary: `auto-cleanup deferred for ${session.id}`,
+        data: {
+          activity,
+          pendingSinceMs: Number.isFinite(pendingSinceMs)
+            ? Date.now() - pendingSinceMs
+            : null,
+          graceMs,
+        },
+      });
       return;
     }
 
@@ -2211,6 +2225,19 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         },
         level: "info",
       });
+      recordActivityEvent({
+        projectId: session.projectId,
+        sessionId: session.id,
+        source: "lifecycle",
+        kind: "session.auto_cleanup_completed",
+        summary: `auto-cleanup completed for ${session.id}`,
+        data: {
+          cleaned: result.cleaned,
+          alreadyTerminated: result.alreadyTerminated,
+          graceElapsed,
+          activity,
+        },
+      });
       states.delete(session.id);
     } catch (err) {
       // Leave `merged` status in place so the next poll retries. Preserve the
@@ -2218,6 +2245,7 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       if (!session.metadata["mergedPendingCleanupSince"]) {
         updateSessionMetadata(session, { mergedPendingCleanupSince: nowIso });
       }
+      const errorMsg = err instanceof Error ? err.message : String(err);
       observer.recordOperation({
         metric: "lifecycle_poll",
         operation: "lifecycle.merge_cleanup.failed",
@@ -2225,8 +2253,17 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         correlationId,
         projectId: session.projectId,
         sessionId: session.id,
-        reason: err instanceof Error ? err.message : String(err),
+        reason: errorMsg,
         level: "warn",
+      });
+      recordActivityEvent({
+        projectId: session.projectId,
+        sessionId: session.id,
+        source: "lifecycle",
+        kind: "session.auto_cleanup_failed",
+        level: "error",
+        summary: `auto-cleanup failed for ${session.id}`,
+        data: { errorMessage: errorMsg },
       });
     }
   }
@@ -2259,6 +2296,27 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const nextDetectingEscalatedAt = isDetectingEscalated
       ? session.metadata["detectingEscalatedAt"] || new Date().toISOString()
       : "";
+
+    // Emit ONCE per escalation — guarded by detectingEscalatedAt being empty.
+    // Subsequent polls while session stays stuck have detectingEscalatedAt set
+    // and won't re-fire (per invariant: don't repeat escalation events).
+    if (isDetectingEscalated && !session.metadata["detectingEscalatedAt"]) {
+      const cause: "max_attempts" | "max_duration" =
+        assessment.detectingAttempts > DETECTING_MAX_ATTEMPTS ? "max_attempts" : "max_duration";
+      recordActivityEvent({
+        projectId: session.projectId,
+        sessionId: session.id,
+        source: "lifecycle",
+        kind: "detecting.escalated",
+        level: "warn",
+        summary: `detecting → stuck via ${cause}`,
+        data: {
+          attempts: assessment.detectingAttempts,
+          cause,
+          startedAt: nextDetectingStartedAt,
+        },
+      });
+    }
 
     const metadataUpdates: Record<string, string> = {};
     if (session.metadata["lifecycleEvidence"] !== nextLifecycleEvidence) {
@@ -2708,6 +2766,18 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         durationMs: Date.now() - startedAt,
         reason: errorReason,
         level: "error",
+      });
+      recordActivityEvent({
+        projectId: scopedProjectId,
+        source: "lifecycle",
+        kind: "lifecycle.poll_failed",
+        level: "error",
+        summary: `poll cycle failed: ${errorReason}`,
+        data: {
+          errorMessage: errorReason,
+          durationMs: Date.now() - startedAt,
+          projectScope: scopedProjectId ?? "all",
+        },
       });
       observer.setHealth({
         surface: "lifecycle.worker",

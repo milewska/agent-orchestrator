@@ -491,6 +491,192 @@ describe("reaction.escalated", () => {
 });
 
 // ---------------------------------------------------------------------------
+// session.auto_cleanup_{deferred,completed,failed}
+// ---------------------------------------------------------------------------
+
+/** SCM mock whose batch enrichment drives session into MERGED status. */
+function makeMergedScm() {
+  return createMockSCM({
+    getPRState: vi.fn().mockResolvedValue("merged"),
+    enrichSessionsPRBatch: vi.fn().mockImplementation(async (prs: PRInfo[]) => {
+      const result = new Map();
+      for (const pr of prs) {
+        result.set(`${pr.owner}/${pr.repo}#${pr.number}`, {
+          state: "merged",
+          ciStatus: "none",
+          reviewDecision: "none",
+          mergeable: false,
+        });
+      }
+      return result;
+    }),
+  });
+}
+
+function configWithAutoCleanup(): OrchestratorConfig {
+  return {
+    ...config,
+    lifecycle: { autoCleanupOnMerge: true, mergeCleanupIdleGraceMs: 300_000 },
+  };
+}
+
+describe("session.auto_cleanup_completed", () => {
+  it("emits AE when sessionManager.kill succeeds after PR merges", async () => {
+    vi.mocked(mockSessionManager.kill).mockResolvedValue({
+      cleaned: true,
+      alreadyTerminated: false,
+    });
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: makeMergedScm(),
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({
+      status: "approved",
+      pr: makeMatchingPR(),
+      activity: "idle",
+    });
+    persistSession("app-1", session);
+
+    const lm = createLifecycleManager({
+      config: configWithAutoCleanup(),
+      registry,
+      sessionManager: mockSessionManager,
+    });
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "session.auto_cleanup_completed");
+    expect(events).toHaveLength(1);
+    expect(events[0]!.source).toBe("lifecycle");
+    expect(events[0]!.data).toMatchObject({ cleaned: true });
+  });
+});
+
+describe("session.auto_cleanup_failed", () => {
+  it("emits AE when sessionManager.kill throws after PR merges", async () => {
+    vi.mocked(mockSessionManager.kill).mockRejectedValue(new Error("worktree busy"));
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: makeMergedScm(),
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({
+      status: "approved",
+      pr: makeMatchingPR(),
+      activity: "idle",
+    });
+    persistSession("app-1", session);
+
+    const lm = createLifecycleManager({
+      config: configWithAutoCleanup(),
+      registry,
+      sessionManager: mockSessionManager,
+    });
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "session.auto_cleanup_failed");
+    expect(events).toHaveLength(1);
+    expect(events[0]!.level).toBe("error");
+    expect(events[0]!.data).toMatchObject({ errorMessage: "worktree busy" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lifecycle.poll_failed
+// ---------------------------------------------------------------------------
+
+describe("lifecycle.poll_failed", () => {
+  it("emits AE when sessionManager.list throws inside pollAll", async () => {
+    vi.useFakeTimers();
+    vi.mocked(mockSessionManager.list).mockRejectedValue(new Error("storage unreadable"));
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: createMockSCM(),
+      notifier: createMockNotifier(),
+    });
+
+    // pollAll only emits per-project poll metrics when scopedProjectId is set.
+    // Force it via the deps.
+    const lm = createLifecycleManager({
+      config,
+      registry,
+      sessionManager: mockSessionManager,
+      projectId: "my-app",
+    });
+
+    try {
+      lm.start(60_000);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+      const events = calls.filter((c) => c.kind === "lifecycle.poll_failed");
+      expect(events.length).toBeGreaterThan(0);
+      expect(events[0]!.level).toBe("error");
+      expect(events[0]!.data).toMatchObject({ errorMessage: "storage unreadable" });
+    } finally {
+      lm.stop();
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// detecting.escalated
+// ---------------------------------------------------------------------------
+
+describe("detecting.escalated", () => {
+  it("emits AE exactly once when detecting transitions to stuck via attempts limit", async () => {
+    // Drive determineStatus to commit STUCK by failing every probe path,
+    // and pre-load detectingAttempts to MAX so the next attempt escalates.
+    vi.mocked(plugins.runtime.isAlive).mockRejectedValue(new Error("probe down"));
+    vi.mocked(plugins.agent.getActivityState).mockResolvedValue(null);
+    vi.mocked(plugins.runtime.getOutput).mockResolvedValue("");
+    vi.mocked(plugins.agent.isProcessRunning).mockRejectedValue(new Error("ps down"));
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: createMockSCM(),
+      notifier: createMockNotifier(),
+    });
+
+    const session = makeSession({ status: "detecting" });
+    persistSession("app-1", session, {
+      detectingAttempts: "3", // DETECTING_MAX_ATTEMPTS — next attempt = 4 > 3 → escalates
+    });
+
+    const lm = buildLM(registry);
+    await lm.check("app-1");
+
+    const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+    const events = calls.filter((c) => c.kind === "detecting.escalated");
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).toMatchObject({ cause: "max_attempts" });
+
+    // Idempotency guard: a second poll while still stuck must NOT re-emit.
+    // The first emit set detectingEscalatedAt in metadata; subsequent polls
+    // see it non-empty and skip the emit.
+    vi.mocked(recordActivityEvent).mockClear();
+    await lm.check("app-1");
+    const repeat = vi.mocked(recordActivityEvent).mock.calls
+      .map((c) => c[0])
+      .filter((c) => c.kind === "detecting.escalated");
+    expect(repeat).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // B2 invariant: emits never break the lifecycle flow
 // ---------------------------------------------------------------------------
 
