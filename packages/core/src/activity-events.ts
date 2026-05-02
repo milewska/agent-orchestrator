@@ -50,7 +50,9 @@ export type ActivityEventKind =
   | "session.auto_cleanup_completed"
   | "session.auto_cleanup_failed"
   | "lifecycle.poll_failed"
-  | "detecting.escalated";
+  | "detecting.escalated"
+  // Report watcher
+  | "report_watcher.triggered";
 
 export type ActivityEventLevel = "debug" | "info" | "warn" | "error";
 

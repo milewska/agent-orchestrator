@@ -677,6 +677,53 @@ describe("detecting.escalated", () => {
 });
 
 // ---------------------------------------------------------------------------
+// report_watcher.triggered
+// ---------------------------------------------------------------------------
+
+describe("report_watcher.triggered", () => {
+  it("emits AE when the report watcher detects a no_acknowledge trigger", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-01-01T12:00:00.000Z"));
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: createMockSCM(),
+      notifier: createMockNotifier(),
+    });
+
+    // Session created 20 minutes ago (> default 10min ack timeout) and never reported.
+    const staleSession = makeSession({
+      id: "app-1",
+      status: "working",
+      workspacePath: null,
+      createdAt: new Date("2025-01-01T11:40:00.000Z"),
+      metadata: { createdAt: "2025-01-01T11:40:00.000Z" },
+    });
+    persistSession("app-1", staleSession, { createdAt: "2025-01-01T11:40:00.000Z" });
+
+    const lm = createLifecycleManager({
+      config,
+      registry,
+      sessionManager: mockSessionManager,
+    });
+
+    try {
+      await lm.check("app-1");
+
+      const calls = vi.mocked(recordActivityEvent).mock.calls.map((c) => c[0]);
+      const events = calls.filter((c) => c.kind === "report_watcher.triggered");
+      expect(events.length).toBeGreaterThan(0);
+      expect(events[0]!.source).toBe("report-watcher");
+      expect(events[0]!.level).toBe("warn");
+      expect(events[0]!.data).toMatchObject({ trigger: "no_acknowledge" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // B2 invariant: emits never break the lifecycle flow
 // ---------------------------------------------------------------------------
 

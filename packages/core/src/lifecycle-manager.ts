@@ -2639,6 +2639,21 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       },
       level: "warn",
     });
+    recordActivityEvent({
+      projectId: session.projectId,
+      sessionId: session.id,
+      source: "report-watcher",
+      kind: "report_watcher.triggered",
+      level: "warn",
+      summary: `${auditResult.trigger}: ${auditResult.message}`,
+      data: {
+        trigger: auditResult.trigger,
+        message: auditResult.message,
+        timeSinceSpawnMs: auditResult.timeSinceSpawnMs,
+        timeSinceReportMs: auditResult.timeSinceReportMs,
+        reportState: auditResult.report?.state,
+      },
+    });
 
     // Execute reaction if configured
     if (isNewTrigger && reactionConfig && reactionConfig.auto !== false) {
