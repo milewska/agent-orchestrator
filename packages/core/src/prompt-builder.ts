@@ -203,7 +203,7 @@ export function buildPrompt(
     taskPrompt: config.userPrompt
       ? config.userPrompt
       : config.issueId
-        ? `Work on issue #${config.issueId}. The full issue details are already in your system prompt — start implementing without fetching the issue unless you need additional context (e.g. comments, linked issues, or recent updates).`
+        ? `Work on issue #${config.issueId}. The issue title, description, and labels are already in your system prompt — start implementing without re-fetching the issue. Fetch comments or linked issues only if you need additional context.`
         : undefined,
   };
 }

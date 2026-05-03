@@ -92,7 +92,7 @@ describe("buildPrompt", () => {
     expect(systemPrompt).toContain(BASE_AGENT_PROMPT);
     expect(systemPrompt).toContain("Work on issue #INT-1343");
     expect(taskPrompt).toContain("Work on issue #INT-1343");
-    expect(taskPrompt).toContain("start implementing without fetching the issue");
+    expect(taskPrompt).toContain("start implementing without re-fetching the issue");
   });
 
   it("includes project context", () => {
@@ -125,7 +125,7 @@ describe("buildPrompt", () => {
     expect(systemPrompt).toContain("Work on issue #INT-1343");
     expect(systemPrompt).toContain("feat/INT-1343");
     expect(taskPrompt).toContain("Work on issue #INT-1343");
-    expect(taskPrompt).toContain("start implementing without fetching the issue");
+    expect(taskPrompt).toContain("start implementing without re-fetching the issue");
   });
 
   it("includes issue context when provided", () => {
