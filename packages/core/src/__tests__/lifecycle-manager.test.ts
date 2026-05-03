@@ -2146,6 +2146,79 @@ describe("reactions", () => {
     expect(enrichedMessage).toContain("Needs validation");
   });
 
+  it("routes enriched review dispatch through executeReaction when action is notify (not send-to-agent)", async () => {
+    const notifier = createMockNotifier();
+
+    config.reactions = {
+      "changes-requested": {
+        auto: true,
+        action: "notify",
+        message: "Review changes requested.",
+      },
+    };
+    config.notificationRouting = {
+      ...config.notificationRouting,
+      info: ["desktop"],
+    };
+
+    const mockSCM = createMockSCM({
+      getReviewDecision: vi.fn().mockResolvedValue("changes_requested"),
+      enrichSessionsPRBatch: vi.fn().mockImplementation(async (prs: PRInfo[]) => {
+        const result = new Map();
+        for (const pr of prs) {
+          result.set(`${pr.owner}/${pr.repo}#${pr.number}`, {
+            state: "open",
+            ciStatus: "passing",
+            reviewDecision: "changes_requested",
+            mergeable: false,
+          });
+        }
+        return result;
+      }),
+      getReviewThreads: vi.fn().mockResolvedValue({
+        threads: [
+          {
+            id: "c1",
+            author: "reviewer",
+            body: "Fix the type",
+            path: "src/api.ts",
+            line: 5,
+            isResolved: false,
+            createdAt: new Date(),
+            url: "https://example.com/comment/notify",
+            isBot: false,
+          },
+        ],
+        reviews: [],
+      }),
+    });
+
+    const registry: PluginRegistry = {
+      ...mockRegistry,
+      get: vi.fn().mockImplementation((slot: string, name: string) => {
+        if (slot === "runtime") return plugins.runtime;
+        if (slot === "agent") return plugins.agent;
+        if (slot === "scm") return mockSCM;
+        if (slot === "notifier" && name === "desktop") return notifier;
+        return null;
+      }),
+    };
+
+    vi.mocked(mockSessionManager.send).mockResolvedValue(undefined);
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "pr_open", pr: makePR() }),
+      registry,
+    });
+
+    await lm.check("app-1");
+
+    // action: "notify" should NOT send to the agent — it routes through
+    // executeReaction → notifyHuman. The bypass branch must not fire.
+    expect(mockSessionManager.send).not.toHaveBeenCalled();
+    expect(notifier.notify).toHaveBeenCalled();
+  });
+
   it("dispatches detailed automated review comments when using the default sentinel message", async () => {
     config.reactions = {
       "bugbot-comments": {

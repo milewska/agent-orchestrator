@@ -1577,8 +1577,13 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           // key, send the enriched payload directly to avoid double-billing the
           // reaction attempt budget. A project with retries:1 would otherwise
           // escalate on the very first transition poll.
+          // Only bypass for "send-to-agent" — "notify" actions must go through
+          // executeReaction so they route to notifyHuman instead of the agent.
           let success = false;
-          if (transitionReaction?.key === humanReactionKey) {
+          if (
+            transitionReaction?.key === humanReactionKey &&
+            reactionConfig.action === "send-to-agent"
+          ) {
             try {
               await sessionManager.send(session.id, enrichedMessage);
               success = true;
@@ -1630,7 +1635,10 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           const enrichedMessage = formatReviewCommentsMessage(automatedComments, "bot");
 
           let success = false;
-          if (transitionReaction?.key === automatedReactionKey) {
+          if (
+            transitionReaction?.key === automatedReactionKey &&
+            reactionConfig.action === "send-to-agent"
+          ) {
             try {
               await sessionManager.send(session.id, enrichedMessage);
               success = true;
