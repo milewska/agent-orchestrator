@@ -12,6 +12,7 @@
  */
 
 import { statSync, existsSync, writeFileSync, mkdirSync, utimesSync, unlinkSync } from "node:fs";
+import { recordActivityEvent } from "./activity-events.js";
 import { execFile } from "node:child_process";
 import { basename, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -52,6 +53,7 @@ import {
   readMetadataRaw,
   writeMetadata,
   updateMetadata,
+  applyMetadataUpdates,
   mutateMetadata,
   deleteMetadata,
   listMetadata,
@@ -425,6 +427,15 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       return true;
     }
     return isOrchestratorSessionRecord(sessionId, metadata ?? {}, project.sessionPrefix);
+  }
+
+  function requiresNativeRestore(agentName: string): boolean {
+    return (
+      agentName === "claude-code" ||
+      agentName === "codex" ||
+      agentName === "kimicode" ||
+      agentName === "opencode"
+    );
   }
 
   function applyMetadataUpdatesToRaw(
@@ -971,7 +982,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         data: {},
       };
     }
-    await enrichSessionWithRuntimeState(session, plugins, handleFromMetadata);
+    await enrichSessionWithRuntimeState(session, plugins, handleFromMetadata, sessionsDir);
   }
 
   /**
@@ -984,6 +995,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     session: Session,
     plugins: ReturnType<typeof resolvePlugins>,
     handleFromMetadata: boolean,
+    sessionsDir: string,
   ): Promise<void> {
     // Check runtime liveness first — for all statuses except "spawning".
     // Skip spawning sessions because tmux may not be fully initialized yet,
@@ -1057,19 +1069,56 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       }
 
       // Enrich with live agent session info (summary, cost).
+      let info: Awaited<ReturnType<Agent["getSessionInfo"]>>;
       try {
-        const info = await plugins.agent.getSessionInfo(session);
-        if (info) {
-          session.agentInfo = info;
-        }
+        info = await plugins.agent.getSessionInfo(session);
       } catch {
         // Can't get session info — keep existing values
+        info = null;
+      }
+
+      if (info) {
+        session.agentInfo = info;
+        const metadataUpdates = info.metadata ?? {};
+        if (Object.keys(metadataUpdates).length > 0) {
+          try {
+            updateMetadata(sessionsDir, session.id, metadataUpdates);
+            session.metadata = applyMetadataUpdates(session.metadata, metadataUpdates);
+            invalidateCache();
+          } catch {
+            // Persisting agent metadata is best-effort; keep live agent info.
+          }
+        }
       }
     }
   }
 
   // Define methods as local functions so `this` is not needed
   async function spawn(spawnConfig: SessionSpawnConfig): Promise<Session> {
+    recordActivityEvent({
+      projectId: spawnConfig.projectId,
+      source: "session-manager",
+      kind: "session.spawn_started",
+      summary: "spawn started",
+      data: { agent: spawnConfig.agent ?? undefined },
+    });
+
+    try {
+      return await _spawnInner(spawnConfig);
+    } catch (err) {
+      recordActivityEvent({
+        projectId: spawnConfig.projectId,
+        source: "session-manager",
+        kind: "session.spawn_failed",
+        level: "error",
+        summary: `spawn failed`,
+        data: { reason: err instanceof Error ? err.message : String(err) },
+      });
+      throw err;
+    }
+  }
+
+  async function _spawnInner(spawnConfig: SessionSpawnConfig): Promise<Session> {
     const project = config.projects[spawnConfig.projectId];
     if (!project) {
       throw new Error(`Unknown project: ${spawnConfig.projectId}`);
@@ -1277,6 +1326,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           ...(reusedOpenCodeSessionId ? { opencodeSessionId: reusedOpenCodeSessionId } : {}),
         },
       },
+      workspacePath,
       issueId: spawnConfig.issueId,
       prompt: taskPrompt,
       systemPromptFile,
@@ -1289,6 +1339,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     try {
       const launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
       const environment = plugins.agent.getEnvironment(agentLaunchConfig);
+
+      if (plugins.agent.preLaunchSetup) {
+        await plugins.agent.preLaunchSetup(workspacePath);
+      }
 
       handle = await plugins.runtime.create({
         sessionId: tmuxName ?? sessionId, // Use tmux name for runtime if available
@@ -1377,6 +1431,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
         lifecycle,
         tmuxName, // Store tmux name for mapping
         issue: spawnConfig.issueId,
+        issueTitle: resolvedIssue?.title, // Store issue title for event enrichment
         project: spawnConfig.projectId,
         agent: selection.agentName, // Persist agent name for lifecycle manager
         createdAt: createdAt.toISOString(),
@@ -1462,6 +1517,15 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
       updateMetadata(sessionsDir, sessionId, session.metadata);
       invalidateCache();
     }
+
+    recordActivityEvent({
+      projectId: spawnConfig.projectId,
+      sessionId,
+      source: "session-manager",
+      kind: "session.spawned",
+      summary: `spawned: ${sessionId}`,
+      data: { agent: plugins.agent.name, branch: session.branch ?? undefined },
+    });
 
     return session;
   }
@@ -1629,6 +1693,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
           ...(reusableOpenCodeSessionId ? { opencodeSessionId: reusableOpenCodeSessionId } : {}),
         },
       },
+      workspacePath,
       permissions: "permissionless" as const,
       model: selection.model,
       systemPromptFile,
@@ -1637,6 +1702,10 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     const launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
     const environment = plugins.agent.getEnvironment(agentLaunchConfig);
+
+    if (plugins.agent.preLaunchSetup) {
+      await plugins.agent.preLaunchSetup(workspacePath);
+    }
 
     // Create runtime — clean up worktree and metadata on failure
     let handle: RuntimeHandle;
@@ -2119,6 +2188,14 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     });
 
     invalidateCache();
+    recordActivityEvent({
+      projectId,
+      sessionId,
+      source: "session-manager",
+      kind: "session.killed",
+      summary: `killed: ${sessionId}`,
+      data: { reason: killReason },
+    });
     return { cleaned: true, alreadyTerminated: false };
   }
 
@@ -2758,7 +2835,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     //    and isRestorable would reject it.
     const session = metadataToSession(sessionId, raw, projectId, project.sessionPrefix);
     const plugins = resolvePlugins(project, selection.agentName);
-    await enrichSessionWithRuntimeState(session, plugins, true);
+    await enrichSessionWithRuntimeState(session, plugins, true, sessionsDir);
 
     // 3. Validate restorability
     if (!isRestorable(session)) {
@@ -2862,6 +2939,7 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
     const agentLaunchConfig = {
       sessionId,
       projectConfig: projectConfigForLaunch,
+      workspacePath,
       issueId: session.issueId ?? undefined,
       permissions: selection.role === "orchestrator" ? "permissionless" : selection.permissions,
       model: selection.model,
@@ -2870,12 +2948,29 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
     if (plugins.agent.getRestoreCommand) {
       const restoreCmd = await plugins.agent.getRestoreCommand(session, projectConfigForLaunch);
-      launchCommand = restoreCmd ?? plugins.agent.getLaunchCommand(agentLaunchConfig);
+      if (restoreCmd) {
+        launchCommand = restoreCmd;
+        updateMetadata(sessionsDir, sessionId, { restoreFallbackReason: "" });
+      } else {
+        const reason = `${plugins.agent.name}.getRestoreCommand returned null`;
+        updateMetadata(sessionsDir, sessionId, {
+          restoreFallbackReason: reason,
+        });
+        if (requiresNativeRestore(plugins.agent.name)) {
+          throw new SessionNotRestorableError(sessionId, reason);
+        }
+        launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
+      }
     } else {
       launchCommand = plugins.agent.getLaunchCommand(agentLaunchConfig);
+      updateMetadata(sessionsDir, sessionId, { restoreFallbackReason: "" });
     }
 
     const environment = plugins.agent.getEnvironment(agentLaunchConfig);
+
+    if (plugins.agent.preLaunchSetup) {
+      await plugins.agent.preLaunchSetup(workspacePath);
+    }
 
     // 8. Create runtime (reuse tmuxName from metadata)
     const tmuxName = raw["tmuxName"];

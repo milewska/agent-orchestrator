@@ -32,7 +32,7 @@ const {
   mockSessionManager,
   mockWaitForPortAndOpen,
   mockSpawn,
-  mockEnsureLifecycleWorker,
+  mockStartProjectSupervisor,
 } = vi.hoisted(() => ({
   mockExec: vi.fn(),
   mockExecSilent: vi.fn(),
@@ -52,7 +52,7 @@ const {
   },
   mockWaitForPortAndOpen: vi.fn().mockResolvedValue(undefined),
   mockSpawn: vi.fn(),
-  mockEnsureLifecycleWorker: vi.fn(),
+  mockStartProjectSupervisor: vi.fn(),
 }));
 
 const { mockDetectOpenClawInstallation } = vi.hoisted(() => ({
@@ -146,8 +146,13 @@ vi.mock("../../src/lib/create-session-manager.js", () => ({
 }));
 
 vi.mock("../../src/lib/lifecycle-service.js", () => ({
-  ensureLifecycleWorker: (...args: unknown[]) => mockEnsureLifecycleWorker(...args),
   stopAllLifecycleWorkers: vi.fn(),
+  listLifecycleWorkers: () => ["my-app"],
+}));
+
+vi.mock("../../src/lib/project-supervisor.js", () => ({
+  startProjectSupervisor: (...args: unknown[]) => mockStartProjectSupervisor(...args),
+  stopProjectSupervisor: vi.fn(),
 }));
 
 vi.mock("../../src/lib/web-dir.js", () => ({
@@ -160,6 +165,7 @@ vi.mock("../../src/lib/web-dir.js", () => ({
 }));
 
 vi.mock("../../src/lib/dashboard-rebuild.js", () => ({
+  clearStaleCacheIfNeeded: vi.fn().mockResolvedValue(undefined),
   findRunningDashboardPid: vi.fn().mockResolvedValue(null),
   rebuildDashboardProductionArtifacts: vi.fn().mockResolvedValue(undefined),
   waitForPortFree: vi.fn(),
@@ -368,11 +374,8 @@ beforeEach(async () => {
   });
   mockWaitForPortAndOpen.mockReset();
   mockWaitForPortAndOpen.mockResolvedValue(undefined);
-  mockEnsureLifecycleWorker.mockReset();
-  mockEnsureLifecycleWorker.mockResolvedValue({
-    running: true,
-    started: true,
-  });
+  mockStartProjectSupervisor.mockReset();
+  mockStartProjectSupervisor.mockResolvedValue({ stop: vi.fn(), reconcileNow: vi.fn() });
   mockDetectOpenClawInstallation.mockReset();
   mockDetectOpenClawInstallation.mockResolvedValue({
     state: "missing",
@@ -952,10 +955,7 @@ describe("start command — browser open waits for port", () => {
     const args = mockWaitForPortAndOpen.mock.calls[0];
     expect(args[1]).toContain("/projects/my-app/sessions/app-orchestrator");
     expect(args[2]).toBeInstanceOf(AbortSignal);
-    expect(mockEnsureLifecycleWorker).toHaveBeenCalledWith(
-      expect.objectContaining({ configPath: expect.any(String) }),
-      "my-app",
-    );
+    expect(mockStartProjectSupervisor).toHaveBeenCalledTimes(1);
   });
 
   it("skips browser open and lifecycle with --no-dashboard --no-orchestrator", async () => {
@@ -964,7 +964,7 @@ describe("start command — browser open waits for port", () => {
     await program.parseAsync(["node", "test", "start", "--no-dashboard", "--no-orchestrator"]);
 
     expect(mockWaitForPortAndOpen).not.toHaveBeenCalled();
-    expect(mockEnsureLifecycleWorker).not.toHaveBeenCalled();
+    expect(mockStartProjectSupervisor).not.toHaveBeenCalled();
   });
 
   it("skips browser open but still starts lifecycle with --no-dashboard alone", async () => {
@@ -976,10 +976,7 @@ describe("start command — browser open waits for port", () => {
     await program.parseAsync(["node", "test", "start", "--no-dashboard"]);
 
     expect(mockWaitForPortAndOpen).not.toHaveBeenCalled();
-    expect(mockEnsureLifecycleWorker).toHaveBeenCalledWith(
-      expect.objectContaining({ configPath: expect.any(String) }),
-      "my-app",
-    );
+    expect(mockStartProjectSupervisor).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1216,6 +1213,26 @@ describe("start command — orchestrator session strategy display", () => {
     expect(mockSessionManager.spawnOrchestrator).not.toHaveBeenCalled();
     expect(output).toContain("http://localhost:3000/projects/my-app/sessions/app-orchestrator");
     expect(output).not.toContain("tmux attach");
+  });
+
+  it("passes the requested and reassigned dashboard ports to rebuild", async () => {
+    mockConfigRef.current = makeConfig({ "my-app": makeProject() });
+
+    const webDir = await import("../../src/lib/web-dir.js");
+    vi.mocked(webDir.findWebDir).mockReturnValue(tmpDir);
+    vi.mocked(webDir.isPortAvailable).mockResolvedValue(false);
+    vi.mocked(webDir.findFreePort).mockResolvedValue(3001);
+    mkdirSync(join(tmpDir, "server"), { recursive: true });
+    writeFileSync(join(tmpDir, "package.json"), "{}");
+
+    const dashboardRebuild = await import("../../src/lib/dashboard-rebuild.js");
+
+    await program.parseAsync(["node", "test", "start", "--rebuild", "--no-orchestrator"]);
+
+    expect(dashboardRebuild.rebuildDashboardProductionArtifacts).toHaveBeenCalledWith(tmpDir, [
+      3000,
+      3001,
+    ]);
   });
 
   it("opens the most recent orchestrator session page when multiple existing orchestrators found with dashboard enabled and reuse is explicit", async () => {
@@ -2059,9 +2076,8 @@ describe("stop command", () => {
       expect(mockSessionManager.ensureOrchestrator).toHaveBeenCalledWith(
         expect.objectContaining({ projectId: "project-2" }),
       );
-      // running.projects must NOT be expanded — lifecycle polling cannot be
-      // attached to the live daemon mid-flight, and `ao spawn` reads this
-      // field to decide whether to warn that polling is missing.
+      // The one-shot attach path does not mutate running.json directly;
+      // the long-lived supervisor reconciles it after attaching polling.
       expect(mockAddProjectToRunning).not.toHaveBeenCalled();
       // No menu — this is a deterministic attach, not an interactive choice.
       expect(mockPromptSelect).not.toHaveBeenCalled();
