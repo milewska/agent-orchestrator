@@ -39,7 +39,15 @@ vi.mock("@aoagents/ao-core", () => ({
 
 vi.mock("../../src/lib/create-session-manager.js", () => ({
   getSessionManager: async () => mockSessionManager,
-  getPluginRegistry: async () => ({ get: vi.fn(), list: vi.fn(), register: vi.fn() }),
+  getPluginRegistry: async () => ({
+    // Return a minimal Agent stub for any lookup so registry-based agent
+    // resolution succeeds in tests without pulling in real plugin packages.
+    get: vi.fn(() => ({
+      getActivityState: async () => null,
+    })),
+    list: vi.fn(),
+    register: vi.fn(),
+  }),
 }));
 
 import { Command } from "commander";
