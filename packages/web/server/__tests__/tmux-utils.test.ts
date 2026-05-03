@@ -1125,7 +1125,7 @@ describe("resolvePipePath", () => {
       homedir: () => "/home/u",
       readFile: () => sessionFileContent,
     };
-    expect(resolvePipePath("ao-1", fs)).toBe(PIPE);
+    expect(resolvePipePath("ao-1", undefined, fs)).toBe(PIPE);
   });
 
   it("reads pipePath from session metadata when storageKey is wrapped {hash}-{projectName}", () => {
@@ -1136,7 +1136,7 @@ describe("resolvePipePath", () => {
       homedir: () => "/home/u",
       readFile: () => sessionFileContent,
     };
-    expect(resolvePipePath("ao-1", fs)).toBe(PIPE);
+    expect(resolvePipePath("ao-1", undefined, fs)).toBe(PIPE);
   });
 
   it("returns null when no storageKey owns the sessionId", () => {
@@ -1147,7 +1147,7 @@ describe("resolvePipePath", () => {
       homedir: () => "/home/u",
       readFile: () => sessionFileContent,
     };
-    expect(resolvePipePath("ao-1", fs)).toBeNull();
+    expect(resolvePipePath("ao-1", undefined, fs)).toBeNull();
   });
 
   it("returns null when metadata is missing runtimeHandle line", () => {
@@ -1158,7 +1158,7 @@ describe("resolvePipePath", () => {
       homedir: () => "/home/u",
       readFile: () => "status=spawning\nbranch=foo\n",
     };
-    expect(resolvePipePath("ao-1", fs)).toBeNull();
+    expect(resolvePipePath("ao-1", undefined, fs)).toBeNull();
   });
 
   it("reads V2 JSON metadata under projects/{projectId}/sessions/{sessionId}.json", () => {
@@ -1179,7 +1179,7 @@ describe("resolvePipePath", () => {
       homedir: () => "/home/u",
       readFile: () => v2Json,
     };
-    expect(resolvePipePath("ao-1", fs)).toBe(PIPE2);
+    expect(resolvePipePath("ao-1", undefined, fs)).toBe(PIPE2);
   });
 
   it("falls back to V1 layout when V2 has no matching session", () => {
@@ -1202,7 +1202,7 @@ describe("resolvePipePath", () => {
       homedir: () => "/home/u",
       readFile: () => sessionFileContent,
     };
-    expect(resolvePipePath("ao-1", fs)).toBe(PIPE);
+    expect(resolvePipePath("ao-1", undefined, fs)).toBe(PIPE);
   });
 
   it("walks multiple candidate storageKeys and returns first with parseable pipePath", () => {
@@ -1213,6 +1213,32 @@ describe("resolvePipePath", () => {
       homedir: () => "/home/u",
       readFile: (p: string) => (p.includes("stale") ? "broken" : sessionFileContent),
     };
-    expect(resolvePipePath("ao-1", fs)).toBe(PIPE);
+    expect(resolvePipePath("ao-1", undefined, fs)).toBe(PIPE);
+  });
+
+  it("uses projectId to disambiguate when two projects share a sessionId", () => {
+    Object.defineProperty(process, "platform", { value: "win32" });
+    const PIPE_A = "\\\\.\\pipe\\ao-pty-projA-ao-1";
+    const PIPE_B = "\\\\.\\pipe\\ao-pty-projB-ao-1";
+    const metaFor = (pipe: string) =>
+      JSON.stringify({
+        runtimeHandle: { id: "ao-1", runtimeName: "process", data: { pipePath: pipe } },
+      });
+    const fs = {
+      readdir: () => ["projA", "projB"],
+      exists: (p: string) => {
+        const u = p.replace(/\\/g, "/");
+        return (
+          u.endsWith("/projects") ||
+          u.endsWith("/projects/projA/sessions/ao-1.json") ||
+          u.endsWith("/projects/projB/sessions/ao-1.json")
+        );
+      },
+      homedir: () => "/home/u",
+      readFile: (p: string) =>
+        p.replace(/\\/g, "/").includes("/projects/projA/") ? metaFor(PIPE_A) : metaFor(PIPE_B),
+    };
+    expect(resolvePipePath("ao-1", "projA", fs)).toBe(PIPE_A);
+    expect(resolvePipePath("ao-1", "projB", fs)).toBe(PIPE_B);
   });
 });

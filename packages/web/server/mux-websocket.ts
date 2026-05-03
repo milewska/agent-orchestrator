@@ -431,7 +431,7 @@ export interface WsSink {
 /** Dependencies injected into the pipe relay handler */
 export interface PipeRelayDeps {
   connect: (path: string) => Socket;
-  resolvePipePath: (id: string) => string | null;
+  resolvePipePath: (id: string, projectId?: string) => string | null;
 }
 
 /**
@@ -459,6 +459,10 @@ export function handleWindowsPipeMessage(
   // otherwise the client routes by id alone and the subscriber bucket
   // mismatches, leaving the xterm pane blank on /projects/[id]/sessions/[id].
   const echo = projectId ? { projectId } : {};
+  // Project-scoped pipe-map key: matches the Unix `subscriptionKey` shape so
+  // two projects sharing a sessionId on the same mux connection don't collide
+  // on the same socket/buffer entry.
+  const pipeKey = projectId ? `${projectId}:${id}` : id;
 
   // The Unix path validates inside TerminalManager.open(). The Windows pipe
   // relay bypasses TerminalManager entirely, so validate here too — `id`
@@ -479,20 +483,20 @@ export function handleWindowsPipeMessage(
   }
 
   if (type === "open") {
-    if (winPipes.has(id)) {
+    if (winPipes.has(pipeKey)) {
       ws.send(JSON.stringify({ ch: "terminal", id, type: "opened", ...echo }));
     } else {
-      const pipePath = deps.resolvePipePath(id);
+      const pipePath = deps.resolvePipePath(id, projectId);
       if (!pipePath) {
         throw new Error(`No PTY host pipe found for session ${id}`);
       }
       const pipeSocket = deps.connect(pipePath);
-      winPipes.set(id, pipeSocket);
-      winPipeBuffers.set(id, Buffer.alloc(0));
+      winPipes.set(pipeKey, pipeSocket);
+      winPipeBuffers.set(pipeKey, Buffer.alloc(0));
 
       pipeSocket.on("error", (err) => {
-        winPipes.delete(id);
-        winPipeBuffers.delete(id);
+        winPipes.delete(pipeKey);
+        winPipeBuffers.delete(pipeKey);
         if (ws.readyState === WS_OPEN) {
           ws.send(
             JSON.stringify({
@@ -512,9 +516,9 @@ export function handleWindowsPipeMessage(
         }
 
         pipeSocket.on("data", (chunk: Buffer) => {
-          const existing = winPipeBuffers.get(id) ?? Buffer.alloc(0);
+          const existing = winPipeBuffers.get(pipeKey) ?? Buffer.alloc(0);
           let buf = Buffer.concat([existing, chunk]);
-          winPipeBuffers.set(id, buf);
+          winPipeBuffers.set(pipeKey, buf);
 
           while (buf.length >= 5) {
             const msgType = buf.readUInt8(0);
@@ -522,7 +526,7 @@ export function handleWindowsPipeMessage(
             if (buf.length < 5 + length) break;
             const payload = buf.subarray(5, 5 + length);
             buf = buf.subarray(5 + length);
-            winPipeBuffers.set(id, buf);
+            winPipeBuffers.set(pipeKey, buf);
 
             if (msgType === 0x01 && ws.readyState === WS_OPEN) {
               ws.send(
@@ -551,8 +555,8 @@ export function handleWindowsPipeMessage(
         });
 
         pipeSocket.on("close", () => {
-          winPipes.delete(id);
-          winPipeBuffers.delete(id);
+          winPipes.delete(pipeKey);
+          winPipeBuffers.delete(pipeKey);
           if (ws.readyState === WS_OPEN) {
             ws.send(JSON.stringify({ ch: "terminal", id, type: "exited", code: 0, ...echo }));
           }
@@ -560,7 +564,7 @@ export function handleWindowsPipeMessage(
       });
     }
   } else if (type === "data" && msg.data !== undefined) {
-    const pipeSocket = winPipes.get(id);
+    const pipeSocket = winPipes.get(pipeKey);
     if (pipeSocket) {
       const inputBuf = Buffer.from(msg.data, "utf-8");
       const header = Buffer.alloc(5);
@@ -569,7 +573,7 @@ export function handleWindowsPipeMessage(
       pipeSocket.write(Buffer.concat([header, inputBuf]));
     }
   } else if (type === "resize" && msg.cols !== undefined && msg.rows !== undefined) {
-    const pipeSocket = winPipes.get(id);
+    const pipeSocket = winPipes.get(pipeKey);
     if (pipeSocket) {
       const resizePayload = Buffer.from(JSON.stringify({ cols: msg.cols, rows: msg.rows }));
       const header = Buffer.alloc(5);
@@ -578,11 +582,11 @@ export function handleWindowsPipeMessage(
       pipeSocket.write(Buffer.concat([header, resizePayload]));
     }
   } else if (type === "close") {
-    const pipeSocket = winPipes.get(id);
+    const pipeSocket = winPipes.get(pipeKey);
     if (pipeSocket) {
       pipeSocket.end();
-      winPipes.delete(id);
-      winPipeBuffers.delete(id);
+      winPipes.delete(pipeKey);
+      winPipeBuffers.delete(pipeKey);
     }
   }
 }
@@ -731,7 +735,7 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
             } else if (type === "data" && "data" in msg) {
               if (process.platform === "win32") {
                 handleWindowsPipeMessage(
-                  msg as { id: string; type: string; data: string },
+                  msg as { id: string; type: string; projectId?: string; data: string },
                   ws,
                   winPipes,
                   winPipeBuffers,
@@ -743,7 +747,7 @@ export function createMuxWebSocket(tmuxPath?: string | null): WebSocketServer | 
             } else if (type === "resize" && "cols" in msg && "rows" in msg) {
               if (process.platform === "win32") {
                 handleWindowsPipeMessage(
-                  msg as { id: string; type: string; cols: number; rows: number },
+                  msg as { id: string; type: string; projectId?: string; cols: number; rows: number },
                   ws,
                   winPipes,
                   winPipeBuffers,

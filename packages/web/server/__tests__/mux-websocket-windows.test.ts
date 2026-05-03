@@ -220,6 +220,41 @@ describe("handleWindowsPipeMessage", () => {
     expect(bufs.has("s1")).toBe(false);
   });
 
+  it("scopes pipe maps and resolution by projectId so two projects can share a sessionId", () => {
+    const ws = makeWs();
+    const sockA = makePipeSocket();
+    const sockB = makePipeSocket();
+    const connect = vi.fn((path: string) => (path.includes("projA") ? sockA : sockB));
+    const resolvePipePath = vi.fn(
+      (id: string, projectId?: string) => `\\\\.\\pipe\\ao-pty-${projectId}-${id}`,
+    );
+    const deps: PipeRelayDeps = { connect, resolvePipePath };
+    const pipes = new Map<string, Socket>();
+    const bufs = new Map<string, Buffer>();
+
+    handleWindowsPipeMessage({ id: "s1", type: "open", projectId: "projA" }, ws, pipes, bufs, deps);
+    handleWindowsPipeMessage({ id: "s1", type: "open", projectId: "projB" }, ws, pipes, bufs, deps);
+
+    expect(resolvePipePath).toHaveBeenNthCalledWith(1, "s1", "projA");
+    expect(resolvePipePath).toHaveBeenNthCalledWith(2, "s1", "projB");
+    expect(connect).toHaveBeenNthCalledWith(1, "\\\\.\\pipe\\ao-pty-projA-s1");
+    expect(connect).toHaveBeenNthCalledWith(2, "\\\\.\\pipe\\ao-pty-projB-s1");
+    expect(pipes.get("projA:s1")).toBe(sockA);
+    expect(pipes.get("projB:s1")).toBe(sockB);
+
+    sockA.emit("connect");
+    sockA.emit("data", frame(0x01, Buffer.from("from-A")));
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ ch: "terminal", id: "s1", type: "data", data: "from-A", projectId: "projA" }),
+    );
+
+    sockB.emit("connect");
+    sockB.emit("data", frame(0x01, Buffer.from("from-B")));
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ ch: "terminal", id: "s1", type: "data", data: "from-B", projectId: "projB" }),
+    );
+  });
+
   it("handles partial frames across multiple data chunks", () => {
     const ws = makeWs();
     const sock = makePipeSocket();

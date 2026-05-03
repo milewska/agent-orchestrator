@@ -220,13 +220,15 @@ export function resolveTmuxSession(
  *   storageKey is bare 12-hex or `{hash}-{projectName}`. Kept so users
  *   who haven't run `ao migrate-storage` still see live sessions.
  *
- * If multiple projects share a sessionId, walks candidates and returns
- * the first one whose metadata carries a parseable pipePath.
+ * When `projectId` is provided, only that project's metadata file is read.
+ * Without it (legacy callers), walks all projects and returns the first
+ * matching pipePath — which can collide when two projects share a sessionId.
  *
  * @returns Full pipe path (e.g., "\\\\.\\pipe\\ao-pty-win1-orchestrator"), or null
  */
 export function resolvePipePath(
   sessionId: string,
+  projectId?: string,
   fs: Pick<FsAdapter, "readdir" | "exists" | "homedir"> & {
     readFile?: (path: string) => string;
   } = defaultFs,
@@ -236,27 +238,35 @@ export function resolvePipePath(
   const readFile = fs.readFile ?? ((p: string) => readFileSync(p, "utf8"));
   const aoBase = join(fs.homedir(), ".agent-orchestrator");
 
-  // V2: walk projects/*/sessions/{sessionId}.json
+  const readPipeFromV2 = (project: string): string | null => {
+    const sessionFile = join(aoBase, "projects", project, "sessions", `${sessionId}.json`);
+    if (!fs.exists(sessionFile)) return null;
+    try {
+      const meta = JSON.parse(readFile(sessionFile)) as {
+        runtimeHandle?: { data?: { pipePath?: string } };
+      };
+      const pipePath = meta.runtimeHandle?.data?.pipePath;
+      return typeof pipePath === "string" && pipePath.length > 0 ? pipePath : null;
+    } catch {
+      return null;
+    }
+  };
+
+  // V2: prefer the caller's projectId when provided; otherwise walk all projects
   const projectsDir = join(aoBase, "projects");
-  if (fs.exists(projectsDir)) {
+  if (projectId) {
+    const pipe = readPipeFromV2(projectId);
+    if (pipe) return pipe;
+  } else if (fs.exists(projectsDir)) {
     let projects: string[];
     try {
       projects = fs.readdir(projectsDir);
     } catch {
       projects = [];
     }
-    for (const projectId of projects) {
-      const sessionFile = join(projectsDir, projectId, "sessions", `${sessionId}.json`);
-      if (!fs.exists(sessionFile)) continue;
-      try {
-        const meta = JSON.parse(readFile(sessionFile)) as {
-          runtimeHandle?: { data?: { pipePath?: string } };
-        };
-        const pipePath = meta.runtimeHandle?.data?.pipePath;
-        if (typeof pipePath === "string" && pipePath.length > 0) return pipePath;
-      } catch {
-        continue;
-      }
+    for (const project of projects) {
+      const pipe = readPipeFromV2(project);
+      if (pipe) return pipe;
     }
   }
 
