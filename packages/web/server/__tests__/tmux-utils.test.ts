@@ -792,9 +792,13 @@ describe("resolveTmuxSession", () => {
           "aaaaaaaaaaaa-alpha",
           "bbbbbbbbbbbb-beta",
         ],
-        exists: (p: string) =>
-          p.endsWith("/aaaaaaaaaaaa-alpha/sessions/app-1") ||
-          p.endsWith("/bbbbbbbbbbbb-beta/sessions/app-1"),
+        exists: (p: string) => {
+          const u = p.replace(/\\/g, "/");
+          return (
+            u.endsWith("/aaaaaaaaaaaa-alpha/sessions/app-1") ||
+            u.endsWith("/bbbbbbbbbbbb-beta/sessions/app-1")
+          );
+        },
         homedir: () => "/home/user",
       };
       const mockExec = vi.fn()
@@ -822,9 +826,13 @@ describe("resolveTmuxSession", () => {
           "aaaaaaaaaaaa-my-app",
           "bbbbbbbbbbbb-app",
         ],
-        exists: (p: string) =>
-          p.endsWith("/aaaaaaaaaaaa-my-app/sessions/app-1") ||
-          p.endsWith("/bbbbbbbbbbbb-app/sessions/app-1"),
+        exists: (p: string) => {
+          const u = p.replace(/\\/g, "/");
+          return (
+            u.endsWith("/aaaaaaaaaaaa-my-app/sessions/app-1") ||
+            u.endsWith("/bbbbbbbbbbbb-app/sessions/app-1")
+          );
+        },
         homedir: () => "/home/user",
       };
       const mockExec = vi.fn()

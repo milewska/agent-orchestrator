@@ -275,7 +275,9 @@ describe("looksLikeStaleBuild pattern matching", () => {
 });
 
 describe("findRunningDashboardPidsForWebDir", () => {
-  it("returns only listeners whose cwd matches the web directory", async () => {
+  // Unix-only: Windows code path skips lsof and uses findPidByPort (no cwd check),
+  // by design — see findRunningDashboardPidsForWebDir in dashboard-rebuild.ts.
+  it.skipIf(process.platform === "win32")("returns only listeners whose cwd matches the web directory", async () => {
     const webDir = join(tmpDir, "packages", "web");
     mkdirSync(webDir, { recursive: true });
 
@@ -292,7 +294,7 @@ describe("findRunningDashboardPidsForWebDir", () => {
     expect(mockExecSilent).toHaveBeenCalledWith("lsof", ["-a", "-p", "111", "-d", "cwd", "-Fn"]);
   });
 
-  it("deduplicates dashboard pids found on multiple ports", async () => {
+  it.skipIf(process.platform === "win32")("deduplicates dashboard pids found on multiple ports", async () => {
     const webDir = join(tmpDir, "packages", "web");
     mkdirSync(webDir, { recursive: true });
 

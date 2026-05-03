@@ -389,7 +389,7 @@ export {
 
 // Activity event logging — structured diagnostic event trail
 export { recordActivityEvent, droppedEventCount } from "./activity-events.js";
-export { isActivityEventsFtsEnabled } from "./events-db.js";
+export { isActivityEventsFtsEnabled, closeDb } from "./events-db.js";
 export type {
   ActivityEventInput,
   ActivityEventKind,

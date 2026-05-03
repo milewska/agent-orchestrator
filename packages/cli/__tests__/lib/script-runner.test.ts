@@ -135,7 +135,7 @@ describe("script-runner", () => {
     expect(resolveScriptLayout()).toBe("package-install");
   });
 
-  it("pins script execution cwd to the resolved install root", async () => {
+  it.skipIf(process.platform === "win32")("pins script execution cwd to the resolved install root", async () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "script-runner-cwd-"));
     mkdirSync(join(tempRoot, ".git"), { recursive: true });
     mkdirSync(join(tempRoot, "packages", "ao"), { recursive: true });

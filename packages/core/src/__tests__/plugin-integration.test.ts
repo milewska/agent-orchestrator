@@ -34,6 +34,7 @@ vi.mock("node:child_process", () => {
 
 import { createPluginRegistry } from "../plugin-registry.js";
 import { createSessionManager } from "../session-manager.js";
+import { closeDb } from "../events-db.js";
 import { createLifecycleManager } from "../lifecycle-manager.js";
 import { writeMetadata } from "../metadata.js";
 import { getProjectSessionsDir, getProjectDir } from "../paths.js";
@@ -161,6 +162,9 @@ beforeEach(() => {
   mkdirSync(env.sessionsDir, { recursive: true });
 
   env.cleanup = () => {
+    // closeDb releases the activity-events.db SQLite lock so Windows can
+    // unlink it; rmSync's maxRetries alone doesn't break the lock.
+    closeDb();
     // V2 storage: project files live under getProjectDir(projectId).
     // maxRetries/retryDelay handle Windows EBUSY (antivirus / search indexer
     // briefly holding files); they're no-ops on Unix.

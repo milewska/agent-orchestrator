@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { getProjectSessionsDir, getProjectDir } from "../paths.js";
 import { resetOpenCodeSessionListCache } from "../session-manager.js";
+import { closeDb } from "../events-db.js";
 import { createInitialCanonicalLifecycle, deriveLegacyStatus } from "../lifecycle-state.js";
 import { createActivitySignal } from "../activity-signal.js";
 import type {
@@ -355,6 +356,9 @@ export function createTestEnvironment(): TestEnvironment {
     }
     // V2 storage: project files live under getProjectDir(projectId).
     // maxRetries handles Windows EBUSY (antivirus/indexer transient locks).
+    // closeDb releases the better-sqlite3 lock on activity-events.db so
+    // Windows can unlink it; without this rmSync fails with EBUSY.
+    closeDb();
     const projectDir = getProjectDir("my-app");
     if (existsSync(projectDir)) {
       rmSync(projectDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
@@ -466,6 +470,9 @@ export function teardownTestContext(ctx: TestContext): void {
   } else {
     process.env["USERPROFILE"] = ctx.originalUserProfile;
   }
+  // closeDb releases the activity-events.db SQLite lock so Windows can
+  // unlink the file; rmSync's maxRetries alone doesn't break the lock.
+  closeDb();
   // V2 storage: getProjectDir(projectId). Retry options handle Windows EBUSY.
   const projectDir = getProjectDir("my-app");
   if (existsSync(projectDir)) {

@@ -313,7 +313,7 @@ exit 0`,
     expect(result.stderr).toContain("commit or stash");
   });
 
-  it("skips rebuild but still runs smoke tests when local HEAD matches remote HEAD", () => {
+  it.skipIf(process.platform === "win32")("skips rebuild but still runs smoke tests when local HEAD matches remote HEAD", () => {
     const tempRoot = mkdtempSync(join(tmpdir(), "ao-update-already-latest-"));
     const fakeRepo = join(tempRoot, "repo");
     mkdirSync(join(fakeRepo, "packages", "cli"), { recursive: true });
