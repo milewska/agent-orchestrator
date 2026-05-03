@@ -1781,6 +1781,37 @@ describe("stop command", () => {
     expect(mockFindPidByPort).toHaveBeenCalledWith(3000);
     expect(mockKillProcessTree).not.toHaveBeenCalled();
   });
+
+  // Recovers from issue #645: when the configured port was busy at start, the
+  // dashboard auto-reassigned to port+N and `ao stop` couldn't find it. The
+  // port-scan fallback in stopDashboard walks port+1..port+MAX_PORT_SCAN.
+  // Skip on Windows: killDashboardOnPort skips the `ps` cmdline verification
+  // there (uses netstat trust), so the assertions on `ps` output don't apply.
+  it.skipIf(process.platform === "win32")(
+    "finds orphaned dashboard on a reassigned port via port scan",
+    async () => {
+      mockConfigRef.current = makeConfig({ "my-app": makeProject() });
+      mockSessionManager.list.mockResolvedValue([]);
+      // Port 3000 has nothing; port 3001 has the orphaned dashboard
+      mockFindPidByPort.mockImplementation(async (port: number) =>
+        port === 3001 ? "99999" : null,
+      );
+      // ps cmdline check inside killDashboardOnPort must pass for the kill to fire
+      mockExec.mockImplementation(async (cmd: string) => {
+        if (cmd === "ps") return { stdout: "node /fake/web/dist-server/start-all.js", stderr: "" };
+        throw new Error("no process");
+      });
+
+      await program.parseAsync(["node", "test", "stop"]);
+
+      expect(mockKillProcessTree).toHaveBeenCalledWith(99999);
+      const output = vi
+        .mocked(console.log)
+        .mock.calls.map((c) => c.join(" "))
+        .join("\n");
+      expect(output).toContain("was on port 3001");
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
