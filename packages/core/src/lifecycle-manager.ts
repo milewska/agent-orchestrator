@@ -2639,21 +2639,28 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
       },
       level: "warn",
     });
-    recordActivityEvent({
-      projectId: session.projectId,
-      sessionId: session.id,
-      source: "report-watcher",
-      kind: "report_watcher.triggered",
-      level: "warn",
-      summary: `${auditResult.trigger}: ${auditResult.message}`,
-      data: {
-        trigger: auditResult.trigger,
-        message: auditResult.message,
-        timeSinceSpawnMs: auditResult.timeSinceSpawnMs,
-        timeSinceReportMs: auditResult.timeSinceReportMs,
-        reportState: auditResult.report?.state,
-      },
-    });
+    // Emit ONCE per trigger activation (matches the detecting.escalated guard
+    // pattern). Without this guard the audit would fire every poll cycle while
+    // a trigger stays active, producing hundreds of identical events. The
+    // observer.recordOperation above is unguarded by design (it's a metric);
+    // the activity-event trail is for actionable evidence, not heartbeat.
+    if (isNewTrigger) {
+      recordActivityEvent({
+        projectId: session.projectId,
+        sessionId: session.id,
+        source: "report-watcher",
+        kind: "report_watcher.triggered",
+        level: "warn",
+        summary: `${auditResult.trigger}: ${auditResult.message}`,
+        data: {
+          trigger: auditResult.trigger,
+          message: auditResult.message,
+          timeSinceSpawnMs: auditResult.timeSinceSpawnMs,
+          timeSinceReportMs: auditResult.timeSinceReportMs,
+          reportState: auditResult.report?.state,
+        },
+      });
+    }
 
     // Execute reaction if configured
     if (isNewTrigger && reactionConfig && reactionConfig.auto !== false) {

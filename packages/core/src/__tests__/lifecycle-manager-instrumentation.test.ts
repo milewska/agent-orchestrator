@@ -721,6 +721,57 @@ describe("report_watcher.triggered", () => {
       vi.useRealTimers();
     }
   });
+
+  it("does NOT re-emit while the same trigger persists across polls (one-shot guard)", async () => {
+    // Regression: we observed 116 identical report_watcher.triggered events
+    // landing in production over a few hours because the emit was unguarded
+    // and fired every 30s poll while the trigger stayed active. The fix gates
+    // the emit on `isNewTrigger` so it fires only on the first poll that
+    // detects the trigger.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2025-01-01T12:00:00.000Z"));
+
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: createMockSCM(),
+      notifier: createMockNotifier(),
+    });
+
+    const staleSession = makeSession({
+      id: "app-1",
+      status: "working",
+      workspacePath: null,
+      createdAt: new Date("2025-01-01T11:40:00.000Z"),
+      metadata: { createdAt: "2025-01-01T11:40:00.000Z" },
+    });
+    persistSession("app-1", staleSession, { createdAt: "2025-01-01T11:40:00.000Z" });
+
+    const lm = createLifecycleManager({
+      config,
+      registry,
+      sessionManager: mockSessionManager,
+    });
+
+    try {
+      // First check — trigger fires fresh, AE event lands.
+      await lm.check("app-1");
+      const firstPass = vi.mocked(recordActivityEvent).mock.calls
+        .map((c) => c[0])
+        .filter((c) => c.kind === "report_watcher.triggered");
+      expect(firstPass).toHaveLength(1);
+
+      // Second check — same trigger still active. Must NOT re-emit.
+      vi.mocked(recordActivityEvent).mockClear();
+      await lm.check("app-1");
+      const secondPass = vi.mocked(recordActivityEvent).mock.calls
+        .map((c) => c[0])
+        .filter((c) => c.kind === "report_watcher.triggered");
+      expect(secondPass).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
