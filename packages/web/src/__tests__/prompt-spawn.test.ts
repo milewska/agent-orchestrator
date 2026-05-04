@@ -315,6 +315,7 @@ describe("GREEN — branch behavior (after #974)", () => {
       expect(data.session).toBeDefined();
       // session manager received the prompt
       expect(lastSpawnConfig?.prompt).toBe("Refactor the auth module to use JWT");
+      expect(lastSpawnConfig?.userInitiated).toBe(true);
     });
 
     it("forwards prompt alongside issueId when both are provided", async () => {

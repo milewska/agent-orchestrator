@@ -1873,6 +1873,54 @@ describe("reactions", () => {
     expect(mockSessionManager.send).toHaveBeenCalledWith("app-1", "CI is failing. Fix it.");
   });
 
+  it("routes automatic agent reactions to manual review notifications in review mode", async () => {
+    const notifier = createMockNotifier();
+    const mockSCM = createMockSCM({
+      getCISummary: vi.fn().mockResolvedValue("failing"),
+      enrichSessionsPRBatch: mockBatchEnrichment({ ciStatus: "failing" }),
+    });
+    const registry = createMockRegistry({
+      runtime: plugins.runtime,
+      agent: plugins.agent,
+      scm: mockSCM,
+      notifier,
+    });
+    const configWithReviewMode: OrchestratorConfig = {
+      ...config,
+      projects: {
+        ...config.projects,
+        "my-app": {
+          ...config.projects["my-app"]!,
+          autonomyMode: "review",
+        },
+      },
+      reactions: {
+        "ci-failed": {
+          auto: true,
+          action: "send-to-agent",
+          message: "CI is failing. Fix it.",
+        },
+      },
+    };
+
+    const lm = setupCheck("app-1", {
+      session: makeSession({ status: "pr_open", pr: makePR() }),
+      registry,
+      configOverride: configWithReviewMode,
+    });
+
+    await lm.check("app-1");
+
+    expect(mockSessionManager.send).not.toHaveBeenCalled();
+    expect(notifier.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "reaction.triggered",
+        projectId: "my-app",
+        data: expect.objectContaining({ reactionKey: "ci-failed" }),
+      }),
+    );
+  });
+
   it("does not trigger reaction when auto=false", async () => {
     config.reactions = {
       "ci-failed": { auto: false, action: "send-to-agent", message: "CI is failing." },

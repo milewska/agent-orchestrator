@@ -74,6 +74,48 @@ describe("Config Validation - Numeric Fields", () => {
   });
 });
 
+describe("Config Validation - autonomyMode", () => {
+  it("accepts full, review, and manual autonomy modes", () => {
+    for (const autonomyMode of ["full", "review", "manual"]) {
+      expect(() =>
+        validateConfig({
+          projects: {
+            app: {
+              path: "/repos/app",
+              autonomyMode,
+            },
+          },
+        }),
+      ).not.toThrow();
+    }
+  });
+
+  it("rejects invalid autonomy modes", () => {
+    expect(() =>
+      validateConfig({
+        projects: {
+          app: {
+            path: "/repos/app",
+            autonomyMode: "auto",
+          },
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("does not populate autonomyMode when omitted so runtime guard default-denies", () => {
+    const config = validateConfig({
+      projects: {
+        app: {
+          path: "/repos/app",
+        },
+      },
+    });
+
+    expect(config.projects["app"]!.autonomyMode).toBeUndefined();
+  });
+});
+
 describe("Config Validation - Session Prefix Uniqueness", () => {
   it("rejects duplicate explicit prefixes", () => {
     const config = {

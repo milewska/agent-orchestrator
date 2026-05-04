@@ -66,6 +66,7 @@ import {
 import { createCorrelationId, createProjectObserver } from "./observability.js";
 import { resolveNotifierTarget } from "./notifier-resolution.js";
 import { resolveAgentSelection, resolveSessionRole } from "./agent-selection.js";
+import { reactionConfigForAutonomyMode } from "./autonomy-mode.js";
 import {
   DETECTING_MAX_ATTEMPTS,
   createDetectingDecision,
@@ -1404,7 +1405,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
     const reactionConfig = projectReaction
       ? { ...globalReaction, ...projectReaction }
       : globalReaction;
-    return reactionConfig ? (reactionConfig as ReactionConfig) : null;
+    return reactionConfig
+      ? reactionConfigForAutonomyMode(project, reactionConfig as ReactionConfig)
+      : null;
   }
 
   function updateSessionMetadata(session: Session, updates: Partial<Record<string, string>>): void {

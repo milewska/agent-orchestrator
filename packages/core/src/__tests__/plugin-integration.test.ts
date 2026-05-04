@@ -124,6 +124,7 @@ beforeEach(() => {
     path: join(env.tmpDir, "test-app"),
     defaultBranch: "main",
     sessionPrefix: "app",
+    autonomyMode: "full",
     tracker: { plugin: "github" },
     scm: { plugin: "github" },
   };

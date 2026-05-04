@@ -100,6 +100,7 @@ import {
   setupPathWrapperWorkspace,
   PREFERRED_GH_PATH,
 } from "./agent-workspace-hooks.js";
+import { resolveAutonomyMode } from "./autonomy-mode.js";
 
 const execFileAsync = promisify(execFile);
 const OPENCODE_DISCOVERY_TIMEOUT_MS = 10_000;
@@ -144,6 +145,20 @@ async function deleteOpenCodeSession(sessionId: string): Promise<void> {
 /** Re-export so existing core test-utils + session-manager call sites keep working. */
 export function resetOpenCodeSessionListCache(): void {
   resetSharedOpenCodeSessionListCache();
+}
+
+export class SpawnBlockedError extends Error {
+  readonly projectId: string;
+  readonly autonomyMode: "manual";
+
+  constructor(projectId: string) {
+    super(
+      `Spawn blocked for project "${projectId}": autonomyMode is "manual" and this spawn was not user-initiated. Override by using ao spawn --force-manual ${projectId} from an explicit human action, pass userInitiated=true, or set autonomyMode: review/full for the project.`,
+    );
+    this.name = "SpawnBlockedError";
+    this.projectId = projectId;
+    this.autonomyMode = "manual";
+  }
 }
 
 async function fetchOpenCodeSessionList(
@@ -1096,6 +1111,24 @@ export function createSessionManager(deps: SessionManagerDeps): OpenCodeSessionM
 
   // Define methods as local functions so `this` is not needed
   async function spawn(spawnConfig: SessionSpawnConfig): Promise<Session> {
+    const project = config.projects[spawnConfig.projectId];
+    if (!project) {
+      throw new Error(`Unknown project: ${spawnConfig.projectId}`);
+    }
+
+    const autonomyMode = resolveAutonomyMode(project);
+    if (autonomyMode === "manual" && spawnConfig.userInitiated !== true) {
+      recordActivityEvent({
+        projectId: spawnConfig.projectId,
+        source: "session-manager",
+        kind: "session.spawn_blocked",
+        level: "warn",
+        summary: `spawn blocked — project autonomyMode='manual' and spawn not user-initiated`,
+        data: { issueId: spawnConfig.issueId, autonomyMode },
+      });
+      throw new SpawnBlockedError(spawnConfig.projectId);
+    }
+
     recordActivityEvent({
       projectId: spawnConfig.projectId,
       source: "session-manager",

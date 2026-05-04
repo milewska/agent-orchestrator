@@ -266,6 +266,8 @@ import { registerStart, registerStop, createConfigOnly } from "../../src/command
 let tmpDir: string;
 let program: Command;
 let cwdSpy: ReturnType<typeof vi.spyOn>;
+let originalHome: string | undefined;
+let originalAoGlobalConfig: string | undefined;
 
 function createSpawnChild(options?: {
   /** Emit `error` instead of `close`. */
@@ -303,6 +305,10 @@ function createSpawnChild(options?: {
 
 beforeEach(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), "ao-start-test-"));
+  originalHome = process.env["HOME"];
+  originalAoGlobalConfig = process.env["AO_GLOBAL_CONFIG"];
+  process.env["HOME"] = tmpDir;
+  process.env["AO_GLOBAL_CONFIG"] = join(tmpDir, ".agent-orchestrator", "config.yaml");
 
   program = new Command();
   program.exitOverride();
@@ -412,6 +418,16 @@ beforeEach(async () => {
 
 afterEach(() => {
   if (cwdSpy) cwdSpy.mockRestore();
+  if (originalHome === undefined) {
+    delete process.env["HOME"];
+  } else {
+    process.env["HOME"] = originalHome;
+  }
+  if (originalAoGlobalConfig === undefined) {
+    delete process.env["AO_GLOBAL_CONFIG"];
+  } else {
+    process.env["AO_GLOBAL_CONFIG"] = originalAoGlobalConfig;
+  }
   rmSync(tmpDir, { recursive: true, force: true });
   vi.restoreAllMocks();
 });

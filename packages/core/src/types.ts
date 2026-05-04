@@ -364,6 +364,8 @@ export interface SessionSpawnConfig {
   issueId?: string;
   branch?: string;
   prompt?: string;
+  /** True only when a human explicitly requested this spawn. */
+  userInitiated?: boolean;
   /** Override the agent plugin for this session (e.g. "codex", "claude-code") */
   agent?: string;
   /** Override the OpenCode subagent for this session (e.g. "sisyphus", "oracle") */
@@ -1438,6 +1440,8 @@ export interface RoleAgentConfig {
   agentConfig?: AgentSpecificConfig;
 }
 
+export type AutonomyMode = "full" | "review" | "manual";
+
 export interface ProjectConfig {
   /** Display name */
   name: string;
@@ -1458,6 +1462,12 @@ export interface ProjectConfig {
 
   /** Whether this project is active in portfolio and dashboard surfaces */
   enabled?: boolean;
+
+  /**
+   * Per-project automation posture. Missing is treated as "manual" at runtime
+   * so projects must explicitly opt in to automatic spawns/reactions.
+   */
+  autonomyMode?: AutonomyMode;
 
   /** Override default runtime */
   runtime?: string;

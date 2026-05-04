@@ -62,6 +62,9 @@ projects:
     path: ~/my-app
     defaultBranch: main
     sessionPrefix: app
+    # Default-deny safety posture: omitted autonomyMode is treated as manual.
+    # Use review/full only for projects that may be handled automatically.
+    autonomyMode: manual
 
     # Issue tracker (defaults to github issues)
     # tracker:

@@ -30,6 +30,7 @@ import {
   type Session,
   isOrchestratorSession,
   TERMINAL_STATUSES,
+  SpawnBlockedError,
 } from "@aoagents/ao-core";
 
 // Static plugin imports — webpack needs these to be string literals
@@ -344,6 +345,9 @@ export async function pollBacklog(): Promise<void> {
             );
           }
         } catch (err) {
+          if (err instanceof SpawnBlockedError) {
+            continue;
+          }
           console.error(`[backlog] Failed to spawn session for issue ${issue.id}:`, err);
         }
       }
