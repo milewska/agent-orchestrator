@@ -1,0 +1,225 @@
+# Live AO workspace deployment for Alex's fork (OCT-39).
+# This is intentionally committed in the private fork so `ao start` can load the
+# same project set and per-project safety posture everywhere Alex runs AO.
+$schema: https://raw.githubusercontent.com/milewska/agent-orchestrator/main/schema/config.schema.json
+
+port: 3000
+readyThresholdMs: 300000
+
+defaults:
+  runtime: tmux
+  agent: codex
+  workspace: worktree
+  notifiers: []
+  orchestrator:
+    agent: claude-code
+  worker:
+    agent: codex
+
+projects:
+  Meridian:
+    name: Meridian
+    repo: milewska/MeridianWebsite
+    path: /Users/mf/Desktop/Annie Projects/MeridianWebsite
+    defaultBranch: main
+    sessionPrefix: mer
+    autonomyMode: full
+    tracker:
+      plugin: linear
+      teamId: 8f1f17ca-f8fa-4930-94eb-862874044dca
+      projectId: aa8329bb-b1f7-4583-b2bd-4f721a53de3a
+    orchestrator:
+      agent: claude-code
+      agentConfig:
+        model: claude-opus-4-7
+    worker:
+      agent: codex
+      agentConfig:
+        model: gpt-5.5
+
+  Luna:
+    name: Luna
+    repo: milewska/luna
+    path: /Users/mf/Desktop/Annie Projects/Luna
+    defaultBranch: main
+    sessionPrefix: luna
+    autonomyMode: full
+    tracker:
+      plugin: linear
+      teamId: 8f1f17ca-f8fa-4930-94eb-862874044dca
+      projectId: ff860c1b-709c-4d0e-a67f-0b9c1d59680a
+    orchestrator:
+      agent: claude-code
+      agentConfig:
+        model: claude-opus-4-7
+    worker:
+      agent: codex
+      agentConfig:
+        model: gpt-5.5
+
+  Octahedron:
+    name: Octahedron
+    repo: milewska/Octahedron
+    path: /Users/mf/Desktop/Octahedron
+    defaultBranch: main
+    sessionPrefix: oct
+    autonomyMode: full
+    tracker:
+      plugin: linear
+      teamId: 8f1f17ca-f8fa-4930-94eb-862874044dca
+      projectId: 56c30f58-d17b-4654-b0dc-fa7c29dc5f07
+    orchestrator:
+      agent: claude-code
+      agentConfig:
+        model: claude-opus-4-7
+    worker:
+      agent: codex
+      agentConfig:
+        model: gpt-5.5
+
+  MalamaSustainability:
+    name: MalamaSustainability
+    repo: milewska/Malama-Sustainability
+    path: /Users/mf/Desktop/Annie Projects/MalamaSustainability
+    defaultBranch: main
+    sessionPrefix: malama
+    autonomyMode: full
+    tracker:
+      plugin: linear
+      teamId: 8f1f17ca-f8fa-4930-94eb-862874044dca
+      projectId: c0b1602e-1681-4272-8f95-937054e17a53
+    orchestrator:
+      agent: claude-code
+      agentConfig:
+        model: claude-opus-4-7
+    worker:
+      agent: codex
+      agentConfig:
+        model: gpt-5.5
+
+  Quorum:
+    name: Quorum
+    repo: Milewska/quorum
+    path: /Users/mf/Desktop/Annie Projects/Quorum
+    defaultBranch: main
+    sessionPrefix: quo
+    autonomyMode: full
+    tracker:
+      plugin: linear
+      teamId: 8f1f17ca-f8fa-4930-94eb-862874044dca
+      projectId: ad80f4f3-73e5-4b28-942e-f72536d6f4f2
+    symlinks:
+      - .env
+    orchestrator:
+      agent: claude-code
+      agentConfig:
+        model: claude-opus-4-7
+    worker:
+      agent: codex
+      agentConfig:
+        model: gpt-5.5
+    agentRules: |
+      Always run tests before pushing.
+      Use conventional commits (feat:, fix:, chore:, docs:, refactor:, test:).
+      Link issue numbers in commit messages.
+      Write clear commit messages that explain WHY, not just WHAT.
+
+      Use TypeScript strict mode.
+      Use ESM modules with .js extensions in imports (e.g., import { foo } from "./bar.js").
+      Use node: prefix for built-in modules (e.g., import { readFile } from "node:fs").
+      Prefer const over let, never use var.
+      Use type imports for type-only imports: import type { Foo } from "./bar.js".
+      No any types - use unknown with type guards instead.
+
+      Use React best practices:
+
+      - Use functional components with hooks, not class components
+      - Keep components small and focused (single responsibility)
+      - Use composition over inheritance
+      - Lift state up when multiple components need it
+      - Use TypeScript for prop types (if using TypeScript)
+      - Follow hooks rules (no conditionals, no loops, no nested functions)
+
+      Before pushing, run these commands:
+      - npm run typecheck
+      - npm run lint
+
+  Sidebar:
+    name: Sidebar
+    repo: milewska/Sidebar
+    path: /Users/mf/Desktop/Annie Projects/Sidebar
+    defaultBranch: main
+    sessionPrefix: side
+    autonomyMode: manual
+    tracker:
+      plugin: linear
+      teamId: 8f1f17ca-f8fa-4930-94eb-862874044dca
+      projectId: 3fe72484-9734-4441-9dd7-dc6d21106a7a
+    orchestrator:
+      agent: claude-code
+      agentConfig:
+        model: claude-opus-4-7
+    worker:
+      agent: codex
+      agentConfig:
+        model: gpt-5.5
+
+  Kindling:
+    name: Kindling
+    repo: milewska/kindling
+    path: /Users/mf/Desktop/Annie Projects/Kindling
+    defaultBranch: main
+    sessionPrefix: kind
+    autonomyMode: manual
+    tracker:
+      plugin: linear
+      teamId: 8f1f17ca-f8fa-4930-94eb-862874044dca
+      projectId: fec432b5-74c4-4380-b78e-33ad03e0c235
+    orchestrator:
+      agent: claude-code
+      agentConfig:
+        model: claude-opus-4-7
+    worker:
+      agent: codex
+      agentConfig:
+        model: gpt-5.5
+
+  LunarLegacies:
+    name: LunarLegacies
+    repo: milewska/lunarlegacies
+    path: /Users/mf/Desktop/Annie Projects/LunarLegacies
+    defaultBranch: main
+    sessionPrefix: lunar
+    autonomyMode: manual
+    tracker:
+      plugin: linear
+      teamId: 8f1f17ca-f8fa-4930-94eb-862874044dca
+      projectId: 913047e5-5446-4803-9ded-ada171b3781b
+    orchestrator:
+      agent: claude-code
+      agentConfig:
+        model: claude-opus-4-7
+    worker:
+      agent: codex
+      agentConfig:
+        model: gpt-5.5
+
+  agent-orchestrator_25a1e82997:
+    name: Agent Orchestrator
+    repo: milewska/agent-orchestrator
+    path: /Users/mf/Desktop/Annie Projects/agent-orchestrator
+    defaultBranch: main
+    sessionPrefix: ao
+    autonomyMode: manual
+    tracker:
+      plugin: linear
+      teamId: 8f1f17ca-f8fa-4930-94eb-862874044dca
+      projectId: bfa5b8d8-8701-4f4f-b13c-44c335d7a0c0
+    orchestrator:
+      agent: claude-code
+      agentConfig:
+        model: claude-opus-4-7
+    worker:
+      agent: codex
+      agentConfig:
+        model: gpt-5.5

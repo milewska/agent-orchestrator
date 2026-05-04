@@ -30,3 +30,13 @@ Append-only history of fork-side changes to `milewska/agent-orchestrator`. **Ups
   - `pnpm typecheck` clean.
   - `pnpm test` clean — **3263 passed + 40 skipped = 3303 total cases across 26 test-running packages, 0 failures**.
   - Focused web services check: `pnpm --filter @aoagents/ao-web test -- src/__tests__/services.test.ts` clean — **7 passed, 0 failures**.
+
+## 2026-05-04 — OCT-39 live workspace deployment
+
+- Committed the live Alex workspace `agent-orchestrator.yaml` for the fork deployment.
+- Bound each configured project to its Linear `projectId` so AO backlog polling is project-scoped:
+  - `full`: Meridian, Luna, Octahedron, MalamaSustainability, Quorum.
+  - `manual`: Sidebar, Kindling, LunarLegacies, Agent Orchestrator.
+- Deployed the same config to the currently running workspace config path: `/Users/mf/Desktop/Annie Projects/Quorum/agent-orchestrator.yaml`.
+- Created missing Linear project records for MalamaSustainability, Sidebar, Kindling, and LunarLegacies so every live project entry has a real Linear project filter.
+
