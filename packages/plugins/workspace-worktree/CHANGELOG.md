@@ -1,4 +1,4 @@
-# @composio/ao-plugin-workspace-worktree
+# @aoagents/ao-plugin-workspace-worktree
 
 ## 0.4.0
 

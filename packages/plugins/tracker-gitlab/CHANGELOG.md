@@ -1,4 +1,4 @@
-# @composio/ao-plugin-tracker-gitlab
+# @aoagents/ao-plugin-tracker-gitlab
 
 ## 0.2.7
 

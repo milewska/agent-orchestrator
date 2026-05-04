@@ -1,4 +1,4 @@
-# @composio/ao-cli
+# @aoagents/ao-cli
 
 ## 0.4.0
 

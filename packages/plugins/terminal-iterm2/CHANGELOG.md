@@ -1,4 +1,4 @@
-# @composio/ao-plugin-terminal-iterm2
+# @aoagents/ao-plugin-terminal-iterm2
 
 ## 0.4.0
 

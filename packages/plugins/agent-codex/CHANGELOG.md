@@ -1,4 +1,4 @@
-# @composio/ao-plugin-agent-codex
+# @aoagents/ao-plugin-agent-codex
 
 ## 0.4.0
 

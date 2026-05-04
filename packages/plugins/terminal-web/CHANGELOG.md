@@ -1,4 +1,4 @@
-# @composio/ao-plugin-terminal-web
+# @aoagents/ao-plugin-terminal-web
 
 ## 0.4.0
 

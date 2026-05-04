@@ -1,4 +1,4 @@
-# @composio/ao-plugin-notifier-webhook
+# @aoagents/ao-plugin-notifier-webhook
 
 ## 0.4.0
 

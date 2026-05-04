@@ -1,4 +1,4 @@
-# @composio/ao-plugin-agent-opencode
+# @aoagents/ao-plugin-agent-opencode
 
 ## 0.4.0
 

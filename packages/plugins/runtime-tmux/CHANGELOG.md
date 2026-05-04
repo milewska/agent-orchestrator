@@ -1,4 +1,4 @@
-# @composio/ao-plugin-runtime-tmux
+# @aoagents/ao-plugin-runtime-tmux
 
 ## 0.4.0
 

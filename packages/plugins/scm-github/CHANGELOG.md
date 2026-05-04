@@ -1,4 +1,4 @@
-# @composio/ao-plugin-scm-github
+# @aoagents/ao-plugin-scm-github
 
 ## 0.4.0
 

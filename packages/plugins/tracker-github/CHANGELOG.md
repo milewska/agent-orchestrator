@@ -1,4 +1,4 @@
-# @composio/ao-plugin-tracker-github
+# @aoagents/ao-plugin-tracker-github
 
 ## 0.4.0
 

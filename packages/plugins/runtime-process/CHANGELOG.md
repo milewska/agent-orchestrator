@@ -1,4 +1,4 @@
-# @composio/ao-plugin-runtime-process
+# @aoagents/ao-plugin-runtime-process
 
 ## 0.4.0
 

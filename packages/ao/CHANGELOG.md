@@ -1,4 +1,4 @@
-# @composio/ao
+# @aoagents/ao
 
 ## 0.4.0
 

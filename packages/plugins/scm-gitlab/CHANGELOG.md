@@ -1,4 +1,4 @@
-# @composio/ao-plugin-scm-gitlab
+# @aoagents/ao-plugin-scm-gitlab
 
 ## 0.2.7
 

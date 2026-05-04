@@ -1,4 +1,4 @@
-# @composio/ao-plugin-tracker-linear
+# @aoagents/ao-plugin-tracker-linear
 
 ## 0.4.0
 

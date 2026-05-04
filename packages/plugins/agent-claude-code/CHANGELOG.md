@@ -1,4 +1,4 @@
-# @composio/ao-plugin-agent-claude-code
+# @aoagents/ao-plugin-agent-claude-code
 
 ## 0.4.0
 

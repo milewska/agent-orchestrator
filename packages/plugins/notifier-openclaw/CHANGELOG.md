@@ -1,4 +1,4 @@
-# @composio/ao-plugin-notifier-openclaw
+# @aoagents/ao-plugin-notifier-openclaw
 
 ## 0.2.7
 

@@ -1,4 +1,4 @@
-# @composio/ao-plugin-workspace-clone
+# @aoagents/ao-plugin-workspace-clone
 
 ## 0.4.0
 

@@ -1,4 +1,4 @@
-# @composio/ao-web
+# @aoagents/ao-web
 
 ## 0.4.0
 

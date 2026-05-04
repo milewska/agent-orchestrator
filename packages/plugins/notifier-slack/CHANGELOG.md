@@ -1,4 +1,4 @@
-# @composio/ao-plugin-notifier-slack
+# @aoagents/ao-plugin-notifier-slack
 
 ## 0.4.0
 

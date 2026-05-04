@@ -1,4 +1,4 @@
-# @composio/ao-plugin-notifier-composio
+# @aoagents/ao-plugin-notifier-composio
 
 ## 0.4.0
 

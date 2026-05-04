@@ -1,4 +1,4 @@
-# @composio/ao-plugin-agent-aider
+# @aoagents/ao-plugin-agent-aider
 
 ## 0.4.0
 

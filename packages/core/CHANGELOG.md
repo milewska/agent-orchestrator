@@ -1,4 +1,4 @@
-# @composio/ao-core
+# @aoagents/ao-core
 
 ## 0.4.0
 
