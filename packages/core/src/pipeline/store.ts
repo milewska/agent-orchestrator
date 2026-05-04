@@ -9,9 +9,16 @@
  *   artifacts/{runId}/{stageRunId}.jsonl
  *   loops/{runId}.json
  *
- * All writes go through atomicWriteFileSync so concurrent writers never produce
- * torn data. Reads are best-effort: missing files return null; corrupt JSON
- * raises.
+ * Durability:
+ * - JSON writes (runs, stages, loops) go through atomicWriteFileSync so
+ *   concurrent writers never produce torn data.
+ * - JSONL artifact appends use appendFileSync — atomic semantics aren't
+ *   available for append, so a process crash mid-write can leave a partial
+ *   line. listArtifacts is therefore NOT crash-safe: it JSON.parses each
+ *   non-empty line and will throw on a torn final record. Callers that need
+ *   to tolerate crashes should wrap the read or repair the file out-of-band.
+ *
+ * Reads are best-effort: missing files return null; corrupt JSON raises.
  */
 
 import {
@@ -21,6 +28,7 @@ import {
   readFileSync,
   readdirSync,
 } from "node:fs";
+import { join } from "node:path";
 
 import { atomicWriteFileSync } from "../atomic-write.js";
 import {
@@ -89,7 +97,7 @@ export function createPipelineStore(root: string): PipelineStore {
       const out: RunState[] = [];
       for (const file of readdirSync(layout.runsDir)) {
         if (!file.endsWith(".json")) continue;
-        const run = readJsonOrNull<RunState>(`${layout.runsDir}/${file}`);
+        const run = readJsonOrNull<RunState>(join(layout.runsDir, file));
         if (run) out.push(run);
       }
       return out;

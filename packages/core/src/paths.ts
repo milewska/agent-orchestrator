@@ -130,7 +130,7 @@ export function getProjectFeedbackReportsDir(projectId: string): string {
   return join(getProjectDir(projectId), "feedback-reports");
 }
 
-/** Get the pipelines directory for a project (V2 layout). Holds runs/, stages/, artifacts/, loops/. */
+/** Get the pipelines directory for a project. Holds runs/, stages/, artifacts/, loops/. */
 export function getProjectPipelinesDir(projectId: string): string {
   return join(getProjectDir(projectId), "pipelines");
 }
