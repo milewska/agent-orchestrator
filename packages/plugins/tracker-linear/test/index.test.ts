@@ -489,6 +489,21 @@ describe("tracker-linear plugin", () => {
       });
     });
 
+    it("throws a clear error when projectId is not a string", async () => {
+      await expect(
+        tracker.listIssues!(
+          {},
+          {
+            ...project,
+            tracker: {
+              ...project.tracker,
+              projectId: 123,
+            },
+          },
+        ),
+      ).rejects.toThrow("Linear tracker requires 'projectId' to be a string");
+    });
+
     it("returns mapped issue project metadata", async () => {
       mockLinearAPI({ issues: { nodes: [sampleIssueNode] } });
       const issues = await tracker.listIssues!({}, project);
@@ -709,6 +724,21 @@ describe("tracker-linear plugin", () => {
       const body = JSON.parse(writeCall);
       expect(body.variables.projectId).toBe("project-uuid-1");
       expect(body.query).toContain("projectId: $projectId");
+    });
+
+    it("throws a clear error when createIssue projectId is not a string", async () => {
+      await expect(
+        tracker.createIssue!(
+          { title: "Bug", description: "" },
+          {
+            ...project,
+            tracker: {
+              ...project.tracker,
+              projectId: 123,
+            },
+          },
+        ),
+      ).rejects.toThrow("Linear tracker requires 'projectId' to be a string");
     });
 
     it("resolves assignee by display name after creation", async () => {

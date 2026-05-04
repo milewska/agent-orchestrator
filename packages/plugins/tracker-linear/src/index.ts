@@ -254,6 +254,19 @@ function mapLinearState(stateType: string): Issue["state"] {
   }
 }
 
+function getLinearProjectId(project: ProjectConfig): string | undefined {
+  const projectId = project.tracker?.["projectId"];
+  if (projectId === undefined || projectId === "") {
+    return undefined;
+  }
+  if (typeof projectId !== "string") {
+    throw new Error(
+      "Linear tracker requires 'projectId' to be a string when provided in project tracker config",
+    );
+  }
+  return projectId;
+}
+
 // ---------------------------------------------------------------------------
 // Issue fields fragment
 // ---------------------------------------------------------------------------
@@ -411,7 +424,7 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
       }
 
       // Add project filter if available from project config
-      const projectId = project.tracker?.["projectId"];
+      const projectId = getLinearProjectId(project);
       if (projectId) {
         filter["project"] = { id: { eq: projectId } };
       }
@@ -598,13 +611,8 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         description: input.description ?? "",
         teamId,
       };
-      const projectId = project.tracker?.["projectId"];
-      if (projectId !== undefined) {
-        if (typeof projectId !== "string") {
-          throw new Error(
-            "Linear tracker requires 'projectId' to be a string when provided in project tracker config",
-          );
-        }
+      const projectId = getLinearProjectId(project);
+      if (projectId) {
         variables["projectId"] = projectId;
       }
 
