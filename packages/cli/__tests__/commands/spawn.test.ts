@@ -164,6 +164,7 @@ describe("spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "my-app",
       issueId: "INT-100",
+      userInitiated: true,
     });
 
     const output = consoleSpy.mock.calls.map((c) => String(c[0])).join("\n");
@@ -194,6 +195,7 @@ describe("spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "my-app",
       issueId: "42",
+      userInitiated: true,
     });
   });
 
@@ -242,6 +244,7 @@ describe("spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "backend",
       issueId: "INT-42",
+      userInitiated: true,
     });
   });
 
@@ -293,6 +296,62 @@ describe("spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "backend",
       issueId: "INT-42",
+      userInitiated: true,
+    });
+  });
+
+  it("uses --force-manual as an explicit manual-mode project override", async () => {
+    (mockConfigRef.current as Record<string, unknown>).projects = {
+      frontend: {
+        name: "Frontend",
+        repo: "org/frontend",
+        path: join(tmpDir, "frontend"),
+        defaultBranch: "main",
+        sessionPrefix: "fe",
+      },
+      backend: {
+        name: "Backend",
+        repo: "org/backend",
+        path: join(tmpDir, "backend"),
+        defaultBranch: "main",
+        sessionPrefix: "be",
+        autonomyMode: "manual",
+      },
+    };
+    mkdirSync(join(tmpDir, "frontend"), { recursive: true });
+    mkdirSync(join(tmpDir, "backend"), { recursive: true });
+    mockGetRunning.mockResolvedValue({
+      pid: 1234,
+      port: 3000,
+      startedAt: "",
+      projects: ["frontend", "backend"],
+    });
+
+    const fakeSession: Session = {
+      id: "be-1",
+      projectId: "backend",
+      status: "spawning",
+      activity: null,
+      branch: "feat/INT-37",
+      issueId: "INT-37",
+      pr: null,
+      workspacePath: "/tmp/wt",
+      runtimeHandle: { id: "hash-be-1", runtimeName: "tmux", data: {} },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    };
+    mockSessionManager.spawn.mockResolvedValue(fakeSession);
+
+    await program.parseAsync(["node", "test", "spawn", "--force-manual", "backend", "INT-37"]);
+
+    expect(mockSessionManager.spawn).toHaveBeenCalledWith({
+      projectId: "backend",
+      issueId: "INT-37",
+      agent: undefined,
+      prompt: undefined,
+      userInitiated: true,
     });
   });
 
@@ -362,6 +421,7 @@ describe("spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "x402-identity",
       issueId: "1",
+      userInitiated: true,
     });
   });
 
@@ -414,6 +474,7 @@ describe("spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "x402-identity",
       issueId: "7",
+      userInitiated: true,
     });
   });
 
@@ -440,6 +501,7 @@ describe("spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "my-app",
       issueId: "some-org/42",
+      userInitiated: true,
     });
   });
 
@@ -468,6 +530,7 @@ describe("spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "my-app",
       issueId: undefined,
+      userInitiated: true,
     });
   });
 
@@ -523,6 +586,7 @@ describe("spawn command", () => {
       projectId: "my-app",
       issueId: undefined,
       agent: "codex",
+      userInitiated: true,
     });
   });
 
@@ -551,6 +615,7 @@ describe("spawn command", () => {
       projectId: "my-app",
       issueId: "INT-42",
       agent: "codex",
+      userInitiated: true,
     });
   });
 
@@ -627,6 +692,7 @@ describe("spawn command", () => {
       projectId: "my-app",
       issueId: undefined,
       agent: undefined,
+      userInitiated: true,
     });
     expect(mockSessionManager.claimPR).toHaveBeenCalledWith("app-1", "123", {
       assignOnGithub: undefined,
@@ -1026,8 +1092,8 @@ describe("batch-spawn command", () => {
     const spawnCalls = mockSessionManager.spawn.mock.calls.map((call) => call[0]);
     expect(spawnCalls).toEqual(
       expect.arrayContaining([
-        { projectId: "agent-orchestrator", issueId: "10" },
-        { projectId: "x402-identity", issueId: "20" },
+        { projectId: "agent-orchestrator", issueId: "10", userInitiated: true },
+        { projectId: "x402-identity", issueId: "20", userInitiated: true },
       ]),
     );
     expect(mockSessionManager.list).toHaveBeenCalledWith("agent-orchestrator");
@@ -1082,10 +1148,12 @@ describe("batch-spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "agent-orchestrator",
       issueId: "10",
+      userInitiated: true,
     });
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "agent-orchestrator",
       issueId: "20",
+      userInitiated: true,
     });
     expect(mockSessionManager.list).toHaveBeenCalledTimes(1);
     expect(mockSessionManager.list).toHaveBeenCalledWith("agent-orchestrator");
@@ -1143,6 +1211,7 @@ describe("batch-spawn command", () => {
     expect(mockSessionManager.spawn).toHaveBeenCalledWith({
       projectId: "agent-orchestrator",
       issueId: "10",
+      userInitiated: true,
     });
   });
 });

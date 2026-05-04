@@ -235,6 +235,8 @@ const RoleAgentConfigSchema = z
   })
   .optional();
 
+const AutonomyModeSchema = z.enum(["full", "review", "manual"]);
+
 const ProjectConfigSchema = z.object({
   name: z.string().optional(),
   repo: z.string().optional(),
@@ -246,6 +248,7 @@ const ProjectConfigSchema = z.object({
     .optional(),
   /** Per-project resolution failure captured without aborting global load. */
   resolveError: z.string().optional(),
+  autonomyMode: AutonomyModeSchema.optional(),
   runtime: z.string().optional(),
   agent: z.string().optional(),
   workspace: z.string().optional(),

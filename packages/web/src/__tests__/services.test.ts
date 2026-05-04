@@ -7,9 +7,12 @@ const {
   mockRegister,
   mockCreateSessionManager,
   mockRegistry,
+  MockSpawnBlockedError,
   tmuxPlugin,
   claudePlugin,
   codexPlugin,
+  cursorPlugin,
+  kimicodePlugin,
   opencodePlugin,
   worktreePlugin,
   scmPlugin,
@@ -26,6 +29,12 @@ const {
   }
   const mockRegister = vi.fn();
   const mockCreateSessionManager = vi.fn();
+  class MockSpawnBlockedError extends Error {
+    constructor(projectId: string) {
+      super(`Spawn blocked for project "${projectId}"`);
+      this.name = "SpawnBlockedError";
+    }
+  }
   const mockRegistry = {
     register: mockRegister,
     get: vi.fn(),
@@ -41,9 +50,12 @@ const {
     mockRegister,
     mockCreateSessionManager,
     mockRegistry,
+    MockSpawnBlockedError,
     tmuxPlugin: { manifest: { name: "tmux" } },
     claudePlugin: { manifest: { name: "claude-code" } },
     codexPlugin: { manifest: { name: "codex" } },
+    cursorPlugin: { manifest: { name: "cursor" } },
+    kimicodePlugin: { manifest: { name: "kimicode" } },
     opencodePlugin: { manifest: { name: "opencode" } },
     worktreePlugin: { manifest: { name: "worktree" } },
     scmPlugin: { manifest: { name: "github" } },
@@ -64,12 +76,19 @@ vi.mock("@aoagents/ao-core", () => ({
     getStates: vi.fn(),
     check: vi.fn(),
   }),
+  SpawnBlockedError: MockSpawnBlockedError,
   TERMINAL_STATUSES: new Set(["merged", "killed"]) as ReadonlySet<string>,
 }));
 
 vi.mock("@aoagents/ao-plugin-runtime-tmux", () => ({ default: tmuxPlugin }));
 vi.mock("@aoagents/ao-plugin-agent-claude-code", () => ({ default: claudePlugin }));
 vi.mock("@aoagents/ao-plugin-agent-codex", () => ({ default: codexPlugin }));
+vi.mock("@aoagents/ao-plugin-agent-cursor", () => ({ default: cursorPlugin }), {
+  virtual: true,
+});
+vi.mock("@aoagents/ao-plugin-agent-kimicode", () => ({ default: kimicodePlugin }), {
+  virtual: true,
+});
 vi.mock("@aoagents/ao-plugin-agent-opencode", () => ({ default: opencodePlugin }));
 vi.mock("@aoagents/ao-plugin-workspace-worktree", () => ({ default: worktreePlugin }));
 vi.mock("@aoagents/ao-plugin-scm-github", () => ({ default: scmPlugin }));
@@ -254,6 +273,46 @@ describe("pollBacklog", () => {
         comment: "Claimed by agent orchestrator — session spawned.",
       },
       expect.objectContaining({ tracker: { plugin: "github" } }),
+    );
+  });
+
+  it("leaves auto-spawn blocked issues in backlog without setting userInitiated", async () => {
+    mockListIssues.mockResolvedValue([
+      {
+        id: "123",
+        title: "Test Issue",
+        description: "Test description",
+        url: "https://github.com/test/test/issues/123",
+        state: "open",
+        labels: ["agent:backlog"],
+      },
+    ]);
+    mockSpawn.mockRejectedValue(new MockSpawnBlockedError("test-project"));
+
+    mockRegistry.get.mockImplementation((slot: string) => {
+      if (slot === "tracker") {
+        return {
+          name: "github",
+          listIssues: mockListIssues,
+          updateIssue: mockUpdateIssue,
+        };
+      }
+      return null;
+    });
+
+    const { pollBacklog } = await import("../lib/services");
+    await pollBacklog();
+
+    expect(mockSpawn).toHaveBeenCalledWith({
+      projectId: "test-project",
+      issueId: "123",
+    });
+    expect(mockUpdateIssue).not.toHaveBeenCalledWith(
+      "123",
+      expect.objectContaining({
+        comment: "Claimed by agent orchestrator — session spawned.",
+      }),
+      expect.anything(),
     );
   });
 });

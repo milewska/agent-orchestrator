@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { createSessionManager } from "../session-manager.js";
+import { SpawnBlockedError, createSessionManager } from "../session-manager.js";
 import { writeMetadata } from "../metadata.js";
 import { recordActivityEvent } from "../activity-events.js";
 import type { OrchestratorConfig, PluginRegistry, Agent } from "../types.js";
@@ -104,28 +104,14 @@ describe("activity event logging", () => {
     });
   });
 
-  it("records session.spawn_failed when spawn fails", async () => {
+  it("does not record spawn events for an unknown project", async () => {
     const sm = createSessionManager({ config, registry: mockRegistry });
 
     await expect(sm.spawn({ projectId: "missing-project", prompt: "nope" })).rejects.toThrow(
       "Unknown project: missing-project",
     );
 
-    expect(recordActivityEvent).toHaveBeenCalledWith({
-      projectId: "missing-project",
-      source: "session-manager",
-      kind: "session.spawn_started",
-      summary: "spawn started",
-      data: { agent: undefined },
-    });
-    expect(recordActivityEvent).toHaveBeenCalledWith({
-      projectId: "missing-project",
-      source: "session-manager",
-      kind: "session.spawn_failed",
-      level: "error",
-      summary: "spawn failed",
-      data: { reason: "Unknown project: missing-project" },
-    });
+    expect(recordActivityEvent).not.toHaveBeenCalled();
   });
 
   it("records session.killed after successful kill cleanup", async () => {
@@ -148,6 +134,55 @@ describe("activity event logging", () => {
       kind: "session.killed",
       summary: "killed: app-kill",
       data: { reason: "manually_killed" },
+    });
+  });
+});
+
+describe("autonomyMode spawn guard", () => {
+  it("rejects automatic spawns for manual projects", async () => {
+    config.projects["my-app"]!.autonomyMode = "manual";
+    const sm = createSessionManager({ config, registry: mockRegistry });
+
+    await expect(sm.spawn({ projectId: "my-app", issueId: "INT-37" })).rejects.toBeInstanceOf(
+      SpawnBlockedError,
+    );
+    expect(recordActivityEvent).toHaveBeenCalledWith({
+      projectId: "my-app",
+      source: "session-manager",
+      kind: "session.spawn_blocked",
+      level: "warn",
+      summary: "spawn blocked — project autonomyMode='manual' and spawn not user-initiated",
+      data: { issueId: "INT-37", autonomyMode: "manual" },
+    });
+  });
+
+  it("defaults missing autonomyMode to manual", async () => {
+    delete config.projects["my-app"]!.autonomyMode;
+    const sm = createSessionManager({ config, registry: mockRegistry });
+
+    await expect(sm.spawn({ projectId: "my-app" })).rejects.toThrow(/autonomyMode is "manual"/);
+  });
+
+  it("allows user-initiated spawns for manual projects", async () => {
+    config.projects["my-app"]!.autonomyMode = "manual";
+    const sm = createSessionManager({ config, registry: mockRegistry });
+
+    const session = await sm.spawn({ projectId: "my-app", userInitiated: true });
+
+    expect(session.id).toBe("app-1");
+  });
+
+  it("allows automatic spawns for review and full projects", async () => {
+    config.projects["my-app"]!.autonomyMode = "review";
+    let sm = createSessionManager({ config, registry: mockRegistry });
+    await expect(sm.spawn({ projectId: "my-app" })).resolves.toMatchObject({
+      projectId: "my-app",
+    });
+
+    config.projects["my-app"]!.autonomyMode = "full";
+    sm = createSessionManager({ config, registry: mockRegistry });
+    await expect(sm.spawn({ projectId: "my-app" })).resolves.toMatchObject({
+      projectId: "my-app",
     });
   });
 });

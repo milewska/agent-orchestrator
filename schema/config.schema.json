@@ -328,6 +328,12 @@
         "resolveError": {
           "type": "string"
         },
+        "autonomyMode": {
+          "type": "string",
+          "enum": ["full", "review", "manual"],
+          "default": "manual",
+          "description": "Per-project autonomy posture. 'manual' (default when omitted): only user-initiated spawns allowed and automatic project work is denied. 'review': automatic spawns are allowed, but automatic agent reactions and auto-merge are routed to manual review notifications. 'full': automatic spawns and reactions may run according to reaction config."
+        },
         "runtime": {
           "type": "string"
         },

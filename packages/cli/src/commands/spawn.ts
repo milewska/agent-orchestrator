@@ -139,6 +139,7 @@ async function spawnSession(
       issueId,
       agent,
       prompt: sanitizedPrompt,
+      userInitiated: true,
     });
 
     let claimedPrUrl: string | null = null;
@@ -208,6 +209,7 @@ export function registerSpawn(program: Command): void {
     .option("--open", "Open session in terminal tab")
     .option("--agent <name>", "Override the agent plugin (e.g. codex, claude-code)")
     .option("-p, --project <id>", "Project ID for unprefixed issue identifiers")
+    .option("--force-manual <project>", "Explicitly spawn in a manual-mode project")
     .option("--claim-pr <pr>", "Immediately claim an existing PR for the spawned session")
     .option("--assign-on-github", "Assign the claimed PR to the authenticated GitHub user")
     .option("--prompt <text>", "Initial prompt/instructions for the agent (use instead of an issue)")
@@ -218,6 +220,7 @@ export function registerSpawn(program: Command): void {
           open?: boolean;
           agent?: string;
           project?: string;
+          forceManual?: string;
           claimPr?: string;
           assignOnGithub?: boolean;
           prompt?: string;
@@ -236,7 +239,11 @@ export function registerSpawn(program: Command): void {
         }
 
         const config = loadConfig();
-        const explicitProjectId = opts.project;
+        if (opts.project && opts.forceManual && opts.project !== opts.forceManual) {
+          console.error(chalk.red("--project and --force-manual must reference the same project."));
+          process.exit(1);
+        }
+        const explicitProjectId = opts.forceManual ?? opts.project;
         if (explicitProjectId) {
           try {
             validateProjectOption(config, explicitProjectId);
@@ -403,7 +410,11 @@ export function registerBatchSpawn(program: Command): void {
           }
 
           try {
-            const session = await sm.spawn({ projectId: groupProjectId, issueId: resolved });
+            const session = await sm.spawn({
+              projectId: groupProjectId,
+              issueId: resolved,
+              userInitiated: true,
+            });
             created.push({ session: session.id, issue: original });
             spawnedIssues.add(resolved.toLowerCase());
             console.log(chalk.green(`  Created ${session.id} for ${original}`));

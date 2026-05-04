@@ -210,6 +210,7 @@ export const LocalProjectConfigSchema = z
     runtime: z.string().optional(),
     agent: z.string().optional(),
     workspace: z.string().optional(),
+    autonomyMode: z.enum(["full", "review", "manual"]).optional(),
     tracker: z.object({ plugin: z.string() }).passthrough().optional(),
     scm: z
       .object({

@@ -118,7 +118,7 @@ export {
 } from "./tmux.js";
 
 // Session manager — session CRUD
-export { createSessionManager } from "./session-manager.js";
+export { createSessionManager, SpawnBlockedError } from "./session-manager.js";
 export type { SessionManagerDeps } from "./session-manager.js";
 
 // Lifecycle manager — state machine + reaction engine
@@ -172,6 +172,11 @@ export {
 } from "./orchestrator-session-strategy.js";
 export { resolveSpawnTarget } from "./spawn-target.js";
 export type { SpawnTarget } from "./spawn-target.js";
+export {
+  resolveAutonomyMode,
+  isUserInitiatedSpawnAllowed,
+  reactionConfigForAutonomyMode,
+} from "./autonomy-mode.js";
 
 // Activity log — JSONL activity tracking for agents without native JSONL
 export {
