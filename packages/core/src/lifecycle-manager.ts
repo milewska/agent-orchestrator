@@ -628,6 +628,11 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
           data: { plugin: pluginKey, prCount: pluginPRs.length },
         });
         recordActivityEvent({
+          // Tag with scopedProjectId when the lifecycle worker is project-scoped
+          // so `ao events list --project <id>` surfaces this failure. Unscoped
+          // (multi-project) supervisors leave projectId null because the batch
+          // crosses project boundaries — RCA there should query without --project.
+          projectId: scopedProjectId,
           source: "scm",
           kind: "scm.batch_enrich_failed",
           level: "warn",
@@ -2194,7 +2199,9 @@ export function createLifecycleManager(deps: LifecycleManagerDeps): LifecycleMan
         summary: `auto-cleanup deferred for ${session.id}`,
         data: {
           activity,
-          pendingSinceMs: Number.isFinite(pendingSinceMs)
+          // Elapsed wall-time since cleanup was first deferred. NOT a Unix
+          // timestamp — naming it `pendingSinceMs` was misleading (Greptile).
+          pendingElapsedMs: Number.isFinite(pendingSinceMs)
             ? Date.now() - pendingSinceMs
             : null,
           graceMs,
