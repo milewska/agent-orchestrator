@@ -599,7 +599,12 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         teamId,
       };
       const projectId = project.tracker?.["projectId"];
-      if (projectId) {
+      if (projectId !== undefined) {
+        if (typeof projectId !== "string") {
+          throw new Error(
+            "Linear tracker requires 'projectId' to be a string when provided in project tracker config",
+          );
+        }
         variables["projectId"] = projectId;
       }
 
