@@ -230,6 +230,10 @@ interface LinearIssueNode {
   team: {
     key: string;
   };
+  project: {
+    id: string;
+    name: string;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +254,19 @@ function mapLinearState(stateType: string): Issue["state"] {
   }
 }
 
+function getLinearProjectId(project: ProjectConfig): string | undefined {
+  const projectId = project.tracker?.["projectId"];
+  if (projectId === undefined || projectId === "") {
+    return undefined;
+  }
+  if (typeof projectId !== "string") {
+    throw new Error(
+      "Linear tracker requires 'projectId' to be a string when provided in project tracker config",
+    );
+  }
+  return projectId;
+}
+
 // ---------------------------------------------------------------------------
 // Issue fields fragment
 // ---------------------------------------------------------------------------
@@ -266,6 +283,7 @@ const ISSUE_FIELDS = `
   labels { nodes { name } }
   assignee { name displayName }
   team { key }
+  project { id name }
 `;
 
 // ---------------------------------------------------------------------------
@@ -297,6 +315,7 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         assignee: node.assignee?.displayName ?? node.assignee?.name,
         priority: node.priority,
         branchName: node.branchName ?? undefined,
+        project: node.project ?? undefined,
       };
     },
 
@@ -404,6 +423,12 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         filter["team"] = { id: { eq: teamId } };
       }
 
+      // Add project filter if available from project config
+      const projectId = getLinearProjectId(project);
+      if (projectId) {
+        filter["project"] = { id: { eq: projectId } };
+      }
+
       variables["filter"] = Object.keys(filter).length > 0 ? filter : undefined;
       variables["first"] = filters.limit ?? 30;
 
@@ -430,6 +455,7 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         assignee: node.assignee?.displayName ?? node.assignee?.name,
         priority: node.priority,
         branchName: node.branchName ?? undefined,
+        project: node.project ?? undefined,
       }));
     },
 
@@ -585,6 +611,10 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         description: input.description ?? "",
         teamId,
       };
+      const projectId = getLinearProjectId(project);
+      if (projectId) {
+        variables["projectId"] = projectId;
+      }
 
       if (input.priority !== undefined) {
         variables["priority"] = input.priority;
@@ -596,11 +626,12 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
           issue: LinearIssueNode;
         };
       }>(
-        `mutation($title: String!, $description: String!, $teamId: String!, $priority: Int) {
+        `mutation($title: String!, $description: String!, $teamId: String!, $projectId: String, $priority: Int) {
           issueCreate(input: {
             title: $title,
             description: $description,
             teamId: $teamId,
+            projectId: $projectId,
             priority: $priority
           }) {
             success
@@ -623,6 +654,7 @@ function createLinearTracker(query: GraphQLTransport): Tracker {
         assignee: node.assignee?.displayName ?? node.assignee?.name,
         priority: node.priority,
         branchName: node.branchName ?? undefined,
+        project: node.project ?? undefined,
       };
 
       // Assign after creation (Linear's issueCreate uses assigneeId, not display name)

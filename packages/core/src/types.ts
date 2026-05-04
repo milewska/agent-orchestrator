@@ -706,6 +706,10 @@ export interface Issue {
   assignee?: string;
   priority?: number;
   branchName?: string;
+  project?: {
+    id: string;
+    name: string;
+  };
 }
 
 export interface IssueFilters {

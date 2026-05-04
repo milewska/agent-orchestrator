@@ -48,6 +48,7 @@ const sampleIssueNode = {
   labels: { nodes: [{ name: "bug" }, { name: "high-priority" }] },
   assignee: { name: "Alice Smith", displayName: "Alice" },
   team: { key: "INT" },
+  project: { id: "project-uuid-1", name: "Agent Orchestrator" },
 };
 
 // ---------------------------------------------------------------------------
@@ -191,6 +192,7 @@ describe("tracker-linear plugin", () => {
         assignee: "Alice",
         priority: 2,
         branchName: "feat/INT-123",
+        project: { id: "project-uuid-1", name: "Agent Orchestrator" },
       });
     });
 
@@ -467,6 +469,51 @@ describe("tracker-linear plugin", () => {
       });
     });
 
+    it("passes project filter from project config", async () => {
+      mockLinearAPI({ issues: { nodes: [] } });
+      await tracker.listIssues!(
+        {},
+        {
+          ...project,
+          tracker: {
+            ...project.tracker,
+            projectId: "project-uuid-1",
+          },
+        },
+      );
+
+      const writeCall = requestMock.mock.results[0].value.write.mock.calls[0][0];
+      const body = JSON.parse(writeCall);
+      expect(body.variables.filter.project).toEqual({
+        id: { eq: "project-uuid-1" },
+      });
+    });
+
+    it("throws a clear error when projectId is not a string", async () => {
+      await expect(
+        tracker.listIssues!(
+          {},
+          {
+            ...project,
+            tracker: {
+              ...project.tracker,
+              projectId: 123,
+            },
+          },
+        ),
+      ).rejects.toThrow("Linear tracker requires 'projectId' to be a string");
+    });
+
+    it("returns mapped issue project metadata", async () => {
+      mockLinearAPI({ issues: { nodes: [sampleIssueNode] } });
+      const issues = await tracker.listIssues!({}, project);
+
+      expect(issues[0].project).toEqual({
+        id: "project-uuid-1",
+        name: "Agent Orchestrator",
+      });
+    });
+
     it("respects custom limit", async () => {
       mockLinearAPI({ issues: { nodes: [] } });
       await tracker.listIssues!({ limit: 5 }, project);
@@ -655,6 +702,43 @@ describe("tracker-linear plugin", () => {
       const writeCall = requestMock.mock.results[0].value.write.mock.calls[0][0];
       const body = JSON.parse(writeCall);
       expect(body.variables.priority).toBe(1);
+    });
+
+    it("passes projectId from project config to mutation", async () => {
+      mockLinearAPI({
+        issueCreate: { success: true, issue: sampleIssueNode },
+      });
+
+      await tracker.createIssue!(
+        { title: "Bug", description: "" },
+        {
+          ...project,
+          tracker: {
+            ...project.tracker,
+            projectId: "project-uuid-1",
+          },
+        },
+      );
+
+      const writeCall = requestMock.mock.results[0].value.write.mock.calls[0][0];
+      const body = JSON.parse(writeCall);
+      expect(body.variables.projectId).toBe("project-uuid-1");
+      expect(body.query).toContain("projectId: $projectId");
+    });
+
+    it("throws a clear error when createIssue projectId is not a string", async () => {
+      await expect(
+        tracker.createIssue!(
+          { title: "Bug", description: "" },
+          {
+            ...project,
+            tracker: {
+              ...project.tracker,
+              projectId: 123,
+            },
+          },
+        ),
+      ).rejects.toThrow("Linear tracker requires 'projectId' to be a string");
     });
 
     it("resolves assignee by display name after creation", async () => {

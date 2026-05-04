@@ -139,6 +139,18 @@
         "path": {
           "type": "string",
           "description": "Local path for an external tracker plugin."
+        },
+        "teamId": {
+          "type": "string",
+          "description": "Linear team ID. Required for tracker-linear."
+        },
+        "projectId": {
+          "type": "string",
+          "description": "Linear project ID. Optional; restricts listIssues and createIssue to a single Linear project."
+        },
+        "workspaceSlug": {
+          "type": "string",
+          "description": "Linear workspace slug for issueUrl construction."
         }
       },
       "anyOf": [{ "required": ["plugin"] }, { "required": ["package"] }, { "required": ["path"] }],
