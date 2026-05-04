@@ -1,15 +1,8 @@
-# @composio/ao-plugin-tracker-gitlab
+# @aoagents/ao-plugin-agent-cursor
 
-## 0.2.7
+## 0.1.2
 
 ### Patch Changes
-
-- c8af50f: Make `ProjectConfig.repo` optional to support projects without a configured remote.
-
-  **Migration:** `ProjectConfig.repo` is now `string | undefined` instead of `string`.
-  External plugins that access `project.repo` directly (e.g. `project.repo.split("/")`) must
-  add a null check first. Use a guard like `if (!project.repo) return null;` or a helper that
-  throws with a descriptive error.
 
 - Updated dependencies [2306078]
 - Updated dependencies [faaddb1]
@@ -32,12 +25,3 @@
 - Updated dependencies [7072143]
 - Updated dependencies [ed2dcea]
   - @aoagents/ao-core@0.4.0
-  - @aoagents/ao-plugin-scm-gitlab@0.2.7
-
-## 0.1.1
-
-### Patch Changes
-
-- Updated dependencies [3a650b0]
-  - @composio/ao-core@0.2.0
-  - @composio/ao-plugin-scm-gitlab@0.1.1
