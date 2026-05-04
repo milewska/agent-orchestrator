@@ -16,3 +16,4 @@ Append-only history of fork-side changes to `milewska/agent-orchestrator`. **Ups
   - `CARRYOVER.md` — current operational state of the fork
   - `CHANGELOG.md` (this file) — fork-only delta history
 - Test baseline NOT captured this pass (Annie cannot run `pnpm install` due to `node` postinstall script — surfaced as decision for Alex / dispatch).
+- **Test baseline backfilled same day** (after Alex approved `npm install -g pnpm`): `pnpm install && pnpm build && pnpm test` ran clean — **3235 passed + 40 skipped = 3275 total cases across 26 packages, 0 failures**. README claims 3288; 13-case delta below README is informational (likely README slightly stale; current HEAD `fad75b63` is one refactor commit past the `0.4.0` release at `ef8ac42d`). 0 failures is the load-bearing fact. tracker-linear baseline: 72 tests across 2 files. Toolchain: pnpm 10.33.2, Node v25.8.2.
