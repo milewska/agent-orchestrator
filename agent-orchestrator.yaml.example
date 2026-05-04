@@ -67,6 +67,8 @@ projects:
     # tracker:
     #   plugin: linear
     #   teamId: "your-team-id"
+    #   # Restricts AO to issues in this Linear project; issues outside it are invisible to AO.
+    #   projectId: "your-linear-project-id"
 
     # SCM webhook acceleration (optional)
     # scm:

@@ -142,6 +142,15 @@ function getOptionAction(node: CompletionCommandNode, option: Option): string | 
   if (key === "verify" && (optionMatches(option, "-p") || optionMatches(option, "--project"))) {
     return "_ao_complete_projects";
   }
+  if (key === "spawn" && (optionMatches(option, "-p") || optionMatches(option, "--project"))) {
+    return "_ao_complete_projects";
+  }
+  if (
+    key === "batch-spawn" &&
+    (optionMatches(option, "-p") || optionMatches(option, "--project"))
+  ) {
+    return "_ao_complete_projects";
+  }
   if (
     key === "session ls" &&
     (optionMatches(option, "-p") || optionMatches(option, "--project"))

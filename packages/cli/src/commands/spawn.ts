@@ -47,8 +47,16 @@ function autoDetectProject(config: OrchestratorConfig): string {
 
   throw new Error(
     `Multiple projects configured. Specify one: ${projectIds.join(", ")}\n` +
-      `Or run from within a project directory.`,
+      `Use --project <id>, a prefixed issue id, or run from within a project directory.`,
   );
+}
+
+function validateProjectOption(config: OrchestratorConfig, projectId: string): void {
+  if (!config.projects[projectId]) {
+    throw new Error(
+      `Unknown project: ${projectId}\nAvailable: ${Object.keys(config.projects).join(", ")}`,
+    );
+  }
 }
 
 interface SpawnClaimOptions {
@@ -199,6 +207,7 @@ export function registerSpawn(program: Command): void {
     .allowExcessArguments()
     .option("--open", "Open session in terminal tab")
     .option("--agent <name>", "Override the agent plugin (e.g. codex, claude-code)")
+    .option("-p, --project <id>", "Project ID for unprefixed issue identifiers")
     .option("--claim-pr <pr>", "Immediately claim an existing PR for the spawned session")
     .option("--assign-on-github", "Assign the claimed PR to the authenticated GitHub user")
     .option("--prompt <text>", "Initial prompt/instructions for the agent (use instead of an issue)")
@@ -208,6 +217,7 @@ export function registerSpawn(program: Command): void {
         opts: {
           open?: boolean;
           agent?: string;
+          project?: string;
           claimPr?: string;
           assignOnGithub?: boolean;
           prompt?: string;
@@ -226,6 +236,16 @@ export function registerSpawn(program: Command): void {
         }
 
         const config = loadConfig();
+        const explicitProjectId = opts.project;
+        if (explicitProjectId) {
+          try {
+            validateProjectOption(config, explicitProjectId);
+          } catch (err) {
+            console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+            process.exit(1);
+          }
+        }
+
         let projectId: string;
         let issueId: string | undefined;
 
@@ -237,16 +257,16 @@ export function registerSpawn(program: Command): void {
           } else {
             issueId = issue;
             try {
-              projectId = autoDetectProject(config);
+              projectId = explicitProjectId ?? autoDetectProject(config);
             } catch (err) {
               console.error(chalk.red(err instanceof Error ? err.message : String(err)));
               process.exit(1);
             }
           }
         } else {
-          // No args: auto-detect project, no issue
+          // No args: use --project or auto-detect project, no issue
           try {
-            projectId = autoDetectProject(config);
+            projectId = explicitProjectId ?? autoDetectProject(config);
           } catch (err) {
             console.error(chalk.red(err instanceof Error ? err.message : String(err)));
             process.exit(1);
@@ -284,17 +304,26 @@ export function registerBatchSpawn(program: Command): void {
       "<issues...>",
       "Issue identifiers. Accepts bare ids or prefixed forms (x402-identity/42, xid/42); mixed projects are grouped automatically.",
     )
+    .option("-p, --project <id>", "Project ID for unprefixed issue identifiers")
     .option("--open", "Open sessions in terminal tabs")
-    .action(async (issues: string[], opts: { open?: boolean }) => {
+    .action(async (issues: string[], opts: { open?: boolean; project?: string }) => {
       const config = loadConfig();
+      if (opts.project) {
+        try {
+          validateProjectOption(config, opts.project);
+        } catch (err) {
+          console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+          process.exit(1);
+        }
+      }
 
       // Resolve each issue to its target project. Issues without a prefix fall
       // back to auto-detection; prefixed issues route to the matched project.
-      let fallbackProjectId: string | null = null;
+      let fallbackProjectId: string | null = opts.project ?? null;
       const needsFallback = issues.some(
         (issue) => resolveSpawnTarget(config.projects, issue) === null,
       );
-      if (needsFallback) {
+      if (needsFallback && !fallbackProjectId) {
         try {
           fallbackProjectId = autoDetectProject(config);
         } catch (err) {

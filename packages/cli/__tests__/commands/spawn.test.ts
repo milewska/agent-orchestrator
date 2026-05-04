@@ -245,6 +245,70 @@ describe("spawn command", () => {
     });
   });
 
+  it("uses --project for an unprefixed issue in multi-project configs", async () => {
+    (mockConfigRef.current as Record<string, unknown>).projects = {
+      frontend: {
+        name: "Frontend",
+        repo: "org/frontend",
+        path: join(tmpDir, "frontend"),
+        defaultBranch: "main",
+        sessionPrefix: "fe",
+      },
+      backend: {
+        name: "Backend",
+        repo: "org/backend",
+        path: join(tmpDir, "backend"),
+        defaultBranch: "main",
+        sessionPrefix: "be",
+      },
+    };
+    mkdirSync(join(tmpDir, "frontend"), { recursive: true });
+    mkdirSync(join(tmpDir, "backend"), { recursive: true });
+    mockGetRunning.mockResolvedValue({
+      pid: 1234,
+      port: 3000,
+      startedAt: "",
+      projects: ["frontend", "backend"],
+    });
+
+    const fakeSession: Session = {
+      id: "be-1",
+      projectId: "backend",
+      status: "spawning",
+      activity: null,
+      branch: "feat/INT-42",
+      issueId: "INT-42",
+      pr: null,
+      workspacePath: "/tmp/wt",
+      runtimeHandle: { id: "hash-be-1", runtimeName: "tmux", data: {} },
+      agentInfo: null,
+      createdAt: new Date(),
+      lastActivityAt: new Date(),
+      metadata: {},
+    };
+    mockSessionManager.spawn.mockResolvedValue(fakeSession);
+
+    await program.parseAsync(["node", "test", "spawn", "--project", "backend", "INT-42"]);
+
+    expect(mockSessionManager.spawn).toHaveBeenCalledWith({
+      projectId: "backend",
+      issueId: "INT-42",
+    });
+  });
+
+  it("rejects an unknown --project value", async () => {
+    await expect(
+      program.parseAsync(["node", "test", "spawn", "--project", "missing", "INT-42"]),
+    ).rejects.toThrow("process.exit(1)");
+
+    const errors = vi
+      .mocked(console.error)
+      .mock.calls.map((c) => String(c[0]))
+      .join("\n");
+    expect(errors).toContain("Unknown project: missing");
+    expect(mockSessionManager.spawn).not.toHaveBeenCalled();
+  });
+
   it("routes a <projectId>/<issue> identifier to the prefixed project", async () => {
     // Multi-project config where AO is running for the default project
     // but the issue belongs to a different project.
@@ -972,6 +1036,59 @@ describe("batch-spawn command", () => {
     // regression that lists every project for every issue is caught.
     expect(mockSessionManager.list).toHaveBeenCalledTimes(2);
     expect(mockSessionManager.spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses --project as the fallback project for unprefixed batch issues", async () => {
+    (mockConfigRef.current as Record<string, unknown>).projects = {
+      "agent-orchestrator": {
+        name: "Agent Orchestrator",
+        repo: "org/agent-orchestrator",
+        path: join(tmpDir, "agent-orchestrator"),
+        defaultBranch: "main",
+        sessionPrefix: "ao",
+      },
+      "x402-identity": {
+        name: "x402 Identity",
+        repo: "harsh-batheja/x402-identity",
+        path: join(tmpDir, "x402-identity"),
+        defaultBranch: "main",
+        sessionPrefix: "xid",
+      },
+    };
+    mkdirSync(join(tmpDir, "agent-orchestrator"), { recursive: true });
+    mkdirSync(join(tmpDir, "x402-identity"), { recursive: true });
+    mockGetRunning.mockResolvedValue({
+      pid: 1234,
+      port: 3000,
+      startedAt: "",
+      projects: ["agent-orchestrator", "x402-identity"],
+    });
+
+    mockSessionManager.spawn
+      .mockResolvedValueOnce(makeFakeSession({ id: "ao-1", projectId: "agent-orchestrator" }))
+      .mockResolvedValueOnce(makeFakeSession({ id: "ao-2", projectId: "agent-orchestrator" }));
+
+    const program = setupBatch();
+    await program.parseAsync([
+      "node",
+      "test",
+      "batch-spawn",
+      "--project",
+      "agent-orchestrator",
+      "10",
+      "20",
+    ]);
+
+    expect(mockSessionManager.spawn).toHaveBeenCalledWith({
+      projectId: "agent-orchestrator",
+      issueId: "10",
+    });
+    expect(mockSessionManager.spawn).toHaveBeenCalledWith({
+      projectId: "agent-orchestrator",
+      issueId: "20",
+    });
+    expect(mockSessionManager.list).toHaveBeenCalledTimes(1);
+    expect(mockSessionManager.list).toHaveBeenCalledWith("agent-orchestrator");
   });
 
   it("skips a prefixed issue that already has an active session in the target project", async () => {
