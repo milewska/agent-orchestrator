@@ -489,6 +489,38 @@ describe("tracker-linear plugin", () => {
       });
     });
 
+    it("does not pass a project filter without configured projectId", async () => {
+      mockLinearAPI({ issues: { nodes: [] } });
+      await tracker.listIssues!({}, project);
+
+      const writeCall = requestMock.mock.results[0].value.write.mock.calls[0][0];
+      const body = JSON.parse(writeCall);
+      expect(body.variables.filter.project).toBeUndefined();
+    });
+
+    it("uses the configured Linear project ID, not the returned project name", async () => {
+      mockLinearAPI({ issues: { nodes: [sampleIssueNode] } });
+      await tracker.listIssues!(
+        {},
+        {
+          ...project,
+          tracker: {
+            ...project.tracker,
+            projectId: "project-uuid-1",
+          },
+        },
+      );
+
+      const writeCall = requestMock.mock.results[0].value.write.mock.calls[0][0];
+      const body = JSON.parse(writeCall);
+      expect(body.variables.filter.project).toEqual({
+        id: { eq: "project-uuid-1" },
+      });
+      expect(body.variables.filter.project).not.toEqual({
+        name: { eq: "Agent Orchestrator" },
+      });
+    });
+
     it("throws a clear error when projectId is not a string", async () => {
       await expect(
         tracker.listIssues!(
@@ -724,6 +756,18 @@ describe("tracker-linear plugin", () => {
       const body = JSON.parse(writeCall);
       expect(body.variables.projectId).toBe("project-uuid-1");
       expect(body.query).toContain("projectId: $projectId");
+    });
+
+    it("does not pass projectId to createIssue without configured projectId", async () => {
+      mockLinearAPI({
+        issueCreate: { success: true, issue: sampleIssueNode },
+      });
+
+      await tracker.createIssue!({ title: "Bug", description: "" }, project);
+
+      const writeCall = requestMock.mock.results[0].value.write.mock.calls[0][0];
+      const body = JSON.parse(writeCall);
+      expect(body.variables.projectId).toBeUndefined();
     });
 
     it("throws a clear error when createIssue projectId is not a string", async () => {

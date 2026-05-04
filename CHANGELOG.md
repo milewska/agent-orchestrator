@@ -17,3 +17,16 @@ Append-only history of fork-side changes to `milewska/agent-orchestrator`. **Ups
   - `CHANGELOG.md` (this file) — fork-only delta history
 - Test baseline NOT captured this pass (Annie cannot run `pnpm install` due to `node` postinstall script — surfaced as decision for Alex / dispatch).
 - **Test baseline backfilled same day** (after Alex approved `npm install -g pnpm`): `pnpm install && pnpm build && pnpm test` ran clean — **3235 passed + 40 skipped = 3275 total cases across 26 packages, 0 failures**. README claims 3288; 13-case delta below README is informational (likely README slightly stale; current HEAD `fad75b63` is one refactor commit past the `0.4.0` release at `ef8ac42d`). 0 failures is the load-bearing fact. tracker-linear baseline: 72 tests across 2 files. Toolchain: pnpm 10.33.2, Node v25.8.2.
+
+## 2026-05-04 — OCT-38 coverage + docs smoke
+
+- Audited OCT-36/OCT-37 coverage and added focused gaps:
+  - Linear project filter now asserts no `project` filter without `projectId`, ID-based filtering instead of returned project name, no create mutation `projectId` when omitted, and Composio transport variable propagation.
+  - CLI spawn now asserts `--project` resolves AO project IDs, not display names.
+  - Core autonomy helpers now cover default-deny omission, manual/full/review spawn permission, full reaction preservation, review-mode suppression, and omitted-mode suppression.
+- Documented fork-only surfaces in README, `agent-orchestrator.yaml.example`, and `FORK-FEATURES.md`.
+- Smoke verification:
+  - `pnpm build` clean after fresh install (build required to materialize package `dist/` links before root typecheck).
+  - `pnpm typecheck` clean.
+  - `pnpm test` clean — **3263 passed + 40 skipped = 3303 total cases across 26 test-running packages, 0 failures**.
+  - Focused web services check: `pnpm --filter @aoagents/ao-web test -- src/__tests__/services.test.ts` clean — **7 passed, 0 failures**.

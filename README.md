@@ -114,6 +114,16 @@ That's it. The dashboard opens at `http://localhost:3000` and the orchestrator a
 ao start ~/path/to/another-repo
 ```
 
+### Spawn a worker manually
+
+Use `ao spawn` for explicit human-initiated work. In multi-project configs, pass the
+project **id** with `--project`; the human-readable `name` is display-only.
+
+```bash
+ao spawn --project my-app OCT-123
+ao spawn --force-manual my-app OCT-124  # explicit override for a manual-mode project
+```
+
 ## How It Works
 
 1. **You start** — `ao start` launches the dashboard and an orchestrator agent
@@ -146,6 +156,13 @@ projects:
     path: ~/my-app
     defaultBranch: main
     sessionPrefix: app
+    autonomyMode: manual  # omitted is manual/default-deny
+
+    # Linear tracker example: restrict backlog polling and issue creation to one project.
+    # tracker:
+    #   plugin: linear
+    #   teamId: lin_team_...
+    #   projectId: lin_project_...
 
 reactions:
   ci-failed:
@@ -164,6 +181,17 @@ reactions:
 CI fails → agent gets the logs and fixes it. Reviewer requests changes → agent addresses them. PR approved with green CI → you get a notification to merge.
 
 Keep the `$schema` line so editors can autocomplete and validate against [`schema/config.schema.json`](schema/config.schema.json).
+
+### Project autonomy
+
+Every project can choose how much automation AO may perform:
+
+- `manual` — default when omitted. Background auto-spawn is denied; only explicit
+  human-initiated spawns such as `ao spawn --project my-app OCT-123` run.
+- `review` — background spawns are allowed, but automatic agent reactions
+  (for example sending CI failures back to an agent) are converted to human
+  review notifications.
+- `full` — background spawns and configured automatic reactions may run.
 
 See [`agent-orchestrator.yaml.example`](agent-orchestrator.yaml.example) for the full reference, or run `ao config-help` for the complete schema.
 

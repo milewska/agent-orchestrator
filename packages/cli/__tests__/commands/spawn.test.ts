@@ -368,6 +368,37 @@ describe("spawn command", () => {
     expect(mockSessionManager.spawn).not.toHaveBeenCalled();
   });
 
+  it("requires --project to use the project id rather than the display name", async () => {
+    (mockConfigRef.current as Record<string, unknown>).projects = {
+      "frontend-app": {
+        name: "Frontend App",
+        repo: "org/frontend",
+        path: join(tmpDir, "frontend"),
+        defaultBranch: "main",
+        sessionPrefix: "fe",
+      },
+      "backend-api": {
+        name: "Backend API",
+        repo: "org/backend",
+        path: join(tmpDir, "backend"),
+        defaultBranch: "main",
+        sessionPrefix: "be",
+      },
+    };
+
+    await expect(
+      program.parseAsync(["node", "test", "spawn", "--project", "Backend API", "INT-42"]),
+    ).rejects.toThrow("process.exit(1)");
+
+    const errors = vi
+      .mocked(console.error)
+      .mock.calls.map((c) => String(c[0]))
+      .join("\n");
+    expect(errors).toContain("Unknown project: Backend API");
+    expect(errors).toContain("frontend-app, backend-api");
+    expect(mockSessionManager.spawn).not.toHaveBeenCalled();
+  });
+
   it("routes a <projectId>/<issue> identifier to the prefixed project", async () => {
     // Multi-project config where AO is running for the default project
     // but the issue belongs to a different project.
