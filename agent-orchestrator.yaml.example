@@ -62,8 +62,11 @@ projects:
     path: ~/my-app
     defaultBranch: main
     sessionPrefix: app
-    # Default-deny safety posture: omitted autonomyMode is treated as manual.
-    # Use review/full only for projects that may be handled automatically.
+    # autonomyMode controls how much AO may do without an explicit human command.
+    # Omitted = manual (default-deny).
+    #   manual: only user-initiated spawns are allowed; background auto-spawn is blocked.
+    #   review: background spawns are allowed; automatic agent reactions become human review notifications.
+    #   full: background spawns and configured automatic reactions may run.
     autonomyMode: manual
 
     # Issue tracker (defaults to github issues)

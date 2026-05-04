@@ -232,6 +232,33 @@ describe("tracker-linear Composio transport", () => {
       expect(issues[0].id).toBe("INT-123");
     });
 
+    it("passes configured projectId through listIssues variables", async () => {
+      mockComposioResponse({
+        issues: {
+          nodes: [],
+        },
+      });
+      const tracker = create();
+      await tracker.listIssues!(
+        {},
+        {
+          ...project,
+          tracker: {
+            ...project.tracker,
+            projectId: "project-uuid-1",
+          },
+        },
+      );
+
+      const call = mockExecute.mock.calls[0];
+      const params = call[1] as Record<string, unknown>;
+      const args = params["arguments"] as Record<string, string>;
+      const variables = JSON.parse(args["variables"]) as Record<string, unknown>;
+      expect(variables["filter"]).toMatchObject({
+        project: { id: { eq: "project-uuid-1" } },
+      });
+    });
+
     it("works with isCompleted", async () => {
       mockComposioResponse({ issue: { state: { type: "completed" } } });
       const tracker = create();
